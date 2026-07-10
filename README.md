@@ -3,7 +3,23 @@
 Stationäre hydraulisch-thermische Berechnung von HVAC-Hydraulikschaltungen
 (Heizung/Kühlung) als generisches 1D-Netzwerk. Inkompressibles Fluid mit
 konstanten Stoffwerten (ρ, μ, cp); SIMPLE-artiger Druckkorrektur-Solver plus
-sequentiell gelöste Energiegleichung.
+sequentiell gelöste Energiegleichung — mit grafischem Schaltbild-Editor
+inklusive integriertem Solver (Rechnen direkt im GUI, Ergebnisse per
+Mouse-Over in der Zeichnung):
+
+![Schaltbild-Editor mit integriertem Solver](docs/img/schaltbild_editor.png)
+
+**Maschinenlesbare Strangschemas für KI-Agenten:** Strangschemas sind für
+KI-Agenten bislang schwer zugänglich, weil ihre Vision-Fähigkeiten für das
+zuverlässige Interpretieren von Anlagenschemata nicht ausreichen. Dieses Tool
+löst das Eingabeproblem konstruktiv: Das Schema wird im Editor gezeichnet und
+liegt damit von Anfang an **maschinenlesbar als YAML** vor — die Zeichnung
+*ist* das Modell, es gibt keinen Interpretationsschritt. Über den integrierten
+Solver (▶ Rechnen) wird die Eingabe **per Human in the Loop geprüft**
+(Volumenströme, Drücke, Temperaturen direkt im Schema), bevor ein KI-Agent
+das validierte YAML für Analyse- und Optimierungsstudien übernimmt. Das Paket
+dient zugleich der Entwicklung von Benchmark-Tests für KI-Agenten in der
+technischen Gebäudeausrüstung.
 
 ## Installation
 
