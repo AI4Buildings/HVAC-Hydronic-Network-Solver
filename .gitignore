@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+dist/
+build/
+.venv/
+
+# OS / Editor
+.DS_Store
+.claude/
+
+# Generiert (mit `hydraulik editor` erzeugen)
+hydraulik_editor.html
+
+# Kursunterlagen mit Musterlösungen – nicht veröffentlichen
+*.pdf

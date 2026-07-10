@@ -1,0 +1,18 @@
+# Beispiel 1: Einfachster Heizkreis
+# Wärmepumpe (Solltemperatur 45 °C) → Umwälzpumpe → Vorlaufrohr → Heizkörper → Rücklaufrohr
+fluid: {preset: water, t_C: 45}
+
+components:
+  wp1:  {type: heat_pump, mode: target_t_out, t_out_set_C: 45, q_max_kW: 12,
+         dp_nom_kPa: 18, q_nom_m3h: 1.4}
+  pu1:  {type: pump, mode: constant_flow, q_m3h: 1.4}
+  vl:   {type: pipe, length_m: 18, d_inner_mm: 26, u_linear_W_mK: 0.3, t_amb_C: 15}
+  hk1:  {type: radiator, q_nom_kW: 7.5, t_sup_nom_C: 45, t_ret_nom_C: 40, t_room_C: 21, n: 1.3}
+  rl:   {type: pipe, length_m: 18, d_inner_mm: 26, u_linear_W_mK: 0.3, t_amb_C: 15}
+
+connections:
+  - [wp1.out, pu1.in]
+  - [pu1.out, vl.in]
+  - [vl.out, hk1.in]
+  - [hk1.out, rl.in]
+  - [rl.out, wp1.in]

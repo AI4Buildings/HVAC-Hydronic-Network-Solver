@@ -1,0 +1,30 @@
+# Beispiel 3: Beimischschaltung für eine Fußbodenheizung
+# Primärkreis (WP, konstanter Volumenstrom 0.5 m³/h) speist den A-Port des
+# 3-Wege-Mischventils; der Sekundärkreis (0.7 m³/h) mischt Rücklaufwasser
+# über den B-Port bei. Der Bypass führt 0.2 m³/h.
+fluid: {preset: water, t_C: 35}
+
+components:
+  wp1:  {type: heat_pump, mode: target_t_out, t_out_set_C: 42, q_max_kW: 10,
+         dp_nom_kPa: 15, q_nom_m3h: 0.5}
+  pu1:  {type: pump, mode: constant_flow, q_m3h: 0.5}
+  mv1:  {type: mixing_valve_3way, kvs_m3h: 4.0, opening: 0.7, characteristic: linear}
+  pu2:  {type: pump, mode: constant_flow, q_m3h: 0.7}
+  vert: {type: manifold, n_ports: 2}
+  samm: {type: manifold, n_ports: 2}
+  fbh1: {type: floor_heating, area_m2: 18, k_W_m2K: 5.5, t_room_C: 22, length_m: 90, d_inner_mm: 14}
+  fbh2: {type: floor_heating, area_m2: 24, k_W_m2K: 5.5, t_room_C: 21, length_m: 120, d_inner_mm: 14}
+  abzweig: {type: tee}   # Rücklauf-Aufteilung: zurück zur WP und Beimischung
+
+connections:
+  - [wp1.out, pu1.in]
+  - [pu1.out, mv1.a]
+  - [mv1.ab, pu2.in]
+  - [pu2.out, vert.main]
+  - [vert.s1, fbh1.in]
+  - [vert.s2, fbh2.in]
+  - [fbh1.out, samm.s1]
+  - [fbh2.out, samm.s2]
+  - [samm.main, abzweig.a]
+  - [abzweig.b, mv1.b]
+  - [abzweig.c, wp1.in]

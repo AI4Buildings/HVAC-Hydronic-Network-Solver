@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>hydraulik – Schaltbild-Editor</title>
+<style>
+  :root { --bg:#f4f4f2; --panel:#ffffff; --line:#d8d7d2; --ink:#1c1c1a; --muted:#6b6a65;
+          --vl:#c62828; --rl:#1565c0; --sel:#0b7a3e; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;
+         color:var(--ink); background:var(--bg); height:100vh; display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:8px; padding:8px 12px;
+           background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1 { font-size:15px; margin:0 12px 0 0; }
+  button { font:inherit; padding:5px 10px; border:1px solid var(--line); border-radius:6px;
+           background:#fff; cursor:pointer; }
+  button:hover { background:#f0efe9; }
+  button.primary { background:#1c1c1a; color:#fff; border-color:#1c1c1a; }
+  main { flex:1; display:flex; min-height:0; }
+  #palette { width:212px; overflow-y:auto; background:var(--panel);
+             border-right:1px solid var(--line); padding:8px; }
+  #palette h3 { font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+                color:var(--muted); margin:10px 4px 4px; }
+  .pal-note { font-size:11px; color:var(--muted); margin:2px 4px 6px; padding:5px 8px;
+              background:#f4f9f5; border:1px dashed #9fc9ab; border-radius:6px; }
+  .pal-item { display:block; width:100%; text-align:left; margin:2px 0; padding:5px 8px; }
+  .pal-item.active { outline:2px solid var(--sel); }
+  #canvas-wrap { flex:1; overflow:auto; position:relative; }
+  svg#cv { display:block; background:#fff; }
+  #inspector { width:300px; overflow-y:auto; background:var(--panel);
+               border-left:1px solid var(--line); padding:10px; }
+  #inspector h3 { font-size:12px; margin:12px 0 6px; }
+  .field { margin:6px 0; }
+  .field label { display:block; font-size:11px; color:var(--muted); margin-bottom:2px; }
+  .field input[type=text], .field input[type=number], .field select {
+      width:100%; font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:5px; }
+  .field .unitrow { display:flex; gap:4px; }
+  .field .unitrow input { flex:1; }
+  .field .unitrow select { width:96px; }
+  .req { color:var(--vl); }
+  #issues { font-size:12px; }
+  #issues li { color:#8a5200; margin:2px 0; }
+  #issues li.err { color:var(--vl); }
+  #issues li[data-focus] { cursor:pointer; text-decoration:underline dotted; }
+  .hint { font-size:11px; color:var(--muted); margin:4px 0; }
+  dialog { width:640px; max-width:92vw; border:1px solid var(--line); border-radius:10px; }
+  dialog textarea { width:100%; height:340px; font:12px/1.4 ui-monospace,monospace; }
+  .comp-label { font:11px system-ui; fill:var(--ink); }
+  .ts-badge { font:10px system-ui; fill:#7a4bd6; }
+  .port { fill:#fff; stroke:#444; stroke-width:1.4; cursor:crosshair; }
+  .port:hover, .port.pending { fill:#ffd54d; }
+  .sym { stroke:#222; stroke-width:1.6; fill:#fff; }
+  .wire { fill:none; stroke-width:3.2; pointer-events:none; }
+  .wire-hit { fill:none; stroke:transparent; stroke-width:14; cursor:pointer; }
+  .wp { fill:#fff; stroke:#0b7a3e; stroke-width:1.6; cursor:move; }
+  .wire.vl { stroke:var(--vl); }
+  .wire.rl { stroke:var(--rl); }
+  .wire.kvl { stroke:#34a853; }   /* Kälte-Vorlauf hellgrün */
+  .wire.krl { stroke:#0d5c2c; }   /* Kälte-Rücklauf dunkelgrün */
+  .wire.n  { stroke:#777; }
+  .wire.selected { stroke-width:5; }
+  g.comp { cursor:grab; }
+  g.comp.selected .sym { stroke:var(--sel); stroke-width:2.4; }
+</style>
+</head>
+<body>
+<header>
+  <h1>hydraulik – Schaltbild-Editor</h1>
+  <button id="btn-new">Neu</button>
+  <button id="btn-undo" title="Rückgängig (Strg+Z)">↶</button>
+  <button id="btn-redo" title="Wiederholen (Strg+Shift+Z)">↷</button>
+  <button id="btn-zoom-out" title="Herauszoomen (Strg+Mausrad)">−</button>
+  <span class="hint" id="zoom-label" style="min-width:44px; text-align:center">100 %</span>
+  <button id="btn-zoom-in" title="Hineinzoomen (Strg+Mausrad)">+</button>
+  <button id="btn-zoom-reset" title="Zoom zurücksetzen">1:1</button>
+  <button id="btn-import">YAML importieren</button>
+  <button id="btn-export">YAML exportieren</button>
+  <button id="btn-solve" class="primary">▶ Rechnen</button>
+  <button id="btn-copy" title="Auswahl kopieren (Strg+C)">Kopieren</button>
+  <button id="btn-paste" title="Einfügen (Strg+V)">Einfügen</button>
+  <button id="btn-del">Auswahl löschen (Entf)</button>
+  <span class="hint" id="status">Komponenten aus der Palette platzieren; Verbindungsleitungen
+    von Port zu Port ziehen (Linie anklicken für Parameter/Farbe). ESC bricht ab.</span>
+</header>
+<div id="tip" style="display:none; position:fixed; z-index:50; background:#1c1c1a; color:#fff;
+     font:12px/1.5 system-ui; padding:6px 9px; border-radius:6px; pointer-events:none;
+     max-width:380px; white-space:pre;"></div>
+<main>
+  <nav id="palette"></nav>
+  <div id="canvas-wrap"><svg id="cv" width="4000" height="2600"></svg></div>
+  <aside id="inspector"></aside>
+</main>
+<dialog id="dlg">
+  <h3 id="dlg-title" style="margin-top:0"></h3>
+  <textarea id="dlg-text" spellcheck="false"></textarea>
+  <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+    <button id="dlg-file">Datei laden…</button>
+    <input type="file" id="dlg-fileinput" accept=".yaml,.yml,.txt" style="display:none">
+    <button id="dlg-save">Als Datei speichern</button>
+    <button id="dlg-copy">In Zwischenablage</button>
+    <button id="dlg-ok" class="primary">OK</button>
+    <button id="dlg-close">Schließen</button>
+  </div>
+</dialog>
+<script>
+"use strict";
+const CATALOG = __CATALOG_JSON__;
+
+/* ---------- Typ-Metadaten (Anzeige) ------------------------------------ */
+const META = {
+  pump:{de:"Pumpe",grp:"Erzeuger & Quellen",pre:"pu"},
+  heat_pump:{de:"Wärmepumpe",grp:"Erzeuger & Quellen",pre:"wp"},
+  chiller:{de:"Kältemaschine",grp:"Erzeuger & Quellen",pre:"km"},
+  ideal_storage:{de:"Speicher (ideal, geladen)",grp:"Erzeuger & Quellen",pre:"sp"},
+  inflow:{de:"Inflow (Zulauf)",grp:"Randbedingungen",pre:"in"},
+  outflow:{de:"Outflow (Austritt)",grp:"Randbedingungen",pre:"out"},
+  buffer_storage:{de:"Pufferspeicher (Mischknoten)",grp:"Erzeuger & Quellen",pre:"psp"},
+  hydraulic_separator:{de:"Hydraulische Weiche",grp:"Verteilung",pre:"hw"},
+  manifold:{de:"Verteiler/Sammler",grp:"Verteilung",pre:"vt"},
+  tee:{de:"Abzweiger (T-Stück)",grp:"Verteilung",pre:"ab"},
+  control_valve:{de:"Regelventil",grp:"Ventile",pre:"rv"},
+  check_valve:{de:"Rückschlagklappe",grp:"Ventile",pre:"rk"},
+  balancing_valve:{de:"Strangregulierventil",grp:"Ventile",pre:"srv"},
+  mixing_valve_3way:{de:"3-Wege-Mischventil",grp:"Ventile",pre:"mv"},
+  radiator:{de:"Heizkörper",grp:"Verbraucher",pre:"hk"},
+  floor_heating:{de:"Fußbodenheizung",grp:"Verbraucher",pre:"fbh"},
+  heating_coil:{de:"Heizregister",grp:"Verbraucher",pre:"hr"},
+  cooling_coil:{de:"Kühlregister",grp:"Verbraucher",pre:"kr"},
+  pipe:{de:"Rohrleitung (Symbol)",grp:"Leitungen & Widerstände",pre:"ro"},
+  flow_resistance:{de:"Widerstand (C-Wert, Symbol)",grp:"Leitungen & Widerstände",pre:"r"},
+  link:{de:"Ideale Verbindung (link)",grp:"Leitungen & Widerstände",pre:"lk"},
+  conduit:{de:"Verbindungsleitung",grp:"Leitungen & Widerstände",pre:"lt"},
+  open_end:{de:"Offenes Ende (RB)",grp:"Randbedingungen",pre:"oe"},
+  cap:{de:"Endstück (dicht, V̇=0)",grp:"Randbedingungen",pre:"es"},
+};
+const GRP_ORDER = ["Erzeuger & Quellen","Verteilung","Ventile","Verbraucher",
+                   "Leitungen & Widerstände","Randbedingungen","Sonstige"];
+const TYPES = {};
+CATALOG.types.forEach(t => TYPES[t.type] = t);
+
+/* ---------- Zustand ----------------------------------------------------- */
+let state = { fluid:{mode:"preset", t_C:50, rho:998, mu:0.001, cp:4180},
+              comps:[], wires:[] };
+let placing = null;                 // Typname im Platzierungsmodus
+let selection = null;               // {kind:'comp'|'wire', ref}
+let pendingPort = null;             // {comp, port}
+let drag = null;                    // {items:[{c,ox,oy}], moved} – auch Gruppen
+let idSeq = 1;
+let lastResult = null;              // letztes Solver-Ergebnis (POST /solve)
+let wireDrag = null;                // {from, sx, sy, mx, my, moved, hover} – Leitung ziehen
+let boxSel = null;                  // Auswahlrechteck {x0,y0,x1,y1,active}
+let clipboard = null;               // kopierte Komponenten + interne Leitungen
+let wpDrag = null;                  // Knickpunkt-Verschiebung {w, idx, moved}
+let dblTrack = {key: "", t: 0};     // eigene Doppelklick-Erkennung
+
+function wireEnds(w) {
+  return [absPort(compById(w.a.comp), w.a.port), absPort(compById(w.b.comp), w.b.port)];
+}
+function wireD(w) {                 // Pfad: gerade / Auto-Winkel / über Knickpunkte
+  const [a, b] = wireEnds(w);
+  const pts = w.pts || [];
+  if (!pts.length) {
+    if (Math.abs(a.y - b.y) < 1 || Math.abs(a.x - b.x) < 1)
+      return `M${a.x},${a.y} L${b.x},${b.y}`;
+    const mx = (a.x + b.x) / 2;
+    return `M${a.x},${a.y} L${mx},${a.y} L${mx},${b.y} L${b.x},${b.y}`;
+  }
+  return `M${a.x},${a.y} ` + pts.map(p => `L${p.x},${p.y}`).join(" ") + ` L${b.x},${b.y}`;
+}
+function insertWaypoint(w, pt) {    // in das nächstgelegene Segment einfügen
+  const [a, b] = wireEnds(w);
+  const seq = [a, ...(w.pts || []), b];
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < seq.length - 1; i++) {
+    const p = seq[i], q = seq[i + 1];
+    const l2 = (q.x - p.x) ** 2 + (q.y - p.y) ** 2 || 1;
+    const t = Math.max(0, Math.min(1, ((pt.x - p.x) * (q.x - p.x) + (pt.y - p.y) * (q.y - p.y)) / l2));
+    const d = Math.hypot(pt.x - (p.x + t * (q.x - p.x)), pt.y - (p.y + t * (q.y - p.y)));
+    if (d < bd) { bd = d; best = i; }
+  }
+  w.pts = w.pts || [];
+  w.pts.splice(best, 0, {x: snap(pt.x), y: snap(pt.y)});
+}
+
+function isSelectedComp(c) {
+  if (!selection) return false;
+  if (selection.kind === "comp") return selection.ref === c;
+  if (selection.kind === "multi") return selection.ids.has(c.id);
+  return false;
+}
+function selectedComps() {
+  if (!selection) return [];
+  if (selection.kind === "comp") return [selection.ref];
+  if (selection.kind === "multi") return state.comps.filter(c => selection.ids.has(c.id));
+  return [];
+}
+
+/* ---------- Kopieren / Einfügen ------------------------------------------- */
+function copySelection() {
+  const comps = selectedComps();
+  if (!comps.length) { setStatus("Nichts ausgewählt zum Kopieren."); return; }
+  const ids = new Set(comps.map(c => c.id));
+  clipboard = {
+    comps: comps.map(c => JSON.parse(JSON.stringify(c))),
+    wires: state.wires.filter(w => ids.has(w.a.comp) && ids.has(w.b.comp))
+                      .map(w => JSON.parse(JSON.stringify(w))),
+  };
+  setStatus(`${comps.length} Komponente(n) + ${clipboard.wires.length} Leitung(en) kopiert – Einfügen: Strg+V.`);
+}
+function uniqueName(base) {
+  const m = base.match(/^(.*?)(\d*)$/);
+  const stem = m[1] || "k";
+  let n = m[2] ? Number(m[2]) + 1 : 2;
+  while (nameTaken(stem + n)) n++;
+  return stem + n;
+}
+function pasteClipboard() {
+  if (!clipboard || !clipboard.comps.length) { setStatus("Zwischenablage leer."); return; }
+  invalidate();
+  const idMap = {}, ids = new Set();
+  for (const src of clipboard.comps) {
+    const c = JSON.parse(JSON.stringify(src));
+    c.id = idSeq++;
+    c.name = uniqueName(src.name);
+    c.x = snap(src.x + 48); c.y = snap(src.y + 48);
+    idMap[src.id] = c.id;
+    state.comps.push(c); ids.add(c.id);
+  }
+  for (const w of clipboard.wires) {
+    const nw = {a: {comp: idMap[w.a.comp], port: w.a.port},
+                b: {comp: idMap[w.b.comp], port: w.b.port}, color: w.color};
+    if (w.type === "conduit") {
+      nw.type = "conduit";
+      nw.name = uniqueName(w.name);
+      nw.ts = w.ts || "";
+      nw.params = JSON.parse(JSON.stringify(w.params || {}));
+    }
+    if (w.pts) nw.pts = w.pts.map(p => ({x: p.x + 48, y: p.y + 48}));
+    state.wires.push(nw);
+  }
+  for (const src of clipboard.comps) { src.x += 48; src.y += 48; }   // nächstes Einfügen weiter versetzt
+  for (const w of clipboard.wires)
+    if (w.pts) for (const p of w.pts) { p.x += 48; p.y += 48; }
+  selection = {kind: "multi", ids};
+  commit(); render();
+  setStatus("Eingefügt – Auswahl verschieben und Parameter anpassen.");
+}
+function invalidate(){ if (lastResult) { lastResult = null; setStatus("Zeichnung geändert – Ergebnisse verworfen. Neu rechnen."); } }
+
+/* ---------- Undo / Redo --------------------------------------------------- */
+let history = [], historyIndex = -1;
+function snapshot(){ return JSON.stringify({fluid: state.fluid, comps: state.comps,
+                                            wires: state.wires, idSeq}); }
+function commit(){
+  history = history.slice(0, historyIndex + 1);
+  history.push(snapshot());
+  if (history.length > 100) history.shift();
+  historyIndex = history.length - 1;
+}
+function restoreSnap(s){
+  const o = JSON.parse(s);
+  state = {fluid: o.fluid, comps: o.comps, wires: o.wires};
+  idSeq = o.idSeq;
+  selection = null; pendingPort = null; wireDrag = null; boxSel = null; lastResult = null;
+  render();
+}
+function undo(){ if (historyIndex > 0) { historyIndex--; restoreSnap(history[historyIndex]); } }
+function redo(){ if (historyIndex < history.length - 1) { historyIndex++; restoreSnap(history[historyIndex]); } }
+
+function portAt(x, y, exclude) {    // nächster Port im Fangradius
+  let best = null, bd = 16;
+  for (const c of state.comps) {
+    for (const [pn, p] of Object.entries(portPos(c))) {
+      if (exclude && exclude.comp === c.id && exclude.port === pn) continue;
+      const d = Math.hypot(c.x + p.dx - x, c.y + p.dy - y);
+      if (d < bd) { bd = d; best = {comp: c.id, port: pn, x: c.x + p.dx, y: c.y + p.dy}; }
+    }
+  }
+  return best;
+}
+
+/* ---------- Ports & Geometrie ------------------------------------------- */
+function portNames(comp) {
+  const spec = TYPES[comp.type].ports;
+  if (!spec.template) return spec.base.slice();
+  const p = TYPES[comp.type].params.find(x => x.name === spec.count_param);
+  let n = comp.params[spec.count_param];
+  if (n === undefined || n === null || n === "") n = (p && p.default != null) ? p.default : 2;
+  const out = spec.base.slice();
+  for (let i = 1; i <= Number(n); i++) out.push(spec.template.replace("{}", i));
+  return out;
+}
+function rotXY(dx, dy, rot) {
+  switch (((rot || 0) % 360 + 360) % 360) {
+    case 90:  return {dx: -dy, dy: dx};
+    case 180: return {dx: -dx, dy: -dy};
+    case 270: return {dx: dy,  dy: -dx};
+    default:  return {dx, dy};
+  }
+}
+function portPos(comp) {                       // → {portname:{dx,dy}} (inkl. Rotation)
+  const raw = portPosRaw(comp), pos = {};
+  for (const [k, p] of Object.entries(raw)) pos[k] = rotXY(p.dx, p.dy, comp.rot);
+  return pos;
+}
+function portPosRaw(comp) {
+  const t = comp.type, names = portNames(comp), pos = {};
+  // Anschlusspunkte tangieren die Ventilsymbole außen (r=4.5 am Scheitel bei ±16)
+  if (t === "mixing_valve_3way") return {a:{dx:-21,dy:0}, b:{dx:0,dy:21}, ab:{dx:21,dy:0}};
+  if (t === "control_valve" || t === "balancing_valve")
+    return {in:{dx:-21,dy:0}, out:{dx:21,dy:0}};
+  if (t === "check_valve") return {in:{dx:-28,dy:0}, out:{dx:28,dy:0}};
+  if (t === "tee") return {a:{dx:-22,dy:0}, b:{dx:22,dy:0}, c:{dx:0,dy:22}};
+  if (t === "open_end") return {port:{dx:-20,dy:0}};
+  if (t === "inflow") return {port:{dx:20,dy:0}};
+  if (t === "outflow") return {port:{dx:-20,dy:0}};
+  if (t === "cap") return {port:{dx:-14,dy:0}};
+  if (t === "hydraulic_separator")
+    return {prim_in:{dx:-20,dy:-22}, sec_out:{dx:20,dy:-22},
+            sec_in:{dx:20,dy:22}, prim_out:{dx:-20,dy:22}};
+  if (t === "manifold") {
+    pos.main = {dx:-compWidth(comp)/2, dy:0};
+    const subs = names.filter(n => n !== "main");
+    subs.forEach((n,i) => pos[n] = {dx:-compWidth(comp)/2 + 34 + i*30, dy:-14});
+    return pos;
+  }
+  if (t === "buffer_storage") {
+    const subs = names, h = Math.max(50, subs.length*18 + 12);
+    subs.forEach((n,i) => pos[n] = {dx:-20, dy:-h/2 + 12 + i*18});
+    return pos;
+  }
+  return {in:{dx:-30,dy:0}, out:{dx:30,dy:0}};   // Zweitor-Standard
+}
+function compWidth(comp) {
+  if (comp.type === "manifold") return Math.max(96, 40 + portNames(comp).length*30);
+  return 60;
+}
+function absPort(comp, port) {
+  const p = portPos(comp)[port];
+  return p ? {x: comp.x + p.dx, y: comp.y + p.dy} : {x:comp.x, y:comp.y};
+}
+
+/* ---------- Symbole ------------------------------------------------------ */
+function symbol(comp) {
+  const t = comp.type;
+  const tri = (x,y,dx,dy1,dy2) => `<polygon class="sym" points="${x},${y+dy1} ${x},${y+dy2} ${x+dx},${y}"/>`;
+  switch (t) {
+    case "pump":
+      return `<line class="sym" x1="-30" y1="0" x2="-14" y2="0"/>
+              <line class="sym" x1="14" y1="0" x2="30" y2="0"/>
+              <circle class="sym" r="14"/>${tri(-7,0,13,-8,8)}`;
+    case "heat_pump": case "chiller":
+      return `<rect class="sym" x="-18" y="-16" width="36" height="32" rx="4"/>
+              <text x="0" y="4" text-anchor="middle" class="comp-label">${t==="heat_pump"?"WP":"KM"}</text>`;
+    case "ideal_storage": case "buffer_storage": {
+      const h = t==="buffer_storage" ? Math.max(50, portNames(comp).length*18+12) : 48;
+      return `<rect class="sym" x="-16" y="${-h/2}" width="32" height="${h}" rx="10"/>` +
+             (t==="ideal_storage" ? `<text x="0" y="4" text-anchor="middle" class="comp-label">ϑ=</text>` : "");
+    }
+    case "inflow":
+      return `<circle class="sym" r="13"/><line class="sym" x1="13" y1="0" x2="20" y2="0"/>
+              <text x="0" y="4" text-anchor="middle" class="comp-label">ϑ</text>
+              <polygon class="sym" points="-24,-5 -24,5 -15,0"/>`;
+    case "outflow":
+      return `<line class="sym" x1="-20" y1="0" x2="2" y2="0"/>
+              <polygon class="sym" points="2,-8 2,8 16,0"/>
+              <line class="sym" x1="18" y1="-9" x2="18" y2="9"/>`;
+    case "control_valve": case "balancing_valve":
+      return `${tri(-16,0,15,-9,9)}${tri(16,0,-15,-9,9)}` +
+             (t==="control_valve"
+              ? `<line class="sym" x1="0" y1="0" x2="0" y2="-16"/><rect class="sym" x="-7" y="-26" width="14" height="10"/>`
+              : `<line class="sym" x1="0" y1="0" x2="0" y2="-13"/><line class="sym" x1="-7" y1="-13" x2="7" y2="-13"/>`);
+    case "mixing_valve_3way":
+      return `${tri(-16,0,14,-8,8)}${tri(16,0,-14,-8,8)}
+              <polygon class="sym" points="-8,16 8,16 0,2"/>
+              <line class="sym" x1="0" y1="0" x2="0" y2="-12"/><rect class="sym" x="-6" y="-21" width="12" height="9"/>
+              <text x="-20" y="-11" class="comp-label">A</text><text x="10" y="-11" class="comp-label">AB</text>
+              <text x="11" y="22" class="comp-label">B</text>`;
+    case "check_valve":
+      return `<line class="sym" x1="-24" y1="0" x2="-10" y2="0"/>
+              <polygon class="sym" points="-10,-9 -10,9 8,0"/>
+              <line class="sym" x1="8" y1="-10" x2="8" y2="10" stroke-width="3"/>
+              <line class="sym" x1="8" y1="0" x2="24" y2="0"/>`;
+    case "flow_resistance":
+      return `<rect class="sym" x="-18" y="-8" width="36" height="16"/>
+              <line class="sym" x1="-18" y1="8" x2="18" y2="-8"/>`;
+    case "pipe":
+      return `<line class="sym" x1="-26" y1="0" x2="26" y2="0" stroke-width="4"/>
+              <line class="sym" x1="-14" y1="-6" x2="-14" y2="6"/><line class="sym" x1="14" y1="-6" x2="14" y2="6"/>`;
+    case "link":
+      return `<line class="sym" x1="-20" y1="0" x2="20" y2="0" stroke-dasharray="4 3"/>`;
+    case "radiator":
+      return `<rect class="sym" x="-20" y="-13" width="40" height="26"/>
+              <line class="sym" x1="-10" y1="-13" x2="-10" y2="13"/>
+              <line class="sym" x1="0" y1="-13" x2="0" y2="13"/>
+              <line class="sym" x1="10" y1="-13" x2="10" y2="13"/>`;
+    case "floor_heating":
+      return `<rect class="sym" x="-22" y="-14" width="44" height="28"/>
+              <polyline class="sym" points="-16,8 -16,-8 -8,-8 -8,8 0,8 0,-8 8,-8 8,8 16,8 16,-8" fill="none"/>`;
+    case "heating_coil": case "cooling_coil":
+      return `<rect class="sym" x="-16" y="-16" width="32" height="32"/>
+              <line class="sym" x1="-16" y1="16" x2="16" y2="-16"/>
+              <text x="0" y="28" text-anchor="middle" class="comp-label">${t==="heating_coil"?"HR":"KR"}</text>`;
+    case "hydraulic_separator":
+      return `<rect class="sym" x="-13" y="-28" width="26" height="56" rx="6"/>`;
+    case "manifold": {
+      const w = compWidth(comp);
+      return `<rect class="sym" x="${-w/2}" y="-7" width="${w}" height="14"/>`;
+    }
+    case "tee":
+      return `<line class="sym" x1="-22" y1="0" x2="22" y2="0" stroke-width="3"/>
+              <line class="sym" x1="0" y1="0" x2="0" y2="22" stroke-width="3"/>
+              <circle class="sym" r="4.5" fill="#222"/>`;
+    case "open_end":
+      return `<line class="sym" x1="-20" y1="0" x2="4" y2="0"/>
+              <polygon class="sym" points="4,-8 4,8 16,0"/>`;
+    case "cap":
+      return `<line class="sym" x1="-14" y1="0" x2="4" y2="0"/>
+              <line class="sym" x1="4" y1="-9" x2="4" y2="9" stroke-width="3.5"/>
+              <line class="sym" x1="9" y1="-6" x2="9" y2="6" stroke-width="2"/>`;
+    default:
+      return `<rect class="sym" x="-22" y="-14" width="44" height="28" rx="4"/>`;
+  }
+}
+
+/* ---------- Rendering ---------------------------------------------------- */
+const svg = document.getElementById("cv");
+const BASE_W = 4000, BASE_H = 2600;
+let zoom = 1.0;
+function setZoom(z, ev) {
+  z = Math.min(3.0, Math.max(0.25, z));
+  const wrap = document.getElementById("canvas-wrap");
+  const rect = wrap.getBoundingClientRect();
+  const cx = ev ? ev.clientX - rect.left : wrap.clientWidth / 2;
+  const cy = ev ? ev.clientY - rect.top : wrap.clientHeight / 2;
+  const mx = (wrap.scrollLeft + cx) / zoom;      // Modellpunkt unter dem Cursor
+  const my = (wrap.scrollTop + cy) / zoom;
+  zoom = z;
+  render();
+  wrap.scrollLeft = mx * zoom - cx;              // Punkt unter dem Cursor halten
+  wrap.scrollTop = my * zoom - cy;
+  document.getElementById("zoom-label").textContent = Math.round(zoom * 100) + " %";
+}
+function render() {
+  svg.setAttribute("width", BASE_W * zoom);
+  svg.setAttribute("height", BASE_H * zoom);
+  let out = `<defs><pattern id="grid" width="16" height="16" patternUnits="userSpaceOnUse">
+    <path d="M16 0H0V16" fill="none" stroke="#eee" stroke-width="1"/></pattern></defs>
+    <rect width="${BASE_W}" height="${BASE_H}" fill="url(#grid)"/>`;
+  for (const w of state.wires) {
+    const i = state.wires.indexOf(w);
+    const sel = (selection && selection.kind==="wire" && selection.ref===w) ? " selected" : "";
+    const d = wireD(w);
+    out += `<path class="wire ${w.color}${sel}" d="${d}"/>`;
+    out += `<path class="wire-hit" data-wire="${i}" d="${d}"/>`;
+    if (sel && w.pts)                              // Knickpunkt-Griffe der Auswahl
+      w.pts.forEach((p, k) => {
+        out += `<rect class="wp" data-wire="${i}" data-wp="${k}"
+                x="${p.x - 4}" y="${p.y - 4}" width="8" height="8"/>`;
+      });
+    if (sel && w.name) {                           // Name nur bei Selektion
+      const [pa, pb] = wireEnds(w);
+      const mid = w.pts && w.pts.length ? w.pts[Math.floor((w.pts.length - 1) / 2)]
+                                        : {x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2};
+      out += `<text class="comp-label" x="${mid.x}" y="${mid.y - 8}"
+              text-anchor="middle" fill="#0b7a3e">${esc(w.name)}</text>`;
+    }
+  }
+  if (wireDrag && wireDrag.moved) {                  // Gummiband beim Ziehen
+    const a = absPort(compById(wireDrag.from.comp), wireDrag.from.port);
+    const tx = wireDrag.hover ? wireDrag.hover.x : wireDrag.mx;
+    const ty = wireDrag.hover ? wireDrag.hover.y : wireDrag.my;
+    out += `<line x1="${a.x}" y1="${a.y}" x2="${tx}" y2="${ty}"
+            stroke="#0b7a3e" stroke-width="2.5" stroke-dasharray="6 4"/>`;
+  }
+  if (boxSel && boxSel.active) {
+    const x = Math.min(boxSel.x0, boxSel.x1), y = Math.min(boxSel.y0, boxSel.y1);
+    out += `<rect x="${x}" y="${y}" width="${Math.abs(boxSel.x1-boxSel.x0)}"
+            height="${Math.abs(boxSel.y1-boxSel.y0)}" fill="rgba(11,122,62,0.07)"
+            stroke="#0b7a3e" stroke-dasharray="5 4"/>`;
+  }
+  for (const c of state.comps) {
+    const sel = isSelectedComp(c) ? " selected" : "";
+    out += `<g class="comp${sel}" data-comp="${c.id}" transform="translate(${c.x},${c.y})">`;
+    // unsichtbare Trefferfläche (Symbole mit Lücken bleiben klick-/hoverbar)
+    const hw = Math.max(compWidth(c) / 2 + 6, 32);
+    out += `<rect x="${-hw}" y="-32" width="${2 * hw}" height="64" fill="transparent"/>`;
+    out += `<g transform="rotate(${c.rot || 0})">` + symbol(c) + `</g>`;
+    out += `<text class="comp-label" x="0" y="44" text-anchor="middle">${esc(c.name)}</text>`;
+    const rr = resultRows(c.name);
+    if (rr.length) {
+      const r0 = rr[0];
+      out += `<text class="comp-label" x="0" y="57" text-anchor="middle" fill="#0b7a3e">` +
+             `${fmt(r0.q_m3h)} m³/h · ${fmt(r0.t_in_C,1)}→${fmt(r0.t_out_C,1)} °C</text>`;
+    }
+    if (c.ts) out += `<text class="ts-badge" x="26" y="-26">TS ${esc(c.ts)}</text>`;
+    const pp = portPos(c);
+    for (const [pn, p] of Object.entries(pp)) {
+      const pend = ((pendingPort && pendingPort.comp===c.id && pendingPort.port===pn) ||
+                    (wireDrag && wireDrag.hover && wireDrag.hover.comp===c.id &&
+                     wireDrag.hover.port===pn)) ? " pending" : "";
+      out += `<circle class="port${pend}" data-comp="${c.id}" data-port="${pn}"
+              cx="${p.dx}" cy="${p.dy}" r="4.5"><title>${esc(c.name)}.${pn}</title></circle>`;
+    }
+    out += `</g>`;
+  }
+  svg.innerHTML = `<g transform="scale(${zoom})">` + out + `</g>`;
+  renderInspector();
+  autosave();
+}
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+function compById(id){ return state.comps.find(c => c.id === id); }
+function fmt(v, d){ return (v === undefined || v === null || isNaN(v)) ? "–"
+  : Number(v).toFixed(d === undefined ? 3 : d).replace(/\.?0+$/, m => m.includes(".") ? "" : m); }
+function resultRows(name){
+  if (!lastResult) return [];
+  return lastResult.components.filter(r => r.name === name || r.name.startsWith(name + ":"));
+}
+
+/* ---------- Rechnen (POST /solve, nur unter 'hydraulik serve') ------------ */
+async function solveNow() {
+  const bad = validate().filter(i => i.err);
+  if (bad.length && !confirm(`Es gibt ${bad.length} Fehler (siehe Prüfungen). Trotzdem rechnen?`)) return;
+  setStatus("Rechne …");
+  let data;
+  try {
+    const resp = await fetch("solve", {method: "POST", body: exportYAML(),
+                                       headers: {"Content-Type": "text/yaml"}});
+    data = await resp.json();
+  } catch (e) {
+    lastResult = null;
+    alert("Kein Rechen-Endpunkt erreichbar.\n\nDen Editor bitte über 'hydraulik serve' starten " +
+          "(dann läuft der Solver lokal mit), statt die HTML-Datei direkt zu öffnen.");
+    setStatus(""); render(); return;
+  }
+  if (!data.ok) {
+    lastResult = null;
+    document.getElementById("dlg-title").textContent = "Solver meldet Fehler";
+    dlgText.value = data.error;
+    document.getElementById("dlg-ok").style.display = "none";
+    document.getElementById("dlg-save").style.display = "none";
+    document.getElementById("dlg-file").style.display = "none";
+    dlg.showModal();
+    setStatus("Nicht gerechnet – Fehler siehe Dialog."); render(); return;
+  }
+  lastResult = data;
+  const extra = (data.notices || []).length ? `  (${data.notices.length} Hinweis(e))` : "";
+  setStatus(`Ergebnis: ${data.converged ? "konvergiert ✓" : "NICHT konvergiert!"} – ` +
+            `Energiebilanz ${fmt(data.residuals.energy_imbalance_W, 2)} W${extra}. ` +
+            `Werte per Mouse-Over an Komponenten und Leitungen.`);
+  render();
+}
+document.getElementById("btn-solve").onclick = solveNow;
+
+/* ---------- Ergebnis-Tooltips --------------------------------------------- */
+const tip = document.getElementById("tip");
+function tooltipText(target) {
+  if (!lastResult) return null;
+  const compEl = target.closest("g.comp");
+  if (compEl) {
+    const c = compById(Number(compEl.dataset.comp));
+    const rows = resultRows(c.name);
+    if (!rows.length) return null;
+    return rows.map(r => {
+      let s = `${r.name}:  V̇ = ${fmt(r.q_m3h)} m³/h   Δp = ${fmt(r.dp_kPa)} kPa\n` +
+              `   T ${fmt(r.t_in_C, 2)} → ${fmt(r.t_out_C, 2)} °C`;
+      if (Math.abs(r.q_dot_kW) > 1e-4) s += `   Q̇ = ${fmt(r.q_dot_kW)} kW`;
+      if (r.extras && r.extras.v_m_s !== undefined) s += `   v = ${fmt(r.extras.v_m_s, 2)} m/s`;
+      return s;
+    }).join("\n");
+  }
+  const wireEl = target.closest(".wire-hit, .port");
+  if (wireEl) {
+    let ref;
+    if (wireEl.classList.contains("port")) {
+      const c = compById(Number(wireEl.dataset.comp));
+      ref = `${c.name}.${wireEl.dataset.port}`;
+    } else {
+      const w = state.wires[Number(wireEl.dataset.wire)];
+      if (w.type === "conduit") {                    // eigene Ergebnisse der Leitung
+        const rows = resultRows(w.name);
+        if (rows.length) {
+          const r = rows[0];
+          let s = `${w.name}:  V̇ = ${fmt(r.q_m3h)} m³/h   Δp = ${fmt(r.dp_kPa)} kPa\n` +
+                  `   T ${fmt(r.t_in_C, 2)} → ${fmt(r.t_out_C, 2)} °C`;
+          if (Math.abs(r.q_dot_kW) > 1e-4) s += `   Q̇ = ${fmt(r.q_dot_kW)} kW`;
+          if (r.extras && r.extras.v_m_s !== undefined) s += `   v = ${fmt(r.extras.v_m_s, 2)} m/s`;
+          return s;
+        }
+      }
+      ref = portRef(w.a);
+    }
+    const idx = lastResult.port_map[ref];
+    if (idx === undefined) return null;
+    const nd = lastResult.nodes[idx];
+    return `Knoten (${ref}):  p = ${fmt(nd.p_kPa, 2)} kPa (ü)   T = ${fmt(nd.t_C, 2)} °C`;
+  }
+  return null;
+}
+document.getElementById("cv").addEventListener("mousemove", ev => {
+  const txt = tooltipText(ev.target);
+  if (txt) {
+    tip.textContent = txt;
+    tip.style.display = "block";
+    tip.style.left = Math.min(ev.clientX + 14, window.innerWidth - 400) + "px";
+    tip.style.top = (ev.clientY + 14) + "px";
+  } else tip.style.display = "none";
+});
+document.getElementById("cv").addEventListener("mouseleave", () => { tip.style.display = "none"; });
+
+/* ---------- Palette ------------------------------------------------------ */
+// 'open_end' ist durch inflow/outflow abgedeckt; 'conduit' wird nicht als
+// Kasten platziert, sondern entsteht beim Ziehen jeder Leitung (Linie).
+const PALETTE_HIDDEN = new Set(["open_end", "conduit"]);
+(function buildPalette(){
+  const groups = {};
+  for (const t of CATALOG.types) {
+    if (PALETTE_HIDDEN.has(t.type)) continue;
+    const m = META[t.type] || {de:t.type, grp:"Sonstige", pre:"k"};
+    (groups[m.grp] = groups[m.grp] || []).push({type:t.type, label:m.de, doc:t.doc});
+  }
+  let html = "";
+  for (const g of GRP_ORDER) {
+    if (!groups[g]) continue;
+    groups[g].sort((a, b) => a.label.localeCompare(b.label, "de"));
+    html += `<h3>${g}</h3>`;
+    if (g === "Leitungen & Widerstände")
+      html += `<div class="pal-note"><b>Verbindungsleitung:</b> einfach von
+        Port zu Port ziehen – jede gezogene Linie ist eine Leitung (Default
+        ideal; Linie anklicken für C-Wert/Rohrmodell, Farbe, Name).</div>`;
+    for (const it of groups[g])
+      html += `<button class="pal-item" data-type="${it.type}" title="${esc(it.doc)}">${esc(it.label)}</button>`;
+  }
+  document.getElementById("palette").innerHTML = html;
+  document.getElementById("palette").addEventListener("click", ev => {
+    const b = ev.target.closest(".pal-item");
+    if (!b) return;
+    placing = (placing === b.dataset.type) ? null : b.dataset.type;
+    document.querySelectorAll(".pal-item").forEach(x =>
+      x.classList.toggle("active", x.dataset.type === placing));
+    setStatus(placing ? `Platzieren: auf die Zeichenfläche klicken (${META[placing]?.de || placing})` : "");
+  });
+})();
+function setStatus(msg){ document.getElementById("status").textContent = msg ||
+  "Ports anklicken, um Leitungen zu ziehen. ESC bricht ab."; }
+
+/* ---------- Komponenten anlegen ------------------------------------------ */
+function nameTaken(name, self) {
+  return state.comps.some(c => c !== self && c.name === name) ||
+         state.wires.some(w => w !== self && w.name === name);
+}
+function freshName(type) {
+  const pre = (META[type] || {pre:"k"}).pre;
+  let i = 1;
+  while (nameTaken(pre + i)) i++;
+  return pre + i;
+}
+function addComp(type, x, y) {
+  const c = {id: idSeq++, type, name: freshName(type), ts: "", x: snap(x), y: snap(y),
+             rot: 0, params: {}};
+  invalidate();
+  state.comps.push(c);
+  selection = {kind:"comp", ref:c};
+  commit();
+  render();
+  return c;
+}
+const snap = v => Math.round(v / 8) * 8;
+
+/* ---------- Canvas-Interaktion ------------------------------------------- */
+function addWire(a, b) {
+  if (a.comp === b.comp && a.port === b.port) return;
+  invalidate();
+  // Jede gezeichnete Linie ist eine Verbindungsleitung (Default: ideal)
+  state.wires.push({type: "conduit", name: freshName("conduit"), ts: "", params: {},
+                    a: {comp: a.comp, port: a.port}, b: {comp: b.comp, port: b.port},
+                    color: "n"});
+  commit();
+}
+svg.addEventListener("mousedown", ev => {
+  const pt = svgPoint(ev);
+  const portEl = ev.target.closest(".port");
+  if (portEl) {
+    // Ziehen ODER Klick-Klick – entschieden wird beim mouseup
+    wireDrag = {from: {comp: Number(portEl.dataset.comp), port: portEl.dataset.port},
+                sx: pt.x, sy: pt.y, mx: pt.x, my: pt.y, moved: false, hover: null};
+    ev.preventDefault(); ev.stopPropagation(); return;
+  }
+  // Doppelklick-Erkennung selbst (das Re-Rendering nach dem ersten Klick
+  // ersetzt die SVG-Elemente – das native dblclick geht dabei verloren)
+  const wpEl = ev.target.closest(".wp");
+  if (wpEl) {
+    const key = wpEl.dataset.wire + "/" + wpEl.dataset.wp;
+    if (dblTrack.key === "wp:" + key && ev.timeStamp - dblTrack.t < 450) {   // Knick entfernen
+      const w = state.wires[Number(wpEl.dataset.wire)];
+      w.pts.splice(Number(wpEl.dataset.wp), 1);
+      if (!w.pts.length) delete w.pts;
+      dblTrack = {key: "", t: 0};
+      commit(); render(); return;
+    }
+    dblTrack = {key: "wp:" + key, t: ev.timeStamp};
+    wpDrag = {w: state.wires[Number(wpEl.dataset.wire)], idx: Number(wpEl.dataset.wp), moved: false};
+    ev.stopPropagation(); return;
+  }
+  const wireEl = ev.target.closest(".wire-hit");
+  if (wireEl) {
+    const idx = Number(wireEl.dataset.wire);
+    const w = state.wires[idx];
+    if (dblTrack.key === "wire:" + idx && ev.timeStamp - dblTrack.t < 450) { // Knick einfügen
+      insertWaypoint(w, pt);
+      selection = {kind: "wire", ref: w};
+      dblTrack = {key: "", t: 0};
+      commit(); render(); return;
+    }
+    dblTrack = {key: "wire:" + idx, t: ev.timeStamp};
+    selection = {kind: "wire", ref: w};
+    render(); return;
+  }
+  dblTrack = {key: "", t: 0};
+  const compEl = ev.target.closest("g.comp");
+  if (compEl) {
+    const c = compById(Number(compEl.dataset.comp));
+    if (ev.shiftKey) {                       // Auswahl ergänzen/entfernen
+      const ids = selection && selection.kind === "multi" ? new Set(selection.ids)
+                : new Set(selection && selection.kind === "comp" ? [selection.ref.id] : []);
+      ids.has(c.id) ? ids.delete(c.id) : ids.add(c.id);
+      selection = ids.size ? {kind: "multi", ids} : null;
+      render(); return;
+    }
+    if (!isSelectedComp(c)) selection = {kind: "comp", ref: c};
+    // Knickpunkte interner Leitungen wandern mit der Gruppe mit
+    const selIds = new Set(selectedComps().map(sc => sc.id));
+    const wpts = [];
+    for (const w of state.wires)
+      if (w.pts && selIds.has(w.a.comp) && selIds.has(w.b.comp))
+        for (const p of w.pts) wpts.push({p, ox: pt.x - p.x, oy: pt.y - p.y});
+    drag = {items: selectedComps().map(sc => ({c: sc, ox: pt.x - sc.x, oy: pt.y - sc.y})),
+            wpts, moved: false};
+    render(); return;
+  }
+  if (placing) { addComp(placing, pt.x, pt.y); return; }
+  boxSel = {x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y, active: false};   // Rechteck oder Klick
+});
+svg.addEventListener("mousemove", ev => {
+  const pt = svgPoint(ev);
+  if (wpDrag) {
+    const p = wpDrag.w.pts[wpDrag.idx];
+    p.x = snap(pt.x); p.y = snap(pt.y);
+    wpDrag.moved = true;
+    render(); return;
+  }
+  if (wireDrag) {
+    if (Math.hypot(pt.x - wireDrag.sx, pt.y - wireDrag.sy) > 5) wireDrag.moved = true;
+    wireDrag.mx = pt.x; wireDrag.my = pt.y;
+    wireDrag.hover = portAt(pt.x, pt.y, wireDrag.from);
+    if (wireDrag.moved) render();
+    return;
+  }
+  if (boxSel) {
+    boxSel.x1 = pt.x; boxSel.y1 = pt.y;
+    if (Math.hypot(pt.x - boxSel.x0, pt.y - boxSel.y0) > 5) boxSel.active = true;
+    if (boxSel.active) render();
+    return;
+  }
+  if (!drag) return;
+  for (const it of drag.items) { it.c.x = snap(pt.x - it.ox); it.c.y = snap(pt.y - it.oy); }
+  for (const it of drag.wpts) { it.p.x = snap(pt.x - it.ox); it.p.y = snap(pt.y - it.oy); }
+  drag.moved = true;
+  render();
+});
+window.addEventListener("mouseup", () => {
+  if (wpDrag) { if (wpDrag.moved) commit(); wpDrag = null; }
+  if (drag) { if (drag.moved) commit(); drag = null; }
+  if (boxSel) {
+    const bs = boxSel; boxSel = null;
+    if (bs.active) {                              // Rechteck: alle Komponenten darin
+      const x0 = Math.min(bs.x0, bs.x1), x1 = Math.max(bs.x0, bs.x1);
+      const y0 = Math.min(bs.y0, bs.y1), y1 = Math.max(bs.y0, bs.y1);
+      const ids = new Set(state.comps
+        .filter(c => c.x >= x0 && c.x <= x1 && c.y >= y0 && c.y <= y1)
+        .map(c => c.id));
+      selection = ids.size ? {kind: "multi", ids} : null;
+    } else { selection = null; pendingPort = null; }   // einfacher Klick ins Leere
+    render();
+  }
+  if (!wireDrag) return;
+  const wd = wireDrag; wireDrag = null;
+  if (wd.moved) {                                    // gezogen: auf Zielport einrasten
+    if (wd.hover) addWire(wd.from, wd.hover);
+    pendingPort = null; setStatus("");
+  } else if (pendingPort) {                          // zweiter Klick
+    if (!(pendingPort.comp === wd.from.comp && pendingPort.port === wd.from.port))
+      addWire(pendingPort, wd.from);
+    pendingPort = null; setStatus("");
+  } else {                                           // erster Klick
+    pendingPort = {...wd.from};
+    setStatus("Zum Zielport ziehen oder zweiten Port anklicken … (ESC bricht ab)");
+  }
+  render();
+});
+window.addEventListener("keydown", ev => {
+  if (ev.key === "Escape") { placing = null; pendingPort = null; wireDrag = null; boxSel = null; wpDrag = null;
+    document.querySelectorAll(".pal-item").forEach(x => x.classList.remove("active"));
+    setStatus(""); render(); }
+  const inForm = (ev.target instanceof HTMLInputElement) ||
+                 (ev.target instanceof HTMLTextAreaElement) ||
+                 (ev.target instanceof HTMLSelectElement);
+  if ((ev.key === "Delete" || ev.key === "Backspace") && !inForm) {
+    deleteSelection(); ev.preventDefault();
+  }
+  if ((ev.key === "r" || ev.key === "R") && !inForm) rotateSelection();
+  if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "z") {
+    ev.shiftKey ? redo() : undo(); ev.preventDefault();
+  }
+  if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "y") {
+    redo(); ev.preventDefault();
+  }
+  if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "c" &&
+      selection && selection.kind !== "wire") { copySelection(); ev.preventDefault(); }
+  if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "v") {
+    pasteClipboard(); ev.preventDefault();
+  }
+  if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "d") {
+    copySelection(); pasteClipboard(); ev.preventDefault();
+  }
+});
+document.getElementById("btn-copy").onclick = copySelection;
+document.getElementById("btn-paste").onclick = pasteClipboard;
+document.getElementById("btn-undo").onclick = undo;
+document.getElementById("btn-redo").onclick = redo;
+function rotateSelection() {
+  if (selection && selection.kind === "comp") {
+    selection.ref.rot = ((selection.ref.rot || 0) + 90) % 360;
+    commit();
+    render();          // reine Darstellung – Ergebnisse bleiben gültig
+  }
+}
+function svgPoint(ev) {
+  // Bounding-Rect des SVG folgt bereits dem Scroll → Zoomfaktor herausrechnen
+  const r = svg.getBoundingClientRect();
+  return {x: (ev.clientX - r.left) / zoom, y: (ev.clientY - r.top) / zoom};
+}
+document.getElementById("canvas-wrap").addEventListener("wheel", ev => {
+  if (!(ev.ctrlKey || ev.metaKey)) return;       // normales Rad = Scrollen
+  ev.preventDefault();
+  setZoom(zoom * (ev.deltaY < 0 ? 1.15 : 1 / 1.15), ev);
+}, {passive: false});
+document.getElementById("btn-zoom-in").onclick = () => setZoom(zoom * 1.25);
+document.getElementById("btn-zoom-out").onclick = () => setZoom(zoom / 1.25);
+document.getElementById("btn-zoom-reset").onclick = () => setZoom(1.0);
+function deleteSelection() {
+  if (!selection) return;
+  invalidate();
+  if (selection.kind === "wire") {
+    state.wires = state.wires.filter(w => w !== selection.ref);
+  } else {
+    const ids = new Set(selectedComps().map(c => c.id));
+    state.wires = state.wires.filter(w => !ids.has(w.a.comp) && !ids.has(w.b.comp));
+    state.comps = state.comps.filter(c => !ids.has(c.id));
+  }
+  selection = null; commit(); render();
+}
+document.getElementById("btn-del").onclick = deleteSelection;
+
+/* ---------- Inspector ----------------------------------------------------- */
+function renderInspector() {
+  const el = document.getElementById("inspector");
+  let html = fluidForm();
+  if (selection && selection.kind === "comp") html += compForm(selection.ref);
+  else if (selection && selection.kind === "wire") html += wireForm(selection.ref);
+  else if (selection && selection.kind === "multi")
+    html += `<h3>Auswahl</h3><div class="hint">${selection.ids.size} Komponenten ausgewählt.<br>
+      Ziehen verschiebt gemeinsam · Strg+C kopiert (inkl. interner Leitungen) ·
+      Strg+V fügt ein · Strg+D dupliziert · Entf löscht · Shift+Klick ergänzt/entfernt.</div>`;
+  html += `<h3>Prüfungen <span class="hint">(gesamte Zeichnung – klicken wählt aus)</span></h3>` +
+          `<ul id="issues">` +
+          validate().map(i => `<li class="${i.err?'err':''}"` +
+            (i.comp !== undefined ? ` data-focus="${i.comp}"` : "") +
+            `>${esc(i.msg)}</li>`).join("") +
+          `</ul>`;
+  el.innerHTML = html;
+  el.querySelectorAll("#issues li[data-focus]").forEach(li => {
+    li.onclick = () => {
+      const c = compById(Number(li.dataset.focus));
+      if (c) {
+        selection = {kind: "comp", ref: c};
+        const wrap = document.getElementById("canvas-wrap");
+        wrap.scrollTo({left: Math.max(0, c.x * zoom - wrap.clientWidth / 2),
+                       top: Math.max(0, c.y * zoom - wrap.clientHeight / 2), behavior: "smooth"});
+        render();
+      }
+    };
+  });
+  bindInspector();
+}
+function fluidForm() {
+  const f = state.fluid;
+  return `<h3>Fluid</h3>
+    <div class="field"><label>Vorgabe</label>
+      <select id="fl-mode"><option value="preset"${f.mode==="preset"?" selected":""}>Wasser (Preset)</option>
+      <option value="custom"${f.mode==="custom"?" selected":""}>ρ/μ/cp direkt</option></select></div>` +
+    (f.mode === "preset"
+      ? `<div class="field"><label>Mitteltemperatur t_C [°C]</label>
+         <input type="number" id="fl-t" value="${f.t_C}"></div>`
+      : `<div class="field"><label>ρ [kg/m³]</label><input type="number" id="fl-rho" value="${f.rho}"></div>
+         <div class="field"><label>μ [Pa·s]</label><input type="number" id="fl-mu" value="${f.mu}" step="0.0001"></div>
+         <div class="field"><label>cp [J/(kg·K)]</label><input type="number" id="fl-cp" value="${f.cp}"></div>`);
+}
+function compForm(c) {
+  const t = TYPES[c.type];
+  let html = `<h3>${esc((META[c.type]||{de:c.type}).de)} <span class="hint">(${c.type})</span></h3>
+    <div class="field"><label>Name</label><input type="text" id="c-name" value="${esc(c.name)}"></div>
+    <div class="field"><label>Ausrichtung: ${c.rot || 0}°</label>
+      <button id="c-rot">↻ 90° drehen (Taste r)</button></div>
+    <div class="field"><label>Teilstrecke (ts, optional)</label>
+      <input type="text" id="c-ts" value="${esc(c.ts)}"></div>`;
+  for (const p of t.params) html += paramField(c, p);
+  return html;
+}
+function paramField(c, p) {
+  const req = p.required ? ` <span class="req">*</span>` : "";
+  const help = p.help ? ` title="${esc(p.help)}"` : "";
+  if (p.choices) {
+    const cur = c.params[p.name];
+    return `<div class="field"${help}><label>${p.name}${req}</label>
+      <select data-param="${p.name}" data-kind="choice">
+      <option value=""></option>` +
+      p.choices.map(ch => `<option${cur===ch?" selected":""}>${ch}</option>`).join("") +
+      `</select></div>`;
+  }
+  if (p.group === "bool") {
+    return `<div class="field"${help}><label><input type="checkbox" data-param="${p.name}"
+      data-kind="bool"${c.params[p.name] ? " checked" : ""}> ${p.name}${req}</label></div>`;
+  }
+  if (p.group === "int" || p.group === "none") {
+    const cur = firstKeyValue(c, [p.name]);
+    const ph = p.default != null ? ` placeholder="${p.default}"` : "";
+    const lim = (p.minv != null ? ` min="${p.minv}"` : "") +
+                (p.maxv != null ? ` max="${p.maxv}"` : "");
+    return `<div class="field"${help}><label>${p.name}${req}` +
+      (p.minv != null || p.maxv != null
+        ? ` <span class="hint">[${p.minv ?? ""}…${p.maxv ?? ""}]</span>` : "") +
+      `</label><input type="number" data-param="${p.name}" data-kind="num" data-key="${p.name}"
+      ${p.group==="int"?'step="1"':""}${lim} value="${cur ?? ""}"${ph}></div>`;
+  }
+  // Einheitengruppe: Zahl + Suffixwahl (Wahl bleibt auch ohne Wert erhalten)
+  const keys = p.keys;
+  const used = keys.find(k => c.params[k] !== undefined) ||
+               (c.suffix && c.suffix[p.name]) || keys[0];
+  const factors = CATALOG.units[p.group];
+  const sfx = used.slice(p.name.length + 1);
+  const ph = p.default != null ? ` placeholder="${round6(p.default / factors[sfx])}"` : "";
+  return `<div class="field"${help}><label>${p.name}${req} <span class="hint">[${p.group}]</span></label>
+    <div class="unitrow">
+      <input type="number" step="any" data-param="${p.name}" data-kind="unit" data-key="${used}"
+             value="${c.params[used] ?? ""}"${ph}>
+      <select data-param="${p.name}" data-kind="suffix" data-base="${p.name}">` +
+      keys.map(k => `<option value="${k}"${k===used?" selected":""}>${k.slice(p.name.length+1)}</option>`).join("") +
+      `</select></div></div>`;
+}
+function firstKeyValue(c, keys){ for (const k of keys) if (c.params[k] !== undefined) return c.params[k]; }
+function round6(v){ return Math.round(v * 1e6) / 1e6; }
+function wireForm(w) {
+  const label = wl => ({vl:"Heizung Vorlauf (rot)", rl:"Heizung Rücklauf (blau)",
+                        kvl:"Kälte Vorlauf (hellgrün)", krl:"Kälte Rücklauf (dunkelgrün)",
+                        n:"neutral"})[wl];
+  let html;
+  if (w.type === "conduit") {
+    html = `<h3>Verbindungsleitung <span class="hint">(conduit)</span></h3>
+      <div class="hint">${esc(portRef(w.a))} → ${esc(portRef(w.b))}<br>
+      Ohne Hydraulik-Angabe: ideale Verbindung. Alternativ C-Wert,
+      Auslegungspunkt (dp + q) oder Rohrmodell (length + d_inner …).</div>
+      <div class="field"><label>Name</label><input type="text" id="c-name" value="${esc(w.name)}"></div>
+      <div class="field"><label>Teilstrecke (ts, optional)</label>
+        <input type="text" id="c-ts" value="${esc(w.ts || "")}"></div>`;
+  } else {
+    html = `<h3>Einfache Verbindung <span class="hint">(aus Import; neu gezeichnete
+      Linien sind Verbindungsleitungen)</span></h3>
+      <div class="hint">${esc(portRef(w.a))} ↔ ${esc(portRef(w.b))}</div>`;
+  }
+  html += `<div class="field"><label>Darstellung</label>
+      <select id="w-color">` +
+      ["vl","rl","kvl","krl","n"].map(cl => `<option value="${cl}"${w.color===cl?" selected":""}>${label(cl)}</option>`).join("") +
+      `</select></div>`;
+  if (w.type === "conduit")
+    for (const p of TYPES.conduit.params) html += paramField(w, p);
+  html += `<div class="hint">Leitungsführung: Doppelklick auf die Leitung setzt einen
+      Knickpunkt (Umlenkung); Griffe ziehen zum Verschieben; Doppelklick auf
+      einen Griff entfernt ihn.</div>` +
+    (w.pts && w.pts.length
+      ? `<div class="field"><button id="w-clearpts">Alle ${w.pts.length} Knickpunkte entfernen</button></div>`
+      : "");
+  return html;
+}
+function portRef(end){ const c = compById(end.comp); return `${c ? c.name : "?"}.${end.port}`; }
+
+function bindInspector() {
+  const el = document.getElementById("inspector");
+  const flMode = el.querySelector("#fl-mode");
+  if (flMode) flMode.onchange = () => { invalidate(); state.fluid.mode = flMode.value; commit(); render(); };
+  for (const [id, key] of [["fl-t","t_C"],["fl-rho","rho"],["fl-mu","mu"],["fl-cp","cp"]]) {
+    const inp = el.querySelector("#" + id);
+    if (inp) inp.onchange = () => { invalidate(); state.fluid[key] = Number(inp.value); commit(); autosave(); };
+  }
+  const wireSel = selection && selection.kind === "wire" ? selection.ref : null;
+  if (wireSel) {
+    const wc = el.querySelector("#w-color");
+    if (wc) wc.onchange = () => { wireSel.color = wc.value; commit(); render(); };
+    const cp = el.querySelector("#w-clearpts");
+    if (cp) cp.onclick = () => { delete wireSel.pts; commit(); render(); };
+  }
+  // Ziel für Name/ts/Parameter: Komponente ODER Verbindungsleitung
+  const c = selection && selection.kind === "comp" ? selection.ref
+          : (wireSel && wireSel.type === "conduit" ? wireSel : null);
+  if (!c) return;
+  const nm = el.querySelector("#c-name");
+  nm.onchange = () => {
+    const v = nm.value.trim();
+    if (!v || nameTaken(v, c)) { nm.value = c.name; return; }
+    invalidate(); c.name = v; commit(); render();
+  };
+  el.querySelector("#c-ts").onchange = ev => { invalidate(); c.ts = ev.target.value.trim(); commit(); render(); };
+  const rotBtn = el.querySelector("#c-rot");
+  if (rotBtn) rotBtn.onclick = rotateSelection;
+  el.querySelectorAll("[data-param]").forEach(inp => {
+    inp.onchange = () => {
+      invalidate();
+      const kind = inp.dataset.kind, pname = inp.dataset.param;
+      if (kind === "choice") { setOrDelete(c.params, pname, inp.value || undefined); }
+      else if (kind === "bool") { c.params[pname] = inp.checked; }
+      else if (kind === "num") { setOrDelete(c.params, pname, inp.value === "" ? undefined : Number(inp.value)); }
+      else if (kind === "unit") { setOrDelete(c.params, inp.dataset.key, inp.value === "" ? undefined : Number(inp.value)); }
+      else if (kind === "suffix") {
+        const t = TYPES[c.type], p = t.params.find(x => x.name === pname);
+        const factors = CATALOG.units[p.group];
+        const oldKey = p.keys.find(k => c.params[k] !== undefined);
+        const newKey = inp.value;
+        c.suffix = c.suffix || {};
+        c.suffix[pname] = newKey;
+        if (oldKey && oldKey !== newKey) {   // Wert in neue Einheit umrechnen
+          const si = c.params[oldKey] * factors[oldKey.slice(pname.length+1)];
+          delete c.params[oldKey];
+          c.params[newKey] = round6(si / factors[newKey.slice(pname.length+1)]);
+        }
+      }
+      commit();
+      render();
+    };
+  });
+}
+function setOrDelete(obj, key, val){ if (val === undefined) delete obj[key]; else obj[key] = val; }
+
+/* ---------- Validierung --------------------------------------------------- */
+function validate() {
+  const issues = [];
+  for (const c of state.comps) {
+    const t = TYPES[c.type];
+    for (const p of t.params) {
+      if (!p.required) continue;
+      const has = p.choices || p.group==="bool" || p.group==="int" || p.group==="none"
+        ? c.params[p.name] !== undefined && c.params[p.name] !== ""
+        : p.keys.some(k => c.params[k] !== undefined);
+      if (!has) issues.push({err:true, comp:c.id, msg:`${c.name}: Pflichtparameter '${p.name}' fehlt`});
+    }
+    // Bereichsprüfung (minv/maxv sind SI-Werte; Eingabe über Suffixfaktor umrechnen)
+    for (const p of t.params) {
+      if (p.minv == null && p.maxv == null) continue;
+      let si = null;
+      if (p.group === "int" || p.group === "none") si = c.params[p.name];
+      else if (!p.choices && p.group !== "bool") {
+        const k = p.keys.find(k => c.params[k] !== undefined);
+        if (k !== undefined)
+          si = c.params[k] * CATALOG.units[p.group][k.slice(p.name.length + 1)];
+      }
+      if (si == null || si === "") continue;
+      if (p.minv != null && si < p.minv)
+        issues.push({err:true, comp:c.id,
+          msg:`${c.name}: '${p.name}' unter Minimum (${p.minv} SI)`});
+      if (p.maxv != null && si > p.maxv)
+        issues.push({err:true, comp:c.id,
+          msg:`${c.name}: '${p.name}' über Maximum (${p.maxv} SI) – z.B. Ventilstellung 0…1, nicht %`});
+    }
+    for (const pn of portNames(c)) {
+      const used = state.wires.some(w =>
+        (w.a.comp===c.id && w.a.port===pn) || (w.b.comp===c.id && w.b.port===pn));
+      if (!used) issues.push({err:false, comp:c.id, msg:`${c.name}.${pn} ist unverbunden`});
+    }
+  }
+  // Verbindungsleitungen: Bereichs-/Pflichtprüfung ihrer Parameter
+  for (const w of state.wires) {
+    if (w.type !== "conduit") continue;
+    for (const p of TYPES.conduit.params) {
+      if (p.minv == null && p.maxv == null) continue;
+      const k = p.keys.find(k => (w.params || {})[k] !== undefined);
+      if (k === undefined) continue;
+      const si = w.params[k] * (CATALOG.units[p.group] ? CATALOG.units[p.group][k.slice(p.name.length + 1)] : 1);
+      if (p.minv != null && si < p.minv)
+        issues.push({err:true, msg:`${w.name}: '${p.name}' unter Minimum (${p.minv} SI)`});
+      if (p.maxv != null && si > p.maxv)
+        issues.push({err:true, msg:`${w.name}: '${p.name}' über Maximum (${p.maxv} SI)`});
+    }
+  }
+  if (!state.comps.length) issues.push({err:false, msg:"Noch keine Komponenten gezeichnet."});
+  return issues;
+}
+
+/* ---------- YAML Export --------------------------------------------------- */
+function yamlScalar(v) {
+  if (typeof v === "number") return String(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  const s = String(v);
+  return /^[A-Za-z0-9_.\-]+$/.test(s) ? s : JSON.stringify(s);
+}
+function exportYAML() {
+  const f = state.fluid;
+  let y = f.mode === "preset"
+    ? `fluid: {preset: water, t_C: ${f.t_C}}\n`
+    : `fluid: {rho: ${f.rho}, mu: ${f.mu}, cp: ${f.cp}}\n`;
+  y += "\ncomponents:\n";
+  const compEntry = c => {
+    const parts = [`type: ${c.type}`];
+    for (const [k, v] of Object.entries(c.params || {})) parts.push(`${k}: ${yamlScalar(v)}`);
+    if (c.ts) parts.push(`ts: ${JSON.stringify(c.ts)}`);
+    return `  ${c.name}: {${parts.join(", ")}}\n`;
+  };
+  for (const c of state.comps) y += compEntry(c);
+  for (const w of state.wires) if (w.type === "conduit") y += compEntry(w);
+  y += "\nconnections:\n";
+  for (const w of state.wires) {
+    if (w.type === "conduit") {
+      y += `  - [${portRef(w.a)}, ${w.name}.in]\n`;
+      y += `  - [${w.name}.out, ${portRef(w.b)}]\n`;
+    } else y += `  - [${portRef(w.a)}, ${portRef(w.b)}]\n`;
+  }
+  y += "\nlayout:\n  components:\n";
+  for (const c of state.comps)
+    y += `    ${c.name}: {x: ${c.x}, y: ${c.y}${c.rot ? `, rot: ${c.rot}` : ""}}\n`;
+  y += "  wires:\n";
+  for (const w of state.wires) {
+    const pts = w.pts && w.pts.length
+      ? `, pts: ${JSON.stringify(w.pts.map(p => [p.x, p.y]))}` : "";
+    const nm = w.type === "conduit" ? `name: ${w.name}, ` : "";
+    y += `    - {${nm}a: ${portRef(w.a)}, b: ${portRef(w.b)}, color: ${w.color}${pts}}\n`;
+  }
+  return y;
+}
+
+/* ---------- YAML Import (Subset-Parser für das Editor-/Beispielformat) ---- */
+function splitTop(s, sep) {                       // Kommasplit auf oberster Ebene
+  const out = []; let depth = 0, cur = "", q = null;
+  for (const ch of s) {
+    if (q) { cur += ch; if (ch === q) q = null; continue; }
+    if (ch === '"' || ch === "'") { q = ch; cur += ch; continue; }
+    if (ch === "{" || ch === "[") depth++;
+    if (ch === "}" || ch === "]") depth--;
+    if (ch === sep && depth === 0) { out.push(cur); cur = ""; } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+}
+function parseValue(s) {
+  s = s.trim();
+  if (/^".*"$/.test(s) || /^'.*'$/.test(s)) return s.slice(1, -1);
+  if (s === "true") return true;
+  if (s === "false") return false;
+  if (s !== "" && !isNaN(Number(s))) return Number(s);
+  return s;
+}
+function parseInlineMap(s) {
+  s = s.trim();
+  if (s.startsWith("{")) s = s.slice(1, -1);
+  const obj = {};
+  for (const part of splitTop(s, ",")) {
+    const i = part.indexOf(":");
+    if (i < 0) continue;
+    obj[part.slice(0, i).trim()] = parseValue(part.slice(i + 1));
+  }
+  return obj;
+}
+function parseInlineList(s) {
+  s = s.trim();
+  if (s.startsWith("[")) s = s.slice(1, -1);
+  return splitTop(s, ",").map(x => String(parseValue(x)));
+}
+function importYAML(text) {
+  const doc = {fluid: null, components: {}, connections: [], layout: {components: {}, wires: []}};
+  let section = null, sub = null, buf = null;
+  const flush = () => {
+    if (!buf) return;
+    const i = buf.text.indexOf(":");
+    const name = buf.text.slice(0, i).trim();
+    const val = buf.text.slice(i + 1).trim();
+    if (buf.target === "components") doc.components[name] = parseInlineMap(val);
+    else if (buf.target === "layout-components") doc.layout.components[name] = parseInlineMap(val);
+    buf = null;
+  };
+  for (let raw of text.split(/\r?\n/)) {
+    const noComment = raw.replace(/(^|\s)#.*$/, "");
+    if (!noComment.trim()) continue;
+    const indent = noComment.match(/^ */)[0].length;
+    const line = noComment.trim();
+    if (buf) {                                   // mehrzeilige Inline-Map fortsetzen
+      buf.text += " " + line;
+      if (splitTop(buf.text.slice(buf.text.indexOf(":") + 1), ",") &&
+          (buf.text.match(/{/g) || []).length === (buf.text.match(/}/g) || []).length) flush();
+      continue;
+    }
+    if (indent === 0) {
+      const m = line.match(/^(\w+):\s*(.*)$/);
+      if (!m) continue;
+      section = m[1]; sub = null;
+      if (section === "fluid" && m[2]) doc.fluid = parseInlineMap(m[2]);
+      continue;
+    }
+    if (section === "components") {
+      buf = {target: "components", text: line};
+      if ((line.match(/{/g) || []).length === (line.match(/}/g) || []).length) flush();
+    } else if (section === "connections" && line.startsWith("-")) {
+      doc.connections.push(parseInlineList(line.replace(/^-\s*/, "")));
+    } else if (section === "layout") {
+      if (/^components:/.test(line)) { sub = "components"; }
+      else if (/^wires:/.test(line)) { sub = "wires"; }
+      else if (sub === "components") {
+        buf = {target: "layout-components", text: line};
+        if ((line.match(/{/g) || []).length === (line.match(/}/g) || []).length) flush();
+      } else if (sub === "wires" && line.startsWith("-")) {
+        doc.layout.wires.push(parseInlineMap(line.replace(/^-\s*/, "")));
+      }
+    }
+  }
+  flush();
+  loadDoc(doc);
+}
+function loadDoc(doc) {
+  state = {fluid: {mode: "preset", t_C: 50, rho: 998, mu: 0.001, cp: 4180}, comps: [], wires: []};
+  idSeq = 1; selection = null; pendingPort = null; lastResult = null;
+  if (doc.fluid) {
+    if (doc.fluid.preset) state.fluid = {mode:"preset", t_C: doc.fluid.t_C ?? 50,
+                                          rho:998, mu:0.001, cp:4180};
+    else state.fluid = {mode:"custom", t_C:50, rho:doc.fluid.rho ?? 998,
+                        mu:doc.fluid.mu ?? 0.001, cp:doc.fluid.cp ?? 4180};
+  }
+  // Verbindungsleitungen (conduit) werden als Linien rekonstruiert, nicht platziert
+  const conduitNames = new Set(Object.keys(doc.components)
+    .filter(n => doc.components[n].type === "conduit"));
+  const boxNames = Object.keys(doc.components).filter(n => !conduitNames.has(n));
+  const grid = Math.ceil(Math.sqrt(Math.max(boxNames.length, 1)));
+  boxNames.forEach((name, i) => {
+    const spec = doc.components[name];
+    const type = spec.type;
+    if (!TYPES[type]) { alert(`Unbekannter Typ '${type}' bei '${name}' – übersprungen.`); return; }
+    const c = {id: idSeq++, type, name, ts: spec.ts !== undefined ? String(spec.ts) : "",
+               x: 120 + (i % grid) * 160, y: 100 + Math.floor(i / grid) * 140, rot: 0, params: {}};
+    for (const [k, v] of Object.entries(spec)) if (k !== "type" && k !== "ts") c.params[k] = v;
+    const lay = doc.layout.components[name];
+    if (lay && lay.x !== undefined) { c.x = lay.x; c.y = lay.y; c.rot = lay.rot || 0; }
+    state.comps.push(c);
+  });
+  const wireMeta = {};
+  for (const w of doc.layout.wires) {
+    if (w.name) wireMeta["name:" + w.name] = w;
+    wireMeta[`${w.a}|${w.b}`] = w;
+  }
+  const applyMeta = (wire, meta) => {
+    wire.color = meta.color || "n";
+    if (meta.pts) {
+      try {
+        const arr = typeof meta.pts === "string" ? JSON.parse(meta.pts) : meta.pts;
+        wire.pts = arr.map(xy => ({x: xy[0], y: xy[1]}));
+      } catch (e) { /* Knickpunkte sind rein visuell – notfalls ignorieren */ }
+    }
+  };
+  // 1. Verbindungsleitungen: Endpunkte über <name>.in / <name>.out finden
+  const consumed = new Set();
+  for (const name of conduitNames) {
+    let aRef = null, bRef = null;
+    doc.connections.forEach((conn, k) => {
+      if (conn.includes(name + ".in")) { aRef = conn.find(r => r !== name + ".in"); consumed.add(k); }
+      if (conn.includes(name + ".out")) { bRef = conn.find(r => r !== name + ".out"); consumed.add(k); }
+    });
+    const a = aRef && parseRef(aRef), b = bRef && parseRef(bRef);
+    if (!a || !b) { alert(`Verbindungsleitung '${name}': Endpunkte nicht gefunden – übersprungen.`); continue; }
+    const spec = doc.components[name];
+    const wire = {type: "conduit", name, ts: spec.ts !== undefined ? String(spec.ts) : "",
+                  params: {}, a, b, color: "n"};
+    for (const [k, v] of Object.entries(spec)) if (k !== "type" && k !== "ts") wire.params[k] = v;
+    applyMeta(wire, wireMeta["name:" + name] || wireMeta[`${aRef}|${name}.in`] || {});
+    state.wires.push(wire);
+  }
+  // 2. Übrige Verbindungen: einfache Linien (Verschmelzen, aus Alt-Dateien)
+  doc.connections.forEach((conn, k) => {
+    if (consumed.has(k)) return;
+    for (let i = 1; i < conn.length; i++) {          // n Ports → n−1 Kanten (Stern)
+      const a = parseRef(conn[0]), b = parseRef(conn[i]);
+      if (!a || !b) continue;
+      const wire = {a, b, color: "n"};
+      applyMeta(wire, wireMeta[`${conn[0]}|${conn[i]}`] || {});
+      state.wires.push(wire);
+    }
+  });
+  commit();
+  render();
+}
+function parseRef(ref) {
+  const i = ref.lastIndexOf(".");
+  if (i < 0) return null;
+  const c = state.comps.find(x => x.name === ref.slice(0, i));
+  return c ? {comp: c.id, port: ref.slice(i + 1)} : null;
+}
+
+/* ---------- Dialoge / Toolbar --------------------------------------------- */
+const dlg = document.getElementById("dlg"), dlgText = document.getElementById("dlg-text");
+let dlgMode = null;
+document.getElementById("btn-export").onclick = () => {
+  const issues = validate().filter(i => i.err);
+  if (issues.length && !confirm(`Es fehlen Pflichtparameter (${issues.length}). Trotzdem exportieren?`)) return;
+  dlgMode = "export";
+  document.getElementById("dlg-title").textContent = "YAML (rechenbar mit: hydraulik run <datei>)";
+  dlgText.value = exportYAML();
+  document.getElementById("dlg-ok").style.display = "none";
+  document.getElementById("dlg-save").style.display = "";
+  document.getElementById("dlg-file").style.display = "none";
+  dlg.showModal();
+};
+document.getElementById("btn-import").onclick = () => {
+  dlgMode = "import";
+  document.getElementById("dlg-title").textContent = "YAML einfügen oder Datei laden (Editor-/Beispielformat)";
+  dlgText.value = "";
+  document.getElementById("dlg-ok").style.display = "";
+  document.getElementById("dlg-save").style.display = "none";
+  document.getElementById("dlg-file").style.display = "";
+  dlg.showModal();
+};
+document.getElementById("dlg-ok").onclick = () => {
+  if (dlgMode === "import") { try { importYAML(dlgText.value); } catch (e) { alert("Import fehlgeschlagen: " + e); } }
+  dlg.close();
+};
+document.getElementById("dlg-close").onclick = () => dlg.close();
+document.getElementById("dlg-copy").onclick = () =>
+  navigator.clipboard && navigator.clipboard.writeText(dlgText.value);
+document.getElementById("dlg-save").onclick = () => {
+  const blob = new Blob([dlgText.value], {type: "text/yaml"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "schaltung.yaml";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+document.getElementById("dlg-file").onclick = () =>
+  document.getElementById("dlg-fileinput").click();
+document.getElementById("dlg-fileinput").onchange = ev => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  f.text().then(t => { dlgText.value = t; });
+  ev.target.value = "";
+};
+document.getElementById("btn-new").onclick = () => {
+  if (confirm("Zeichnung verwerfen?")) { localStorage.removeItem("hydraulik_editor");
+    state = {fluid:{mode:"preset",t_C:50,rho:998,mu:0.001,cp:4180}, comps:[], wires:[]};
+    idSeq = 1; selection = null; lastResult = null; commit(); render(); }
+};
+
+/* ---------- Autosave ------------------------------------------------------- */
+function autosave() {
+  try { localStorage.setItem("hydraulik_editor", exportYAML()); } catch (e) {}
+}
+(function restore(){
+  try {
+    const saved = localStorage.getItem("hydraulik_editor");
+    if (saved && saved.includes("components:")) importYAML(saved); else render();
+  } catch (e) { render(); }
+  if (!history.length) commit();     // History startet immer mit einem Eintrag
+})();
+</script>
+</body>
+</html>

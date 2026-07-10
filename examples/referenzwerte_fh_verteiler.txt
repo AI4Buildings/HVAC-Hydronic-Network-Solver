@@ -1,0 +1,102 @@
+================================================================================
+Referenzwerte aus: "Übung Verteiler _LSG.pdf"
+FH Burgenland, Übung Modellierung Verteiler, 06.11.2021 (Excel-Referenzmodell)
+Schaltung: Umlenkschaltung (ULS) + Einspritzschaltung (ESS) an gemeinsamer
+Hauptverteilung, entspricht examples/06_umlenk_einspritz_flow_resistance.yaml
+================================================================================
+
+Modellkonventionen des Referenzmodells (für den Nachvollzug mit hydraulik):
+  - ideale dp-konstante Pumpen        -> Pumpen mit dp_internal_frac: 1e-4
+  - Kv-Formel ohne Dichtekorrektur    -> Fluid mit rho = 1000 kg/m³
+  - Hub H = 100 %: Ventil voll offen; H = 0 %: Ventil zu
+  - Kennlinien rein hydraulisch       -> net.solve(thermal=False)
+
+--------------------------------------------------------------------------------
+AUFGABE 1 – Volumenströme bei Volllast  [EXAKT gedruckte Werte, Seite 1]
+--------------------------------------------------------------------------------
+  V1 = 1,472  m³/h      (TS1, Hauptleitung)
+  V2 = 0,7361 m³/h      (TS2, Anbindung ULS)
+  V3 = 0      m³/h      (TS3, Bypass – Regeltor voll offen)
+  V4 = 0,7361 m³/h      (TS4, Verbraucherstrang ULS)
+  V5 = 0,7363 m³/h      (TS5, Weiterführung Hauptverteilung)
+  V6 = 0,7363 m³/h      (TS6, Anbindung ESS)
+  V7 = 0,4313 m³/h      (TS7, Kurzschlussstrecke)
+  V8 = 1,168  m³/h      (TS8, Sekundärstrang ESS)
+
+--------------------------------------------------------------------------------
+AUFGABE 5 – Ventilautorität  [EXAKT gedruckte Werte, Seite 5]
+--------------------------------------------------------------------------------
+  a_v,ULS = 0,2381
+  a_v,ESS = 0,1938
+  Definition (aus Werten rekonstruiert): a_v = dp_Ventil / dp_variabler_Zweig,
+  ausgewertet am Volllastpunkt (H = 100 %):
+    ULS: variabler Zweig = TS4 + Verbraucher EA1 + Regeltor A
+    ESS: variabler Zweig = TS5 + TS6 + Durchgangsventil
+
+--------------------------------------------------------------------------------
+AUFGABE 6/7 – Wärmeübertragerkennwert  [EXAKT gedruckte Werte, Seiten 6–7]
+--------------------------------------------------------------------------------
+  a_W,ULS = 1,55        (Beschriftung im Kennlinienplot Seite 6)
+  a_W,ESS = 3           (Beschriftung im Kennlinienplot Seite 7)
+  Aussage: für eine möglichst lineare Regelstreckenkennlinie wären a_W > 1
+  nötig; praxisübliche Wärmeübertrager liefern jedoch a_W < 1.
+
+--------------------------------------------------------------------------------
+AUFGABE 2 – Kennlinien: ULS-Regelventil 100 % -> 0 %, ESS Volllast
+[VISUELL aus den Lösungsplots Seiten 2–3 abgelesen, Genauigkeit ca. ±0,02]
+Normierung: V_i(H) / V_i(H=100 %); Ausnahme V3: normiert auf V3(H=0 %)
+--------------------------------------------------------------------------------
+Plot Seite 2 (V2, V3, V4):
+  H [%]   V2/V2_100   V3/V3_0   V4/V4_100
+    0       1,00        1,00       0,00
+   10       1,08        0,90       0,19
+   20       1,15        0,815      0,335
+   30       1,19        0,74       0,45
+   40       1,21        0,675      0,54
+   50       1,215       0,61       0,61     <- Kreuzung V3/V4 bei (50 | 0,61)
+   60       1,21        0,535      0,675
+   70       1,19        0,445      0,74
+   80       1,15        0,335      0,81
+   90       1,08        0,19       0,90
+  100       1,00        0,00       1,00
+  Peak V2 ca. 1,21–1,22 bei H = 40–60 %; symmetrisch, V2(0) = V2(100)
+  -> hydraulischer Abgleich Regel-/Bypasstorseite (Antwort Aufgabe 9, S. 9)
+
+Plot Seite 3 oben (V1, V5, V6, V7, V8):
+  Ankerwerte bei H = 50 %:
+    V1/V1_100 ≈ 1,05   (Maximum)
+    V5/V5_100 ≈ 0,89   (Minimum, deckungsgleich mit V6)
+    V6/V6_100 ≈ 0,89   (Minimum)
+    V7/V7_100 ≈ 1,19   (Maximum)
+    V8/V8_100 ≈ 1,00   (praktisch konstant über den ganzen Hub)
+  Alle Kurven: Wert 1,00 bei H = 0 % und H = 100 %
+
+--------------------------------------------------------------------------------
+AUFGABE 3 – Kennlinien: ESS-Regelventil 100 % -> 0 %, ULS Volllast
+[VISUELL aus den Lösungsplots Seiten 4–5 abgelesen, Genauigkeit ca. ±0,02]
+--------------------------------------------------------------------------------
+Plot Seite 4 (V2, V3, V4):
+  V4/V4_100:  1,40 (H=0) -> 1,30 (10) -> 1,21 (20) -> 1,15 (30) -> 1,10 (40)
+              -> 1,07 (50) -> 1,045 (60) -> 1,03 (70) -> 1,015 (80)
+              -> 1,005 (90) -> 1,00 (100)
+  graue Kurve: 1,00 (H=0) -> ca. 0,715 (H=100); konsistent mit
+              V2(H)/V2(H=0) (V2 = V4 wegen V3 = 0 bei ULS-Volllast;
+              0,7361/1,028 = 0,716)
+  Anmerkung: V3 = 0 über den gesamten Hub (Bypass dicht bei ULS-Volllast)
+
+Plot Seite 5 oben (V1, V5, V6, V7, V8):
+  Ankerwerte bei H = 0 % (ESS-Ventil zu):
+    V1/V1_100 ≈ 0,70
+    V5/V5_100 = 0        (keine Einspritzung)
+    V6/V6_100 = 0
+    V7/V7_100 ≈ 2,70     (Kurzschluss übernimmt vollen Sekundärstrom, V7 = V8)
+    V8/V8_100 ≈ 1,00     (konstant, eigene dp-konstante Pumpe)
+
+--------------------------------------------------------------------------------
+Verwendung:
+  - Exakte Werte (Aufgaben 1, 5) -> harte Asserts in
+    tests/test_validation_fh_verteiler.py (Toleranz = Rundung der Referenz)
+  - Abgelesene Ankerpunkte (Aufgaben 2, 3, 9) -> Asserts mit ±0,02…0,03 und
+    X-Marker in den Vergleichsplots aus examples/validation_fh_verteiler.py
+    (validierung_aufgabe2.png / validierung_aufgabe3.png)
+================================================================================

@@ -1,0 +1,31 @@
+# Beispiel 2: Drei parallele Heizkörperstränge mit Strangregulierventilen
+# an Verteiler/Sammler, Pumpe mit konstanter Druckdifferenz.
+fluid: {preset: water, t_C: 60}
+
+components:
+  kessel: {type: heat_pump, mode: target_t_out, t_out_set_C: 70, q_max_kW: 20,
+           dp_nom_kPa: 10, q_nom_m3h: 1.5}
+  pu1:    {type: pump, mode: constant_dp, dp_kPa: 22, q_nom_m3h: 1.5}
+  vert:   {type: manifold, n_ports: 3}
+  samm:   {type: manifold, n_ports: 3}
+
+  srv1: {type: balancing_valve, kvs_m3h: 1.6, opening: 0.65}
+  hk1:  {type: radiator, q_nom_kW: 2.4, t_sup_nom_C: 70, t_ret_nom_C: 55, t_room_C: 20}
+  srv2: {type: balancing_valve, kvs_m3h: 1.6, opening: 0.80}
+  hk2:  {type: radiator, q_nom_kW: 3.1, t_sup_nom_C: 70, t_ret_nom_C: 55, t_room_C: 20}
+  srv3: {type: balancing_valve, kvs_m3h: 1.6, opening: 1.00}
+  hk3:  {type: radiator, q_nom_kW: 4.0, t_sup_nom_C: 70, t_ret_nom_C: 55, t_room_C: 22}
+
+connections:
+  - [kessel.out, pu1.in]
+  - [pu1.out, vert.main]
+  - [vert.s1, srv1.in]
+  - [srv1.out, hk1.in]
+  - [hk1.out, samm.s1]
+  - [vert.s2, srv2.in]
+  - [srv2.out, hk2.in]
+  - [hk2.out, samm.s2]
+  - [vert.s3, srv3.in]
+  - [srv3.out, hk3.in]
+  - [hk3.out, samm.s3]
+  - [samm.main, kessel.in]

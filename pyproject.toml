@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hydraulik"
+version = "0.2.0"
+description = "Stationäre hydraulisch-thermische Berechnung von HVAC-Hydraulikschaltungen (SIMPLE-Netzwerksolver)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Christian Heschl" }]
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+hydraulik = "hydraulik.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+hydraulik = ["editor_template.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

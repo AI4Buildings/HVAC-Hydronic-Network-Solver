@@ -1,0 +1,66 @@
+# Aufgabe: Umlenkschaltung (Dreiwegeventil) + Einspritzschaltung (Durchgangsventil)
+# an einer gemeinsamen Hauptverteilung, gespeist von einem Erzeuger mit
+# Hauptumwälzpumpe (dp = 50 kPa = konst.).
+#
+# Teilstrecken TS1…TS8 direkt als flow_resistance mit den C-Werten
+# C_REGuA [Pa/(m³/h)²] aus der Angabe (jede TS als EIN konzentrierter
+# Widerstand im Vorlaufast; C-Wert = Summe Vor- + Rücklauf der Teilstrecke).
+#
+# Weitere Annahmen:
+#  - Erzeuger: dp-frei (dp_nom_kPa: 0), Solltemperatur 45 °C.
+#  - Verbraucher EA: Heizkörper mit fest vorgegebener Leistung
+#    (q_prescribed_kW, ANNAHME – bei Bedarf anpassen) und hydraulisch
+#    vernachlässigbarem Widerstand (kv_m3h: 100 -> C = 10 Pa/(m³/h)²),
+#    da der Strangwiderstand bereits in TS4 bzw. TS8 enthalten ist.
+#  - Ventilöffnungen (opening: 0.5) sind Startwerte für die Untersuchung –
+#    zum Durchfahren der Kennlinie variieren.
+
+fluid: {preset: water, t_C: 45}
+
+components:
+  # --- Erzeuger + Hauptpumpe ---
+  erz:      {type: heat_pump, mode: target_t_out, t_out_set_C: 45,
+             q_max_kW: 30, dp_nom_kPa: 0, q_nom_m3h: 2.0}
+  pu_haupt: {type: pump, mode: constant_dp, dp_kPa: 50, q_nom_m3h: 2.0}   # dp_UWP = 50 kPa = konst.
+
+  # --- Teilstrecken (C_REGuA aus der Angabe) ---
+  ts1: {type: flow_resistance, c_Pa_m3h2: 15000}   # Hauptleitung Erzeuger -> Verteilung
+  ts2: {type: flow_resistance, c_Pa_m3h2: 6020}    # Anbindung Umlenkschaltung
+  ts3: {type: flow_resistance, c_Pa_m3h2: 20000}   # Bypass zum B-Tor
+  ts4: {type: flow_resistance, c_Pa_m3h2: 20000}   # Verbraucherstrang Umlenkschaltung
+  ts5: {type: flow_resistance, c_Pa_m3h2: 20}      # Weiterführung Hauptverteilung
+  ts6: {type: flow_resistance, c_Pa_m3h2: 26000}   # Anbindung Einspritzkreis
+  ts7: {type: flow_resistance, c_Pa_m3h2: 50}      # Kurzschlussstrecke
+  ts8: {type: flow_resistance, c_Pa_m3h2: 22000}   # Sekundärstrang Einspritzung
+
+  # --- Umlenkschaltung: Dreiwegeventil Kvs = 4 m³/h, Kennlinie lin/lin ---
+  # A = Verbraucherrücklauf, B = Bypass (über TS3), AB = Abgang zum Rücklauf
+  mv1: {type: mixing_valve_3way, kvs_m3h: 4.0, opening: 0.5, characteristic: linear}
+  ea1: {type: radiator, q_prescribed_kW: 5.0, kv_m3h: 100, t_room_C: 21}   # Verbraucher EA (Annahme 5 kW)
+
+  # --- Einspritzschaltung: Durchgangsventil Kvs = 4 m³/h, linear ---
+  dv1:    {type: control_valve, kvs_m3h: 4.0, opening: 0.5, characteristic: linear}
+  pu_sek: {type: pump, mode: constant_dp, dp_kPa: 30, q_nom_m3h: 1.2}      # dp_UWP = 30 kPa = konst.
+  ea2:    {type: radiator, q_prescribed_kW: 6.0, kv_m3h: 100, t_room_C: 21} # Verbraucher EA (Annahme 6 kW)
+
+connections:
+  # Hauptkreis: Erzeuger -> Hauptpumpe -> TS1 -> Verteilknoten
+  - [erz.out, pu_haupt.in]
+  - [pu_haupt.out, ts1.in]
+  - [ts1.out, ts2.in, ts5.in]          # Abzweig 1: Umlenkschaltung / Weiterführung
+
+  # Umlenkschaltung
+  - [ts2.out, ts4.in, ts3.in]          # Aufteilung: Verbraucherstrang / Bypass
+  - [ts4.out, ea1.in]
+  - [ea1.out, mv1.a]                   # Verbraucherrücklauf -> Tor A
+  - [ts3.out, mv1.b]                   # Bypass -> Tor B
+
+  # Einspritzschaltung
+  - [ts5.out, ts6.in]
+  - [ts6.out, ts7.out, pu_sek.in]      # Knoten N1: Primärvorlauf + Kurzschluss -> Pumpensaugseite
+  - [pu_sek.out, ts8.in]
+  - [ts8.out, ea2.in]
+  - [ea2.out, ts7.in, dv1.in]          # Knoten N2: Sekundärrücklauf -> Kurzschluss / Durchgangsventil
+
+  # Gemeinsamer Rücklauf zum Erzeuger
+  - [mv1.ab, dv1.out, erz.in]

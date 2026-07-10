@@ -1,0 +1,54 @@
+# Beispiel 4: Wärmepumpe + hydraulische Weiche + zwei Sekundärkreise
+#  - Kreis A: Heizkörperkreis mit Δp-konstanter Pumpe und Strangregulierventilen
+#  - Kreis B: Fußbodenheizung mit Beimischschaltung (3-Wege-Ventil)
+fluid: {preset: water, t_C: 40}
+
+components:
+  wp1:    {type: heat_pump, mode: target_t_out, t_out_set_C: 45, q_max_kW: 16,
+           dp_nom_kPa: 20, q_nom_m3h: 2.0}
+  pu_p:   {type: pump, mode: constant_flow, q_m3h: 2.0}
+  weiche: {type: hydraulic_separator, q_nom_m3h: 2.5, ua_W_K: 4, t_amb_C: 18}
+  vert:   {type: manifold, n_ports: 2}
+  samm:   {type: manifold, n_ports: 2}
+
+  # --- Kreis A: Heizkörper ---
+  pu_a: {type: pump, mode: constant_dp, dp_kPa: 18, q_nom_m3h: 1.0}
+  srv1: {type: balancing_valve, kvs_m3h: 1.2, opening: 0.7}
+  hk1:  {type: radiator, q_nom_kW: 4.5, t_sup_nom_C: 45, t_ret_nom_C: 38, t_room_C: 21}
+  srv2: {type: balancing_valve, kvs_m3h: 1.2, opening: 1.0}
+  hk2:  {type: radiator, q_nom_kW: 3.5, t_sup_nom_C: 45, t_ret_nom_C: 38, t_room_C: 20}
+
+  # --- Kreis B: FBH mit Beimischung ---
+  mv1:  {type: mixing_valve_3way, kvs_m3h: 4.0, opening: 0.55, characteristic: linear}
+  pu_b: {type: pump, mode: constant_flow, q_m3h: 0.7}
+  fbh1: {type: floor_heating, area_m2: 22, k_W_m2K: 5.5, t_room_C: 22, length_m: 110, d_inner_mm: 14}
+  fbh2: {type: floor_heating, area_m2: 16, k_W_m2K: 5.5, t_room_C: 22, length_m: 80, d_inner_mm: 14}
+  fbh_vert: {type: manifold, n_ports: 2}
+  fbh_samm: {type: manifold, n_ports: 2}
+  abzweig:  {type: tee}
+
+connections:
+  # Primärkreis
+  - [wp1.out, pu_p.in]
+  - [pu_p.out, weiche.prim_in]
+  - [weiche.prim_out, wp1.in]
+  # Sekundärverteilung
+  - [weiche.sec_out, vert.main]
+  - [samm.main, weiche.sec_in]
+  # Kreis A
+  - [vert.s1, pu_a.in]
+  - [pu_a.out, srv1.in, srv2.in]
+  - [srv1.out, hk1.in]
+  - [srv2.out, hk2.in]
+  - [hk1.out, hk2.out, samm.s1]
+  # Kreis B
+  - [vert.s2, mv1.a]
+  - [mv1.ab, pu_b.in]
+  - [pu_b.out, fbh_vert.main]
+  - [fbh_vert.s1, fbh1.in]
+  - [fbh_vert.s2, fbh2.in]
+  - [fbh1.out, fbh_samm.s1]
+  - [fbh2.out, fbh_samm.s2]
+  - [fbh_samm.main, abzweig.a]
+  - [abzweig.b, mv1.b]
+  - [abzweig.c, samm.s2]

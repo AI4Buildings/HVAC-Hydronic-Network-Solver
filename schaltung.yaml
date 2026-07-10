@@ -1,0 +1,19 @@
+fluid: {preset: water, t_C: 50}
+
+components:
+  rv1: {type: control_valve, characteristic: linear, opening: 1.0, kvs_m3h: 100, rangeability: 100}
+  out1: {type: outflow, p_Pa: 0}
+  in1: {type: inflow, t_set_C: 20, p_Pa: 100}
+
+connections:
+  - [rv1.out, out1.port]
+  - [in1.port, rv1.in]
+
+layout:
+  components:
+    rv1: {x: 464, y: 176}
+    out1: {x: 648, y: 176}
+    in1: {x: 240, y: 176}
+  wires:
+    - {a: rv1.out, b: out1.port, color: vl}
+    - {a: in1.port, b: rv1.in, color: vl}
