@@ -1,15 +1,18 @@
 # hydraulik – Projektleitfaden
 
 Python-Paket zur stationären hydraulisch-thermischen Berechnung von
-HVAC-Hydraulikschaltungen (1D-Netzwerk, SIMPLE-artiger Druckkorrektur-Solver).
-Stand: v0.2.0 (Juli 2026); validiert gegen zwei unabhängige
+HVAC-Hydraulikschaltungen (1D-Netzwerk, SIMPLE-artiger Druckkorrektur-Solver)
+mit grafischem Schaltbild-Editor (Rechnen im GUI, Human in the Loop).
+Stand: v0.3.0 (Juli 2026); validiert gegen zwei unabhängige
 FH-Burgenland-Referenzlösungen (Verteiler-Übung, TWE-Übung Bsp 6).
+GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
+— Änderungen nach Abschluss committen und pushen (Co-Authored-By-Trailer).
 
 ## Befehle
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (77 Tests)
+pytest                                   # Testsuite (108 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
@@ -30,8 +33,10 @@ src/hydraulik/
   components/        Eine Datei je Komponentengruppe; registry.py: @register("typname")
     base.py          Solver-Verträge: EdgeCoefficients (a, b, dp_source), ThermalResult;
                      reserviertes kwarg ts=<label> (Teilstrecken-Gruppierung)
-    pipe/pump/resistance/valves/emitters/coils/plants/storage/separators/
-    connectors (link)/boundaries
+    pipe/pump/resistance/valves (inkl. check_valve)/emitters/coils/plants/
+    storage/separators/connectors (link)/conduit (Verbindungsleitung = Linie
+    im Editor: ideal|C-Wert|Auslegungspunkt|Rohrmodell)/boundaries
+    (inflow/outflow/cap/open_end)
   network.py         Network (API) + compile(): Union-Find-Portmerge, Validierung,
                      Druckinsel-Analyse, Bilanzcheck fester Volumenströme
   solver/
@@ -41,14 +46,17 @@ src/hydraulik/
     settings.py      SolverSettings (alle Defaults)
   yaml_loader.py     load(), load_settings(); LLM-taugliche Fehlermeldungen;
                      toleriert 'layout:'-Block des Editors
-  editor.py          Katalogexport (Registry+ParamSpec → JSON) + build_editor()
-  editor_template.html  Single-File-Schaltbild-Editor (Platzhalter __CATALOG_JSON__)
+  editor.py          Katalogexport (Registry+ParamSpec → JSON) + render/build_editor()
+  editor_template.html  Single-File-Schaltbild-Editor (Platzhalter __CATALOG_JSON__);
+                     jede gezogene Linie = conduit; Zoom, Undo/Redo, Multi-Select,
+                     Knickpunkte, Drag-to-Connect, Ergebnis-Tooltips
+  server.py          hydraulik serve: Editor + POST /solve (nur 127.0.0.1)
   results.py         SolutionResult: report(), to_dict(), to_csv(), result["name"],
                      Teilstrecken-Tabelle (ts-Gruppen als Ketten in Strömungsrichtung)
   cli.py             Konsolenskript `hydraulik`
 docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
 examples/            YAML-Schaltungen 01–06, Lösungs-/Validierungsskripte 07 + FH-Verteiler
-tests/               77 Tests: analytische Referenzen + Validierung gegen Musterlösungen
+tests/               108 Tests: analytische Referenzen + Validierung gegen Musterlösungen
 ```
 
 ## Konventionen

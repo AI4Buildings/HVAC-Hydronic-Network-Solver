@@ -19,6 +19,7 @@ Mehrtor-Komponenten zerfallen beim Kompilieren in Knoten und Kanten:
 | `hydraulic_separator` | 2 Knoten (oben: prim_in+sec_out, unten: sec_in+prim_out) + vertikale Niederwiderstandskante. Reproduziert das reale Weichenverhalten allein aus der Knotenmischung |
 | `manifold`, `tee`, `buffer_storage` | alle Ports auf einen Mischknoten aliasiert (Puffer zusätzlich mit UA-Verlust am Knoten) |
 | `open_end` | 1 Port + Randbedingung (Druck-Pin oder Quellterm; mehrere Fluss-RB je Knoten gehen mit ihrer jeweiligen Zulauftemperatur in die Enthalpiebilanz ein) |
+| `conduit` (Verbindungsleitung) | Kante mit wählbarem Δp-Modell: ideal (Default) / C-Wert / Auslegungspunkt / Rohrmodell inkl. Wärmeverlust — im Editor als gezogene LINIE; jede Linie = eigene Kante mit bekanntem V̇ |
 | `link` | quasi-widerstandsfreie Kante (1 Pa bei q_nom): trennt thermische Mischpunkte entlang einer Leitung, wo ein gemeinsamer Knoten falsch mischen würde |
 | `inflow` / `outflow` | je 1 Port + Randbedingung: Zulauf T + (Fluss ODER Druck, gauge); Austritt (Druck ODER Entnahme) — Randbedingungen offener Systeme |
 | `cap` | 1 Port, keine RB: dichtes Endstück, V̇ = 0 aus der Kontinuität am Sackknoten |
@@ -28,7 +29,10 @@ Mehrtor-Komponenten zerfallen beim Kompilieren in Knoten und Kanten:
 (ein Druck, EINE Mischtemperatur). Anschlüsse entlang einer Leitung
 (Sammler) brauchen getrennte Knoten in Strömungsreihenfolge — durch
 aufgeteilte Vor-/Rücklaufwiderstände (empfohlen, siehe README-Richtlinie)
-oder `link`. Sonst „sieht" eine Zapfstelle stromab eingemischtes Wasser.
+oder `link`.
+Sonst „sieht" eine Zapfstelle stromab eingemischtes Wasser. Mit dem
+Schaltbild-Editor entsteht das Problem nicht mehr: Jede gezogene Linie ist
+eine `conduit`-Kante, gemischt wird nur an den Geräteports.
 
 ## Die zwei Solver-Verträge (components/base.py)
 

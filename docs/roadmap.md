@@ -1,10 +1,13 @@
 # Status & Roadmap
 
-## Stand v0.2.0 (2026-07-09)
+## Stand v0.3.0 (2026-07-10)
 
-96 Tests, alle grün; 6 YAML-Beispielschaltungen + Lösungs-/Validierungs-
+108 Tests, alle grün; 6 YAML-Beispielschaltungen + Lösungs-/Validierungs-
 skripte; validiert gegen zwei unabhängige FH-Burgenland-Referenzlösungen;
-grafischer Schaltbild-Editor (`hydraulik editor`).
+grafischer Schaltbild-Editor mit integriertem Solver (`hydraulik serve`).
+Veröffentlicht: https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
+(public, MIT; Übungs-PDFs und generierte Editor-HTML via .gitignore
+ausgeschlossen, Lösungswerte in Tests/Beispielen bewusst enthalten).
 
 v0.1.0 – alle geplanten Meilensteine M1–M6 umgesetzt:
 
@@ -15,7 +18,7 @@ v0.1.0 – alle geplanten Meilensteine M1–M6 umgesetzt:
 - [x] M5 YAML-Layer (Einheiten-Suffixe, gesammelte Fehler, Vorschläge)
 - [x] M6 Reporting (Textbericht, dict/CSV, CLI) und Doku
 
-v0.2.0 – ergänzt (getrieben durch die Validierungsbeispiele 05–07):
+v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau):
 - Ventile: `opening: 0` sperrt exakt (Kante wird Randbedingung V̇ = 0 statt
   Leckage-Kv); Kennlinien-Floor Kvs/Rangeability nur noch im Regelbereich.
 - Neuer Typ `flow_resistance` (C-Wert-Eingabe für Teilstrecken aus REGuA-

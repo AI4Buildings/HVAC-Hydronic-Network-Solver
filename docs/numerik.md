@@ -106,7 +106,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 77 Tests)
+## 3. Testabdeckung (tests/, 108 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/
@@ -117,6 +117,9 @@ Handrechnung, Weichen-Mischformel + Transferstrom, Puffer-Mischknoten,
 C-Wert-Widerstand (SI-/m³h-/Auslegungspunkt-Varianten, Strömungsumkehr),
 link-Knotentrennung, Temperaturquelle, Mehrfach-Fluss-RB je Knoten,
 Teilstrecken-Gruppierung (Kettenauswertung + Konsistenzwarnung).
+Verbindungsleitung (conduit: ideal ≡ link, C ≡ flow_resistance, Rohrmodus ≡
+Pipe exakt), Rückschlagklappe (vorwärts/rückwärts/antiparallel), Editor-Server
+(GET/POST /solve, Fehlerpfade, Thermik-Fallback).
 Robustheit: Ventil zu (exakte Absperrung, V̇ = 0 als RB), Kennlinien-Floor,
 Ventil-Sweep monoton, absurder Startwert, unbilanzierte Konstantstrom-
 Pumpen (Compile-Zeit-Fehler), Konstantstrom-Pumpe gegen zu, Drift-Meldung

@@ -1,19 +1,119 @@
 fluid: {preset: water, t_C: 50}
 
 components:
-  rv1: {type: control_valve, characteristic: linear, opening: 1.0, kvs_m3h: 100, rangeability: 100}
+  ab1: {type: tee}
+  ab2: {type: tee}
+  ab3: {type: tee}
+  mv1: {type: mixing_valve_3way, kvs_m3h: 4, opening: 0.5}
+  hk1: {type: radiator, q_prescribed_W: 6000, c_Pa_m3h2: 20000}
+  in1: {type: inflow, p_Pa: 50000, t_set_C: 50}
   out1: {type: outflow, p_Pa: 0}
-  in1: {type: inflow, t_set_C: 20, p_Pa: 100}
+  ab4: {type: tee}
+  ab5: {type: tee}
+  ab6: {type: tee}
+  hk2: {type: radiator, q_prescribed_W: 8000, c_Pa_m3h2: 22000}
+  es3: {type: cap}
+  es4: {type: cap}
+  ab7: {type: tee}
+  rv1: {type: control_valve, kvs_m3h: 4, opening: 0.5}
+  pu1: {type: pump, dp_Pa: 30000, mode: constant_dp}
+  srv1: {type: balancing_valve, kvs_m3h: 2.24}
+  lt1: {type: conduit, c_Pa_m3h2: 7500}
+  lt2: {type: conduit, c_Pa_m3h2: 7500}
+  lt3: {type: conduit, c_Pa_m3h2: 3010}
+  lt4: {type: conduit, c_Pa_m3h2: 3010}
+  lt6: {type: conduit, c_Pa_m3h2: 20}
+  lt7: {type: conduit}
+  lt8: {type: conduit, c_Pa_m3h2: 20}
+  lt9: {type: conduit}
+  lt10: {type: conduit, c_Pa_m3h2: 13000}
+  lt11: {type: conduit}
+  lt12: {type: conduit, c_Pa_m3h2: 50}
+  lt13: {type: conduit, c_Pa_m3h2: 13000}
+  lt14: {type: conduit}
+  lt15: {type: conduit}
+  lt16: {type: conduit}
+  lt17: {type: conduit}
+  lt18: {type: conduit}
+  lt5: {type: conduit}
+  lt19: {type: conduit}
 
 connections:
-  - [rv1.out, out1.port]
-  - [in1.port, rv1.in]
+  - [in1.port, lt1.in]
+  - [lt1.out, ab1.b]
+  - [ab2.b, lt2.in]
+  - [lt2.out, out1.port]
+  - [ab1.c, lt3.in]
+  - [lt3.out, ab3.a]
+  - [mv1.ab, lt4.in]
+  - [lt4.out, ab2.c]
+  - [ab1.a, lt6.in]
+  - [lt6.out, ab4.b]
+  - [ab4.a, lt7.in]
+  - [lt7.out, es3.port]
+  - [ab2.a, lt8.in]
+  - [lt8.out, ab5.b]
+  - [ab5.a, lt9.in]
+  - [lt9.out, es4.port]
+  - [rv1.out, lt10.in]
+  - [lt10.out, ab5.c]
+  - [ab7.b, lt11.in]
+  - [lt11.out, rv1.in]
+  - [ab7.c, lt12.in]
+  - [lt12.out, ab6.c]
+  - [ab4.c, lt13.in]
+  - [lt13.out, ab6.a]
+  - [ab6.b, lt14.in]
+  - [lt14.out, pu1.in]
+  - [pu1.out, lt15.in]
+  - [lt15.out, hk2.in]
+  - [hk2.out, lt16.in]
+  - [lt16.out, ab7.a]
+  - [ab3.b, lt17.in]
+  - [lt17.out, hk1.in]
+  - [hk1.out, lt18.in]
+  - [lt18.out, mv1.a]
+  - [ab3.c, lt5.in]
+  - [lt5.out, srv1.in]
+  - [srv1.out, lt19.in]
+  - [lt19.out, mv1.b]
 
 layout:
   components:
-    rv1: {x: 464, y: 176}
-    out1: {x: 648, y: 176}
-    in1: {x: 240, y: 176}
+    ab1: {x: 392, y: 640, rot: 180}
+    ab2: {x: 576, y: 736, rot: 180}
+    ab3: {x: 392, y: 416, rot: 270}
+    mv1: {x: 576, y: 416, rot: 90}
+    hk1: {x: 488, y: 264}
+    in1: {x: 176, y: 640}
+    out1: {x: 176, y: 736, rot: 180}
+    ab4: {x: 768, y: 640, rot: 180}
+    ab5: {x: 952, y: 736, rot: 180}
+    ab6: {x: 768, y: 416, rot: 270}
+    hk2: {x: 864, y: 264}
+    es3: {x: 848, y: 640}
+    es4: {x: 1040, y: 736}
+    ab7: {x: 952, y: 416, rot: 90}
+    rv1: {x: 952, y: 504, rot: 90}
+    pu1: {x: 768, y: 320, rot: 270}
+    srv1: {x: 488, y: 416}
   wires:
-    - {a: rv1.out, b: out1.port, color: vl}
-    - {a: in1.port, b: rv1.in, color: vl}
+    - {name: lt1, a: in1.port, b: ab1.b, color: vl}
+    - {name: lt2, a: ab2.b, b: out1.port, color: n}
+    - {name: lt3, a: ab1.c, b: ab3.a, color: vl}
+    - {name: lt4, a: mv1.ab, b: ab2.c, color: rl}
+    - {name: lt6, a: ab1.a, b: ab4.b, color: vl}
+    - {name: lt7, a: ab4.a, b: es3.port, color: vl}
+    - {name: lt8, a: ab2.a, b: ab5.b, color: rl}
+    - {name: lt9, a: ab5.a, b: es4.port, color: rl}
+    - {name: lt10, a: rv1.out, b: ab5.c, color: rl}
+    - {name: lt11, a: ab7.b, b: rv1.in, color: rl}
+    - {name: lt12, a: ab7.c, b: ab6.c, color: rl}
+    - {name: lt13, a: ab4.c, b: ab6.a, color: vl}
+    - {name: lt14, a: ab6.b, b: pu1.in, color: vl}
+    - {name: lt15, a: pu1.out, b: hk2.in, color: vl, pts: [[768,264]]}
+    - {name: lt16, a: hk2.out, b: ab7.a, color: rl, pts: [[952,264]]}
+    - {name: lt17, a: ab3.b, b: hk1.in, color: vl, pts: [[392,264]]}
+    - {name: lt18, a: hk1.out, b: mv1.a, color: rl, pts: [[576,264]]}
+    - {name: lt5, a: ab3.c, b: srv1.in, color: vl}
+    - {name: lt19, a: srv1.out, b: mv1.b, color: vl}
