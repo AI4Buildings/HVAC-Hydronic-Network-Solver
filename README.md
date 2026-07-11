@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 108 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 111 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 Danach steht das CLI `hydraulik` zur Verfügung (`run`, `editor`, `serve`).
@@ -82,7 +82,9 @@ Selektion), `ts`-Label und eigenen Ergebniswerten im Hover (V̇, Δp, T, v).
 **Leitungsführung mit Knickpunkten** (Doppelklick auf Leitung setzt eine
 Umlenkung, Griffe ziehen, Doppelklick auf Griff entfernt; ohne Knick
 automatisch gerade bzw. abgewinkelt), **Vorlagen für Standardschaltungen**
-(Palette-Sektion VORLAGEN: mitgeliefert Beimisch- und Einspritzschaltung;
+(Palette-Sektion VORLAGEN: mitgeliefert sind die sieben Grundschaltungen
+Beimischschaltung einfach/doppelt/doppelt-differenzdruckarm, Drossel-,
+Umlenk- sowie Einspritzschaltung mit Durchgangs- bzw. Dreiwegeventil;
 eigene Vorlagen: Bereich auswählen → „Als Vorlage speichern" → per Klick
 platzieren und Parameter anpassen; im Browser gespeichert, als JSON-Datei
 export-/importierbar zum Teilen), **Mehrfachauswahl**
@@ -139,6 +141,7 @@ Regeln:
 | `pump` | in, out | `mode: constant_dp\|constant_flow`, `dp_kPa` bzw. `q_m3h`, `q_nom_m3h` |
 | `control_valve` | in, out | `kvs_m3h`, `opening` (0…1), `characteristic: equal_percentage\|linear` |
 | `balancing_valve` | in, out | `kvs_m3h`, `opening` (Voreinstellung) |
+| `ball_valve` | in, out | Kugelhahn (Absperrarmatur): `open` (true/false, Default auf); zu sperrt exakt (V̇ = 0); `kvs_m3h` optional (Default 1000 ≈ widerstandsfrei) |
 | `check_valve` | in, out | Rückschlagklappe: `kvs_m3h` (Durchlassrichtung in→out); sperrt rückwärts (Restleckage kvs/1000, über `block_factor` einstellbar) |
 | `mixing_valve_3way` | a, b, ab | `kvs_m3h`, `opening` (A-Pfad), `characteristic` |
 | `radiator` | in, out | `q_nom_kW`, `t_sup_nom_C`, `t_ret_nom_C`, `t_room_C`, `n`, `q_prescribed_kW`; Hydraulik: `kv_m3h` ODER `c_Pa_m3h2` (Default 10 kPa bei Nennstrom) |

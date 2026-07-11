@@ -69,6 +69,36 @@ class BalancingValve(_KvValveBase):
     )
 
 
+@register("ball_valve")
+class BallValve(TwoPortComponent):
+    """Kugelhahn (Absperrarmatur): auf oder zu.
+
+    Auf wirkt der Kvs-Wert (Default 1000 m³/h ≈ praktisch widerstandsfrei;
+    für reale Armaturen den Hersteller-Kvs angeben). Zu sperrt exakt:
+    V̇ = 0 als Randbedingung, Δp über der Armatur ist Ergebnis — dieselbe
+    Semantik wie ein Regelventil mit opening = 0.
+    """
+
+    kvs: float
+    open: bool
+
+    PARAMS = (
+        Param("open", "bool", default=True, help="auf (true) / zu (false)"),
+        Param("kvs", "kv", default=1000.0, minv=1e-4,
+              help="Kvs-Wert offen [m³/h]; Default praktisch widerstandsfrei"),
+    )
+
+    def build(self, b) -> None:
+        if not self.open:
+            b.edge(b.port("in"), b.port("out"), self.hydraulic_coefficients,
+                   self.thermal_outlet, fixed_q=0.0)
+        else:
+            super().build(b)
+
+    def hydraulic_coefficients(self, q: float, fluid: Fluid) -> EdgeCoefficients:
+        return EdgeCoefficients(b=kv_to_b(self.kvs, fluid.rho))
+
+
 @register("check_valve")
 class CheckValve(TwoPortComponent):
     """Rückschlagklappe: Durchfluss nur in Pfeilrichtung (in → out).

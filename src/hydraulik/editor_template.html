@@ -133,41 +133,185 @@ function unitLabel(sfx){ return UNIT_LABEL[sfx] || sfx; }
 /* Eine Vorlage = Komponenten + interne Leitungen mit relativen Koordinaten.
    Mitgelieferte Vorlagen unten; eigene werden im Browser (localStorage)
    gespeichert und können als JSON-Datei exportiert/importiert werden. */
+/* Alle 7 Vorlagen nach den FH-Übungsschemata: Verbraucher oben, Vorlauf
+   links (rot), Rücklauf rechts (blau); die offenen Ports unten sind die
+   Anschlüsse ans Primärnetz. Kurzbezeichner: kh Kugelhahn, rk Rückschlag-
+   klappe, pu Pumpe, mv 3-Wege-Ventil, rv Regelventil, srv Strangregulier-
+   ventil, hk Verbraucher (Heizkörper als Platzhalter), ab T-Stück. */
+const PUMP_P = {mode:"constant_dp", dp_kPa:20, q_nom_m3h:1};
+const HK_P   = {q_nom_kW:5, t_sup_nom_C:70, t_ret_nom_C:55, t_room_C:20};
+const MV_P   = {kvs_m3h:4, opening:0.5, characteristic:"linear"};
+const RV_P   = {kvs_m3h:4, opening:0.5, characteristic:"linear"};
+const SRV_P  = {kvs_m3h:4};
+const RK_P   = {kvs_m3h:10};
 const BUILTIN_TEMPLATES = {
-  "Beimischschaltung": {
+  "Beimischschaltung (einfach)": {
     comps: [
-      {type:"mixing_valve_3way", name:"mv_bm", rot:270, dx:-96, dy:112,
-       params:{kvs_m3h:4, opening:0.5, characteristic:"linear"}},
-      {type:"pump", name:"pu_bm", rot:270, dx:-96, dy:16,
-       params:{mode:"constant_dp", dp_kPa:20, q_nom_m3h:1}},
-      {type:"radiator", name:"hk_bm", rot:0, dx:0, dy:-112,
-       params:{q_nom_kW:5, t_sup_nom_C:70, t_ret_nom_C:55, t_room_C:20}},
-      {type:"tee", name:"ab_bm", rot:90, dx:96, dy:112, params:{}},
+      {type:"mixing_valve_3way", name:"mv_bm", rot:270, dx:-96, dy:128, params:MV_P},
+      {type:"pump", name:"pu_bm", rot:270, dx:-96, dy:48, params:PUMP_P},
+      {type:"check_valve", name:"rk_bm", rot:270, dx:-96, dy:-16, params:RK_P},
+      {type:"ball_valve", name:"kh_bm", rot:270, dx:-96, dy:-80, params:{}},
+      {type:"radiator", name:"hk_bm", rot:0, dx:0, dy:-160, params:HK_P},
+      {type:"balancing_valve", name:"srv_bm", rot:90, dx:96, dy:-80, params:SRV_P},
+      {type:"tee", name:"ab_bm", rot:90, dx:96, dy:128, params:{}},
     ],
     wires: [
       {type:"conduit", name:"lt_bm1", a:[0,"ab"], b:[1,"in"], color:"vl", params:{}},
-      {type:"conduit", name:"lt_bm2", a:[1,"out"], b:[2,"in"], color:"vl", params:{}, pts:[[-96,-112]]},
-      {type:"conduit", name:"lt_bm3", a:[2,"out"], b:[3,"a"], color:"rl", params:{}, pts:[[96,-112]]},
-      {type:"conduit", name:"lt_bm4", a:[3,"c"], b:[0,"b"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_bm2", a:[1,"out"], b:[2,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_bm3", a:[2,"out"], b:[3,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_bm4", a:[3,"out"], b:[4,"in"], color:"vl", params:{}, pts:[[-96,-160]]},
+      {type:"conduit", name:"lt_bm5", a:[4,"out"], b:[5,"in"], color:"rl", params:{}, pts:[[96,-160]]},
+      {type:"conduit", name:"lt_bm6", a:[5,"out"], b:[6,"a"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_bm7", a:[6,"c"], b:[0,"b"], color:"rl", params:{}},
+    ],
+  },
+  "Beimischschaltung (doppelt)": {
+    comps: [
+      {type:"mixing_valve_3way", name:"mv_db", rot:270, dx:-96, dy:192, params:MV_P},
+      {type:"tee", name:"ab_db1", rot:270, dx:-96, dy:128, params:{}},
+      {type:"pump", name:"pu_db", rot:270, dx:-96, dy:48, params:PUMP_P},
+      {type:"check_valve", name:"rk_db", rot:270, dx:-96, dy:-16, params:RK_P},
+      {type:"ball_valve", name:"kh_db", rot:270, dx:-96, dy:-80, params:{}},
+      {type:"radiator", name:"hk_db", rot:0, dx:0, dy:-160, params:HK_P},
+      {type:"balancing_valve", name:"srv_db", rot:90, dx:96, dy:-80, params:SRV_P},
+      {type:"balancing_valve", name:"srv_db2", rot:0, dx:0, dy:128, params:SRV_P},
+      {type:"tee", name:"ab_db2", rot:90, dx:96, dy:128, params:{}},
+      {type:"tee", name:"ab_db3", rot:90, dx:96, dy:192, params:{}},
+    ],
+    wires: [
+      {type:"conduit", name:"lt_db1", a:[0,"ab"], b:[1,"a"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_db2", a:[1,"b"], b:[2,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_db3", a:[2,"out"], b:[3,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_db4", a:[3,"out"], b:[4,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_db5", a:[4,"out"], b:[5,"in"], color:"vl", params:{}, pts:[[-96,-160]]},
+      {type:"conduit", name:"lt_db6", a:[5,"out"], b:[6,"in"], color:"rl", params:{}, pts:[[96,-160]]},
+      {type:"conduit", name:"lt_db7", a:[6,"out"], b:[8,"a"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_db8", a:[1,"c"], b:[7,"in"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_db9", a:[7,"out"], b:[8,"c"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_db10", a:[8,"b"], b:[9,"a"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_db11", a:[9,"c"], b:[0,"b"], color:"rl", params:{}},
+    ],
+  },
+  "Beimischschaltung (doppelt, differenzdruckarm)": {
+    comps: [
+      {type:"ball_valve", name:"kh_dd2", rot:270, dx:-96, dy:288, params:{}},
+      {type:"tee", name:"ab_dd3", rot:270, dx:-96, dy:224, params:{}},
+      {type:"mixing_valve_3way", name:"mv_dd", rot:270, dx:-96, dy:160, params:MV_P},
+      {type:"tee", name:"ab_dd1", rot:270, dx:-96, dy:96, params:{}},
+      {type:"pump", name:"pu_dd", rot:270, dx:-96, dy:16, params:PUMP_P},
+      {type:"check_valve", name:"rk_dd", rot:270, dx:-96, dy:-48, params:RK_P},
+      {type:"ball_valve", name:"kh_dd", rot:270, dx:-96, dy:-112, params:{}},
+      {type:"radiator", name:"hk_dd", rot:0, dx:0, dy:-192, params:HK_P},
+      {type:"balancing_valve", name:"srv_dd", rot:90, dx:96, dy:-112, params:SRV_P},
+      {type:"balancing_valve", name:"srv_dd2", rot:0, dx:0, dy:96, params:SRV_P},
+      {type:"tee", name:"ab_dd2", rot:90, dx:96, dy:96, params:{}},
+      {type:"tee", name:"ab_dd4", rot:90, dx:96, dy:160, params:{}},
+      {type:"tee", name:"ab_dd5", rot:90, dx:96, dy:224, params:{}},
+      {type:"balancing_valve", name:"srv_dd3", rot:90, dx:96, dy:288, params:SRV_P},
+    ],
+    wires: [
+      {type:"conduit", name:"lt_dd1", a:[0,"out"], b:[1,"a"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_dd2", a:[1,"b"], b:[2,"a"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_dd3", a:[2,"ab"], b:[3,"a"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_dd4", a:[3,"b"], b:[4,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_dd5", a:[4,"out"], b:[5,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_dd6", a:[5,"out"], b:[6,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_dd7", a:[6,"out"], b:[7,"in"], color:"vl", params:{}, pts:[[-96,-192]]},
+      {type:"conduit", name:"lt_dd8", a:[7,"out"], b:[8,"in"], color:"rl", params:{}, pts:[[96,-192]]},
+      {type:"conduit", name:"lt_dd9", a:[8,"out"], b:[10,"a"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_dd10", a:[3,"c"], b:[9,"in"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_dd11", a:[9,"out"], b:[10,"c"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_dd12", a:[2,"b"], b:[11,"c"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_dd13", a:[10,"b"], b:[11,"a"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_dd14", a:[11,"b"], b:[12,"a"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_dd15", a:[1,"c"], b:[12,"c"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_dd16", a:[12,"b"], b:[13,"in"], color:"rl", params:{}},
+    ],
+  },
+  "Drosselschaltung": {
+    comps: [
+      {type:"control_valve", name:"rv_dr", rot:270, dx:-96, dy:96, params:RV_P},
+      {type:"ball_valve", name:"kh_dr", rot:270, dx:-96, dy:-64, params:{}},
+      {type:"radiator", name:"hk_dr", rot:0, dx:0, dy:-144, params:HK_P},
+      {type:"balancing_valve", name:"srv_dr", rot:90, dx:96, dy:-64, params:SRV_P},
+    ],
+    wires: [
+      {type:"conduit", name:"lt_dr1", a:[0,"out"], b:[1,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_dr2", a:[1,"out"], b:[2,"in"], color:"vl", params:{}, pts:[[-96,-144]]},
+      {type:"conduit", name:"lt_dr3", a:[2,"out"], b:[3,"in"], color:"rl", params:{}, pts:[[96,-144]]},
+    ],
+  },
+  "Umlenkschaltung": {
+    comps: [
+      {type:"tee", name:"ab_ul", rot:270, dx:-96, dy:96, params:{}},
+      {type:"ball_valve", name:"kh_ul", rot:270, dx:-96, dy:-64, params:{}},
+      {type:"radiator", name:"hk_ul", rot:0, dx:0, dy:-144, params:HK_P},
+      {type:"balancing_valve", name:"srv_ul", rot:90, dx:96, dy:-64, params:SRV_P},
+      {type:"balancing_valve", name:"srv_ul2", rot:0, dx:0, dy:96, params:SRV_P},
+      {type:"mixing_valve_3way", name:"mv_ul", rot:90, dx:96, dy:96, params:MV_P},
+    ],
+    wires: [
+      {type:"conduit", name:"lt_ul1", a:[0,"b"], b:[1,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_ul2", a:[1,"out"], b:[2,"in"], color:"vl", params:{}, pts:[[-96,-144]]},
+      {type:"conduit", name:"lt_ul3", a:[2,"out"], b:[3,"in"], color:"rl", params:{}, pts:[[96,-144]]},
+      {type:"conduit", name:"lt_ul4", a:[3,"out"], b:[5,"a"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_ul5", a:[0,"c"], b:[4,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_ul6", a:[4,"out"], b:[5,"b"], color:"vl", params:{}},
     ],
   },
   "Einspritzschaltung (Durchgangsventil)": {
     comps: [
-      {type:"control_valve", name:"rv_es", rot:270, dx:-96, dy:144,
-       params:{kvs_m3h:4, opening:0.5, characteristic:"linear"}},
-      {type:"tee", name:"ab_es1", rot:270, dx:-96, dy:80, params:{}},
-      {type:"pump", name:"pu_es", rot:270, dx:-96, dy:-16,
-       params:{mode:"constant_dp", dp_kPa:20, q_nom_m3h:1}},
-      {type:"radiator", name:"hk_es", rot:0, dx:0, dy:-144,
-       params:{q_nom_kW:5, t_sup_nom_C:70, t_ret_nom_C:55, t_room_C:20}},
-      {type:"tee", name:"ab_es2", rot:90, dx:96, dy:80, params:{}},
+      {type:"ball_valve", name:"kh_es2", rot:270, dx:-96, dy:224, params:{}},
+      {type:"control_valve", name:"rv_es", rot:270, dx:-96, dy:160, params:RV_P},
+      {type:"tee", name:"ab_es1", rot:270, dx:-96, dy:96, params:{}},
+      {type:"pump", name:"pu_es", rot:270, dx:-96, dy:16, params:PUMP_P},
+      {type:"check_valve", name:"rk_es", rot:270, dx:-96, dy:-48, params:RK_P},
+      {type:"ball_valve", name:"kh_es", rot:270, dx:-96, dy:-112, params:{}},
+      {type:"radiator", name:"hk_es", rot:0, dx:0, dy:-192, params:HK_P},
+      {type:"balancing_valve", name:"srv_es", rot:90, dx:96, dy:-112, params:SRV_P},
+      {type:"tee", name:"ab_es2", rot:90, dx:96, dy:96, params:{}},
+      {type:"balancing_valve", name:"srv_es2", rot:90, dx:96, dy:224, params:SRV_P},
     ],
     wires: [
-      {type:"conduit", name:"lt_es1", a:[0,"out"], b:[1,"a"], color:"vl", params:{}},
-      {type:"conduit", name:"lt_es2", a:[1,"b"], b:[2,"in"], color:"vl", params:{}},
-      {type:"conduit", name:"lt_es3", a:[2,"out"], b:[3,"in"], color:"vl", params:{}, pts:[[-96,-144]]},
-      {type:"conduit", name:"lt_es4", a:[3,"out"], b:[4,"a"], color:"rl", params:{}, pts:[[96,-144]]},
-      {type:"conduit", name:"lt_es5", a:[4,"c"], b:[1,"c"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_es1", a:[0,"out"], b:[1,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_es2", a:[1,"out"], b:[2,"a"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_es3", a:[2,"b"], b:[3,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_es4", a:[3,"out"], b:[4,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_es5", a:[4,"out"], b:[5,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_es6", a:[5,"out"], b:[6,"in"], color:"vl", params:{}, pts:[[-96,-192]]},
+      {type:"conduit", name:"lt_es7", a:[6,"out"], b:[7,"in"], color:"rl", params:{}, pts:[[96,-192]]},
+      {type:"conduit", name:"lt_es8", a:[7,"out"], b:[8,"a"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_es9", a:[2,"c"], b:[8,"c"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_es10", a:[8,"b"], b:[9,"in"], color:"rl", params:{}},
+    ],
+  },
+  "Einspritzschaltung (Dreiwegeventil)": {
+    comps: [
+      {type:"ball_valve", name:"kh_e32", rot:270, dx:-96, dy:224, params:{}},
+      {type:"mixing_valve_3way", name:"mv_e3", rot:270, dx:-96, dy:160, params:MV_P},
+      {type:"tee", name:"ab_e31", rot:270, dx:-96, dy:96, params:{}},
+      {type:"pump", name:"pu_e3", rot:270, dx:-96, dy:16, params:PUMP_P},
+      {type:"check_valve", name:"rk_e3", rot:270, dx:-96, dy:-48, params:RK_P},
+      {type:"ball_valve", name:"kh_e3", rot:270, dx:-96, dy:-112, params:{}},
+      {type:"radiator", name:"hk_e3", rot:0, dx:0, dy:-192, params:HK_P},
+      {type:"balancing_valve", name:"srv_e3", rot:90, dx:96, dy:-112, params:SRV_P},
+      {type:"tee", name:"ab_e32", rot:90, dx:96, dy:96, params:{}},
+      {type:"tee", name:"ab_e33", rot:90, dx:96, dy:160, params:{}},
+      {type:"balancing_valve", name:"srv_e32", rot:90, dx:96, dy:224, params:SRV_P},
+    ],
+    wires: [
+      {type:"conduit", name:"lt_e31", a:[0,"out"], b:[1,"a"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_e32", a:[1,"ab"], b:[2,"a"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_e33", a:[2,"b"], b:[3,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_e34", a:[3,"out"], b:[4,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_e35", a:[4,"out"], b:[5,"in"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_e36", a:[5,"out"], b:[6,"in"], color:"vl", params:{}, pts:[[-96,-192]]},
+      {type:"conduit", name:"lt_e37", a:[6,"out"], b:[7,"in"], color:"rl", params:{}, pts:[[96,-192]]},
+      {type:"conduit", name:"lt_e38", a:[7,"out"], b:[8,"a"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_e39", a:[2,"c"], b:[8,"c"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_e310", a:[1,"b"], b:[9,"c"], color:"vl", params:{}},
+      {type:"conduit", name:"lt_e311", a:[8,"b"], b:[9,"a"], color:"rl", params:{}},
+      {type:"conduit", name:"lt_e312", a:[9,"b"], b:[10,"in"], color:"rl", params:{}},
     ],
   },
 };
@@ -258,6 +402,7 @@ const META = {
   manifold:{de:"Verteiler/Sammler",grp:"Verteilung",pre:"vt"},
   tee:{de:"T-Stück",grp:"Verteilung",pre:"ab"},
   control_valve:{de:"Regelventil",grp:"Ventile",pre:"rv"},
+  ball_valve:{de:"Kugelhahn",grp:"Ventile",pre:"kh"},
   check_valve:{de:"Rückschlagklappe",grp:"Ventile",pre:"rk"},
   balancing_valve:{de:"Strangregulierventil",grp:"Ventile",pre:"srv"},
   mixing_valve_3way:{de:"3-Wege-Mischventil",grp:"Ventile",pre:"mv"},
@@ -447,7 +592,7 @@ function portPosRaw(comp) {
   const t = comp.type, names = portNames(comp), pos = {};
   // Anschlusspunkte tangieren die Ventilsymbole außen (r=4.5 am Scheitel bei ±16)
   if (t === "mixing_valve_3way") return {a:{dx:-21,dy:0}, b:{dx:0,dy:21}, ab:{dx:21,dy:0}};
-  if (t === "control_valve" || t === "balancing_valve")
+  if (t === "control_valve" || t === "balancing_valve" || t === "ball_valve")
     return {in:{dx:-21,dy:0}, out:{dx:21,dy:0}};
   if (t === "check_valve") return {in:{dx:-28,dy:0}, out:{dx:28,dy:0}};
   if (t === "tee") return {a:{dx:-22,dy:0}, b:{dx:22,dy:0}, c:{dx:0,dy:22}};
@@ -516,6 +661,11 @@ function symbol(comp) {
               <line class="sym" x1="0" y1="0" x2="0" y2="-12"/><rect class="sym" x="-6" y="-21" width="12" height="9"/>
               <text x="-20" y="-11" class="comp-label">A</text><text x="10" y="-11" class="comp-label">AB</text>
               <text x="11" y="22" class="comp-label">B</text>`;
+    case "ball_valve":
+      return `${tri(-16,0,15,-9,9)}${tri(16,0,-15,-9,9)}
+              <circle class="sym" r="5" fill="var(--bg,#fff)"/>` +
+             (comp.params && comp.params.open === false
+              ? `<line class="sym" x1="-4" y1="-4" x2="4" y2="4"/><line class="sym" x1="-4" y1="4" x2="4" y2="-4"/>` : "");
     case "check_valve":
       return `<line class="sym" x1="-24" y1="0" x2="-10" y2="0"/>
               <polygon class="sym" points="-10,-9 -10,9 8,0"/>

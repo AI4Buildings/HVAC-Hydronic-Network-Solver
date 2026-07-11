@@ -243,3 +243,43 @@ def test_check_valve_selects_open_branch():
     r = net.solve()
     assert r["rk_auf"].q_m3h > 0
     assert abs(r["rk_zu"].q_m3h) < r["rk_auf"].q_m3h / 500
+
+
+def test_ball_valve_open_negligible_resistance():
+    """Kugelhahn offen (Default-Kvs 1000): praktisch widerstandsfrei."""
+    import hydraulik as h
+    doc = {
+        "components": {
+            "pu": {"type": "pump", "mode": "constant_flow", "q_m3h": 2.0},
+            "kh": {"type": "ball_valve"},
+            "rv": {"type": "control_valve", "kvs_m3h": 4.0},
+        },
+        "connections": [["pu.out", "kh.in"], ["kh.out", "rv.in"], ["rv.out", "pu.in"]],
+    }
+    r = h.load(doc).solve(thermal=False)
+    assert r.converged
+    # Δp = (2/1000)²·1e5·ρ/1000 ≈ 0.4 Pa — vernachlässigbar gegen das Ventil
+    assert abs(r["kh"].dp_kPa) < 1e-3
+    assert r["kh"].q_m3h == pytest.approx(2.0, abs=1e-9)
+
+
+def test_ball_valve_closed_blocks_exactly():
+    """Kugelhahn zu: V̇ = 0 als Randbedingung, Parallelzweig übernimmt alles."""
+    import hydraulik as h
+    doc = {
+        "components": {
+            "pu": {"type": "pump", "mode": "constant_dp", "dp_kPa": 30, "q_nom_m3h": 2.0},
+            "kh": {"type": "ball_valve", "open": False},
+            "rv1": {"type": "control_valve", "kvs_m3h": 4.0},
+            "rv2": {"type": "control_valve", "kvs_m3h": 4.0},
+        },
+        "connections": [
+            ["pu.out", "kh.in", "rv2.in"],
+            ["kh.out", "rv1.in"],
+            ["rv1.out", "rv2.out", "pu.in"],
+        ],
+    }
+    r = h.load(doc).solve(thermal=False)
+    assert r.converged
+    assert r["kh"].q_m3h == pytest.approx(0.0, abs=1e-12)
+    assert abs(r["rv2"].q_m3h) > 0.1

@@ -2,7 +2,7 @@
 
 ## Stand v0.3.0 (2026-07-10)
 
-108 Tests, alle grün; 6 YAML-Beispielschaltungen + Lösungs-/Validierungs-
+111 Tests, alle grün; 6 YAML-Beispielschaltungen + Lösungs-/Validierungs-
 skripte; validiert gegen zwei unabhängige FH-Burgenland-Referenzlösungen;
 grafischer Schaltbild-Editor mit integriertem Solver (`hydraulik serve`).
 Veröffentlicht: https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
