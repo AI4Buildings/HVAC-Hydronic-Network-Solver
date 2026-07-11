@@ -246,21 +246,26 @@ def test_check_valve_selects_open_branch():
 
 
 def test_ball_valve_open_negligible_resistance():
-    """Kugelhahn offen (Default-Kvs 1000): praktisch widerstandsfrei."""
+    """Kugelhahn offen ohne Kvs: druckverlustfrei in jeder Anlagengröße
+    (1 Pa Referenzverlust bei q_nom, wie link); mit Kvs: reale Armatur."""
     import hydraulik as h
     doc = {
         "components": {
-            "pu": {"type": "pump", "mode": "constant_flow", "q_m3h": 2.0},
-            "kh": {"type": "ball_valve"},
-            "rv": {"type": "control_valve", "kvs_m3h": 4.0},
+            "pu": {"type": "pump", "mode": "constant_flow", "q_m3h": 200.0},
+            "kh": {"type": "ball_valve", "q_nom_m3h": 200.0},   # MW-Anlage
+            "kh2": {"type": "ball_valve", "kvs_m3h": 400.0},    # reale Armatur
+            "rv": {"type": "control_valve", "kvs_m3h": 250.0},
         },
-        "connections": [["pu.out", "kh.in"], ["kh.out", "rv.in"], ["rv.out", "pu.in"]],
+        "connections": [["pu.out", "kh.in"], ["kh.out", "kh2.in"],
+                        ["kh2.out", "rv.in"], ["rv.out", "pu.in"]],
     }
-    r = h.load(doc).solve(thermal=False)
+    net = h.load(doc)
+    r = net.solve(thermal=False)
     assert r.converged
-    # Δp = (2/1000)²·1e5·ρ/1000 ≈ 0.4 Pa — vernachlässigbar gegen das Ventil
-    assert abs(r["kh"].dp_kPa) < 1e-3
-    assert r["kh"].q_m3h == pytest.approx(2.0, abs=1e-9)
+    assert abs(r["kh"].dp_kPa) == pytest.approx(1e-3, rel=1e-6)   # exakt 1 Pa
+    # Kv-Gesetz: Δp [kPa] = (200/400)²·100·ρ/1000
+    assert abs(r["kh2"].dp_kPa) == pytest.approx(25.0 * net.fluid.rho / 1000, rel=1e-6)
+    assert r["kh"].q_m3h == pytest.approx(200.0, abs=1e-9)
 
 
 def test_ball_valve_closed_blocks_exactly():

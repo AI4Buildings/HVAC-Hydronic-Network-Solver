@@ -141,7 +141,7 @@ Regeln:
 | `pump` | in, out | `mode: constant_dp\|constant_flow`, `dp_kPa` bzw. `q_m3h`, `q_nom_m3h` |
 | `control_valve` | in, out | `kvs_m3h`, `opening` (0…1), `characteristic: equal_percentage\|linear` |
 | `balancing_valve` | in, out | `kvs_m3h`, `opening` (Voreinstellung) |
-| `ball_valve` | in, out | Kugelhahn (Absperrarmatur): Default offen; `closed: true` = Revisionsfall, sperrt exakt (V̇ = 0); `kvs_m3h` optional (Default 1000 ≈ widerstandsfrei) |
+| `ball_valve` | in, out | Kugelhahn (Absperrarmatur): Default offen und druckverlustfrei (1 Pa Referenzverlust bei `q_nom_m3h`, wie `link`); optional realer `kvs_m3h`; `closed: true` = Revisionsfall, sperrt exakt (V̇ = 0) |
 | `check_valve` | in, out | Rückschlagklappe: `kvs_m3h` (Durchlassrichtung in→out); sperrt rückwärts (Restleckage kvs/1000, über `block_factor` einstellbar) |
 | `mixing_valve_3way` | a, b, ab | `kvs_m3h`, `opening` (A-Pfad), `characteristic` |
 | `radiator` | in, out | `q_nom_kW`, `t_sup_nom_C`, `t_ret_nom_C`, `t_room_C`, `n`, `q_prescribed_kW`; Hydraulik: `kv_m3h` ODER `c_Pa_m3h2` (Default 10 kPa bei Nennstrom) |

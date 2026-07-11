@@ -73,22 +73,28 @@ class BalancingValve(_KvValveBase):
 class BallValve(TwoPortComponent):
     """Kugelhahn (Absperrarmatur): auf oder zu.
 
-    Im Regelbetrieb offen (Default): es wirkt der Kvs-Wert (Default
-    1000 m³/h ≈ praktisch widerstandsfrei; für reale Armaturen den
-    Hersteller-Kvs angeben). closed = true bildet den Revisionsfall ab
-    (z.B. Pumpentausch) und sperrt exakt: V̇ = 0 als Randbedingung,
-    Δp über der Armatur ist Ergebnis — dieselbe Semantik wie ein
-    Regelventil mit opening = 0.
+    Im Regelbetrieb offen (Default). Ohne Kvs-Angabe quasi-ideal, d.h.
+    ohne nennenswerten Druckverlust in JEDER Anlagengröße: wie beim link
+    wirkt nur ein interner Referenzwiderstand von 1 Pa beim Nennvolumen-
+    strom q_nom (exakt 0 ist nicht möglich, da die Kantenimpulsgleichung
+    Δp = a·Q + b·Q·|Q| mit a = b = 0 entartet). Mit Kvs-Angabe wirkt der
+    reale Armaturenwiderstand. Es gibt nur voll offen oder voll zu:
+    closed = true bildet den Revisionsfall ab (z.B. Pumpentausch) und
+    sperrt exakt (V̇ = 0 als Randbedingung, Δp ist Ergebnis) — dieselbe
+    Semantik wie ein Regelventil mit opening = 0.
     """
 
-    kvs: float
+    kvs: float | None
     closed: bool
+    q_nom: float
 
     PARAMS = (
         Param("closed", "bool", default=False,
               help="geschlossen (Revisionsfall); Default offen"),
-        Param("kvs", "kv", default=1000.0, minv=1e-4,
-              help="Kvs-Wert offen [m³/h]; Default praktisch widerstandsfrei"),
+        Param("kvs", "kv", minv=1e-4,
+              help="optional: realer Kvs-Wert; ohne Angabe druckverlustfrei"),
+        Param("q_nom", "flow", default=10.0 / 3600.0, minv=1e-7,
+              help="Nennvolumenstrom im druckverlustfreien Fall (Referenzverlust dort 1 Pa)"),
     )
 
     def build(self, b) -> None:
@@ -99,7 +105,9 @@ class BallValve(TwoPortComponent):
             super().build(b)
 
     def hydraulic_coefficients(self, q: float, fluid: Fluid) -> EdgeCoefficients:
-        return EdgeCoefficients(b=kv_to_b(self.kvs, fluid.rho))
+        if self.kvs is not None:
+            return EdgeCoefficients(b=kv_to_b(self.kvs, fluid.rho))
+        return EdgeCoefficients(b=1.0 / self.q_nom ** 2)
 
 
 @register("check_valve")
