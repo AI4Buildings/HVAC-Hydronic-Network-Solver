@@ -81,7 +81,11 @@ d_inner …, inkl. Wärmeverlust) — mit eigenem Namen (sichtbar bei
 Selektion), `ts`-Label und eigenen Ergebniswerten im Hover (V̇, Δp, T, v).
 **Leitungsführung mit Knickpunkten** (Doppelklick auf Leitung setzt eine
 Umlenkung, Griffe ziehen, Doppelklick auf Griff entfernt; ohne Knick
-automatisch gerade bzw. abgewinkelt), **Mehrfachauswahl**
+automatisch gerade bzw. abgewinkelt), **Vorlagen für Standardschaltungen**
+(Palette-Sektion VORLAGEN: mitgeliefert Beimisch- und Einspritzschaltung;
+eigene Vorlagen: Bereich auswählen → „Als Vorlage speichern" → per Klick
+platzieren und Parameter anpassen; im Browser gespeichert, als JSON-Datei
+export-/importierbar zum Teilen), **Mehrfachauswahl**
 (Auswahlrechteck aufziehen oder Shift+Klick) mit gemeinsamem Verschieben und
 **Kopieren/Einfügen ganzer Teilschaltungen** (Strg+C/V/D — interne Leitungen
 werden mitkopiert, Namen automatisch hochgezählt), **Undo/Redo**

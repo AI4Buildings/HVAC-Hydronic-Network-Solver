@@ -101,6 +101,12 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 - `cap` (dichtes Endstück, V̇ = 0): verschließt Anschlüsse für
   Teilbereichstests; keine Randbedingung nötig (Kontinuität am Sackknoten),
   Strang wird thermisch als stagnierend markiert.
+- **Vorlagen (Templates) für Standardschaltungen** im Editor: Auswahl als
+  benannte Vorlage speichern (relative Koordinaten inkl. interner Leitungen,
+  Parameter, Farben, Knickpunkte, Rotationen), per Klick platzieren
+  (Namen werden automatisch eindeutig), löschen; Persistenz im localStorage,
+  Export/Import als JSON-Datei zum Teilen. Mitgeliefert: Beimischschaltung,
+  Einspritzschaltung (Durchgangsventil) mit sinnvollen Default-Parametern.
 - **Druckkonvention: durchgängig Überdruck (gauge)** — bei inkompressiblem
   Fluid ohne Phasenwechsel physikalisch die richtige Wahl; dokumentiert in
   README, Parametertexten und Berichtskopf. Auto-Referenz 150 kPa(ü)
