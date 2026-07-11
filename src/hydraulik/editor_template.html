@@ -21,8 +21,6 @@
              border-right:1px solid var(--line); padding:8px; }
   #palette h3 { font-size:11px; text-transform:uppercase; letter-spacing:.04em;
                 color:var(--muted); margin:10px 4px 4px; }
-  .pal-note { font-size:11px; color:var(--muted); margin:2px 4px 6px; padding:5px 8px;
-              background:#f4f9f5; border:1px dashed #9fc9ab; border-radius:6px; }
   .pal-item { display:block; width:100%; text-align:left; margin:2px 0; padding:5px 8px; }
   .pal-item.active { outline:2px solid var(--sel); }
   #canvas-wrap { flex:1; overflow:auto; position:relative; }
@@ -36,7 +34,7 @@
       width:100%; font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:5px; }
   .field .unitrow { display:flex; gap:4px; }
   .field .unitrow input { flex:1; }
-  .field .unitrow select { width:96px; }
+  .field .unitrow select { width:118px; }
   .req { color:var(--vl); }
   #issues { font-size:12px; }
   #issues li { color:#8a5200; margin:2px 0; }
@@ -106,18 +104,43 @@
 "use strict";
 const CATALOG = __CATALOG_JSON__;
 
+/* ---------- Einheiten-Anzeige (YAML-Suffix → lesbare Einheit) ------------- */
+const UNIT_LABEL = {
+  Pa:"Pa", kPa:"kPa", bar:"bar", mbar:"mbar",
+  m3s:"m³/s", m3h:"m³/h", l_s:"l/s", l_min:"l/min",
+  kg_s:"kg/s", kg_h:"kg/h",
+  C:"°C", W:"W", kW:"kW",
+  m:"m", mm:"mm", cm:"cm", m2:"m²",
+  W_m2K:"W/(m²·K)", W_mK:"W/(m·K)", W_K:"W/K",
+  Pa_m3h2:"Pa/(m³/h)²", Pa_m3s2:"Pa/(m³/s)²",
+  Pa_m3h:"Pa/(m³/h)", Pa_m3s:"Pa/(m³/s)",
+};
+const GROUP_LABEL = {
+  pressure:"Druck (Überdruck)", flow:"Volumenstrom", massflow:"Massenstrom",
+  temperature:"Temperatur", power:"Leistung", length:"Länge", area:"Fläche",
+  kv:"Kv-Wert", u_area:"Wärmedurchgang", u_linear:"längenbez. Wärmeverlust",
+  ua:"UA-Wert", quad_resistance:"Widerstand C", lin_resistance:"linearer Widerstand",
+};
+function unitLabel(sfx){ return UNIT_LABEL[sfx] || sfx; }
+function limitLabel(p, si) {        // Grenzwert in der Anzeige-Einheit des ersten Suffixes
+  if (p.choices || p.group === "int" || p.group === "none" || p.group === "bool")
+    return String(si);
+  const sfx = p.keys[0].slice(p.name.length + 1);
+  return `${round6(si / CATALOG.units[p.group][sfx])} ${unitLabel(sfx)}`;
+}
+
 /* ---------- Typ-Metadaten (Anzeige) ------------------------------------ */
 const META = {
-  pump:{de:"Pumpe",grp:"Erzeuger & Quellen",pre:"pu"},
-  heat_pump:{de:"Wärmepumpe",grp:"Erzeuger & Quellen",pre:"wp"},
-  chiller:{de:"Kältemaschine",grp:"Erzeuger & Quellen",pre:"km"},
-  ideal_storage:{de:"Speicher (ideal, geladen)",grp:"Erzeuger & Quellen",pre:"sp"},
+  pump:{de:"Pumpe",grp:"Erzeuger & Speicher",pre:"pu"},
+  heat_pump:{de:"Wärmepumpe",grp:"Erzeuger & Speicher",pre:"wp"},
+  chiller:{de:"Kältemaschine",grp:"Erzeuger & Speicher",pre:"km"},
+  ideal_storage:{de:"Speicher (ideal, geladen)",grp:"Erzeuger & Speicher",pre:"sp"},
   inflow:{de:"Inflow (Zulauf)",grp:"Randbedingungen",pre:"in"},
   outflow:{de:"Outflow (Austritt)",grp:"Randbedingungen",pre:"out"},
-  buffer_storage:{de:"Pufferspeicher (Mischknoten)",grp:"Erzeuger & Quellen",pre:"psp"},
+  buffer_storage:{de:"Pufferspeicher (ideal durchmischt)",grp:"Erzeuger & Speicher",pre:"psp"},
   hydraulic_separator:{de:"Hydraulische Weiche",grp:"Verteilung",pre:"hw"},
   manifold:{de:"Verteiler/Sammler",grp:"Verteilung",pre:"vt"},
-  tee:{de:"Abzweiger (T-Stück)",grp:"Verteilung",pre:"ab"},
+  tee:{de:"T-Stück",grp:"Verteilung",pre:"ab"},
   control_valve:{de:"Regelventil",grp:"Ventile",pre:"rv"},
   check_valve:{de:"Rückschlagklappe",grp:"Ventile",pre:"rk"},
   balancing_valve:{de:"Strangregulierventil",grp:"Ventile",pre:"srv"},
@@ -126,14 +149,14 @@ const META = {
   floor_heating:{de:"Fußbodenheizung",grp:"Verbraucher",pre:"fbh"},
   heating_coil:{de:"Heizregister",grp:"Verbraucher",pre:"hr"},
   cooling_coil:{de:"Kühlregister",grp:"Verbraucher",pre:"kr"},
-  pipe:{de:"Rohrleitung (Symbol)",grp:"Leitungen & Widerstände",pre:"ro"},
-  flow_resistance:{de:"Widerstand (C-Wert, Symbol)",grp:"Leitungen & Widerstände",pre:"r"},
+  pipe:{de:"Rohrleitung",grp:"Leitungen & Widerstände",pre:"ro"},
+  flow_resistance:{de:"Strömungswiderstand",grp:"Leitungen & Widerstände",pre:"r"},
   link:{de:"Ideale Verbindung (link)",grp:"Leitungen & Widerstände",pre:"lk"},
   conduit:{de:"Verbindungsleitung",grp:"Leitungen & Widerstände",pre:"lt"},
   open_end:{de:"Offenes Ende (RB)",grp:"Randbedingungen",pre:"oe"},
   cap:{de:"Endstück (dicht, V̇=0)",grp:"Randbedingungen",pre:"es"},
 };
-const GRP_ORDER = ["Erzeuger & Quellen","Verteilung","Ventile","Verbraucher",
+const GRP_ORDER = ["Erzeuger & Speicher","Verteilung","Ventile","Verbraucher",
                    "Leitungen & Widerstände","Randbedingungen","Sonstige"];
 const TYPES = {};
 CATALOG.types.forEach(t => TYPES[t.type] = t);
@@ -611,7 +634,7 @@ document.getElementById("cv").addEventListener("mouseleave", () => { tip.style.d
 /* ---------- Palette ------------------------------------------------------ */
 // 'open_end' ist durch inflow/outflow abgedeckt; 'conduit' wird nicht als
 // Kasten platziert, sondern entsteht beim Ziehen jeder Leitung (Linie).
-const PALETTE_HIDDEN = new Set(["open_end", "conduit"]);
+const PALETTE_HIDDEN = new Set(["open_end", "conduit", "link"]);
 (function buildPalette(){
   const groups = {};
   for (const t of CATALOG.types) {
@@ -624,10 +647,6 @@ const PALETTE_HIDDEN = new Set(["open_end", "conduit"]);
     if (!groups[g]) continue;
     groups[g].sort((a, b) => a.label.localeCompare(b.label, "de"));
     html += `<h3>${g}</h3>`;
-    if (g === "Leitungen & Widerstände")
-      html += `<div class="pal-note"><b>Verbindungsleitung:</b> einfach von
-        Port zu Port ziehen – jede gezogene Linie ist eine Leitung (Default
-        ideal; Linie anklicken für C-Wert/Rohrmodell, Farbe, Name).</div>`;
     for (const it of groups[g])
       html += `<button class="pal-item" data-type="${it.type}" title="${esc(it.doc)}">${esc(it.label)}</button>`;
   }
@@ -950,12 +969,12 @@ function paramField(c, p) {
   const factors = CATALOG.units[p.group];
   const sfx = used.slice(p.name.length + 1);
   const ph = p.default != null ? ` placeholder="${round6(p.default / factors[sfx])}"` : "";
-  return `<div class="field"${help}><label>${p.name}${req} <span class="hint">[${p.group}]</span></label>
+  return `<div class="field"${help}><label>${p.name}${req} <span class="hint">[${GROUP_LABEL[p.group] || p.group}]</span></label>
     <div class="unitrow">
       <input type="number" step="any" data-param="${p.name}" data-kind="unit" data-key="${used}"
              value="${c.params[used] ?? ""}"${ph}>
       <select data-param="${p.name}" data-kind="suffix" data-base="${p.name}">` +
-      keys.map(k => `<option value="${k}"${k===used?" selected":""}>${k.slice(p.name.length+1)}</option>`).join("") +
+      keys.map(k => `<option value="${k}"${k===used?" selected":""}>${unitLabel(k.slice(p.name.length+1))}</option>`).join("") +
       `</select></div></div>`;
 }
 function firstKeyValue(c, keys){ for (const k of keys) if (c.params[k] !== undefined) return c.params[k]; }
@@ -1075,10 +1094,10 @@ function validate() {
       if (si == null || si === "") continue;
       if (p.minv != null && si < p.minv)
         issues.push({err:true, comp:c.id,
-          msg:`${c.name}: '${p.name}' unter Minimum (${p.minv} SI)`});
+          msg:`${c.name}: '${p.name}' unter Minimum (${limitLabel(p, p.minv)})`});
       if (p.maxv != null && si > p.maxv)
         issues.push({err:true, comp:c.id,
-          msg:`${c.name}: '${p.name}' über Maximum (${p.maxv} SI) – z.B. Ventilstellung 0…1, nicht %`});
+          msg:`${c.name}: '${p.name}' über Maximum (${limitLabel(p, p.maxv)}) – z.B. Ventilstellung 0…1, nicht %`});
     }
     for (const pn of portNames(c)) {
       const used = state.wires.some(w =>
@@ -1095,9 +1114,9 @@ function validate() {
       if (k === undefined) continue;
       const si = w.params[k] * (CATALOG.units[p.group] ? CATALOG.units[p.group][k.slice(p.name.length + 1)] : 1);
       if (p.minv != null && si < p.minv)
-        issues.push({err:true, msg:`${w.name}: '${p.name}' unter Minimum (${p.minv} SI)`});
+        issues.push({err:true, msg:`${w.name}: '${p.name}' unter Minimum (${limitLabel(p, p.minv)})`});
       if (p.maxv != null && si > p.maxv)
-        issues.push({err:true, msg:`${w.name}: '${p.name}' über Maximum (${p.maxv} SI)`});
+        issues.push({err:true, msg:`${w.name}: '${p.name}' über Maximum (${limitLabel(p, p.maxv)})`});
     }
   }
   if (!state.comps.length) issues.push({err:false, msg:"Noch keine Komponenten gezeichnet."});
