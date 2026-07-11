@@ -256,3 +256,27 @@ def test_emitters_reject_kv_and_c_together():
         h.FloorHeatingLoop("fbh", area_m2=10, length_m=50, c_Pa_m3h2=1000)  # beides
     with pytest.raises(h.ComponentParamError):
         h.FloorHeatingLoop("fbh", area_m2=10)                               # keines
+
+
+def test_slow_recirculation_converges_beyond_sweep_limit():
+    """Großes Rezirkulationsverhältnis (Bypass-Umlauf ≫ Zustrom) → Kontraktions-
+    faktor nahe 1. Der Solver muss über max_iter_thermal hinaus weiterrechnen,
+    solange der Fehler nachweislich fällt (Trendprüfung) — und darf das NICHT
+    als Drift eines isolierten Umlaufs fehlklassifizieren."""
+    import hydraulik as h
+    doc = {
+        "components": {
+            "zu": {"type": "inflow", "t_set_C": 70, "q_m3h": 0.05},   # kleiner Zustrom
+            "pu": {"type": "pump", "mode": "constant_flow", "q_m3h": 1.0},  # großer Umlauf
+            "hk": {"type": "radiator", "q_nom_kW": 3, "t_sup_nom_C": 70,
+                   "t_ret_nom_C": 55, "t_room_C": 20, "kv_m3h": 100},
+            "ab": {"type": "outflow", "p_kPa": 150},
+            "abz": {"type": "tee"},
+        },
+        "connections": [["zu.port", "pu.in"], ["pu.out", "hk.in"],
+                        ["hk.out", "abz.a"], ["abz.b", "pu.in"], ["abz.c", "ab.port"]],
+    }
+    settings = h.load_settings({"settings": {"max_iter_thermal": 60}})
+    r = h.load(doc).solve(settings)
+    assert r.converged
+    assert abs(r.energy_imbalance_W) < 1.0

@@ -288,3 +288,33 @@ def test_ball_valve_closed_blocks_exactly():
     assert r.converged
     assert r["kh"].q_m3h == pytest.approx(0.0, abs=1e-12)
     assert abs(r["rv2"].q_m3h) > 0.1
+
+
+def test_ventilautoritaet_installed_characteristic():
+    """Installierte Kennlinie bei konstantem Kreis-Δp: analytisch gilt für ein
+    lineares Ventil V̇(H)/V̇₁₀₀ = √((b_V+b_N)/(b_V/H²+b_N)); bei a_V = 0.5 und
+    H = 0.5 exakt √(2/5), bei a_V = 0.1 exakt √(10/13) (s. examples/08)."""
+    import hydraulik as h
+
+    def doc(a, opening):
+        rho = h.water_at(50.0).rho
+        kvs = 1.0 * (1e5 * rho / 1000.0 / (a * 40000.0)) ** 0.5
+        return {
+            "components": {
+                "zu": {"type": "inflow", "t_set_C": 70, "p_kPa": 190},
+                "rv": {"type": "control_valve", "kvs_m3h": kvs,
+                       "opening": opening, "characteristic": "linear"},
+                "netz": {"type": "flow_resistance",
+                         "c_Pa_m3h2": (1.0 - a) * 40000.0},
+                "ab": {"type": "outflow", "p_kPa": 150},
+            },
+            "connections": [["zu.port", "rv.in"], ["rv.out", "netz.in"],
+                            ["netz.out", "ab.port"]],
+        }
+
+    for a, expected in ((0.5, (2 / 5) ** 0.5), (0.1, (10 / 13) ** 0.5)):
+        r100 = h.load(doc(a, 1.0)).solve(thermal=False)
+        # Autorität aus dem Solverergebnis = Auslegungswert
+        assert abs(r100["rv"].dp_kPa) / 40.0 == pytest.approx(a, abs=1e-3)
+        r50 = h.load(doc(a, 0.5)).solve(thermal=False)
+        assert r50["rv"].q_m3h / r100["rv"].q_m3h == pytest.approx(expected, rel=1e-3)

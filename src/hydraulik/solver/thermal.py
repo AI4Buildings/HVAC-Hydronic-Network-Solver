@@ -79,7 +79,14 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
     t_prev = t_node.copy()
     t_prev2 = None
     t_half = None                       # Schnappschuss zur Drift-Erkennung
-    for it in range(1, s.max_iter_thermal + 1):
+    deltas: list[float] = []            # Fehlerverlauf für die Trendanalyse
+    # Fortsetzung über max_iter hinaus, solange der Fehler nachweislich
+    # geometrisch fällt (Kontraktionsfaktor nahe 1, z.B. große Rezirkulations-
+    # verhältnisse über Bypässe): echte Drift (isolierter Umlauf mit fester
+    # Leistung) hat konstante Rate, dort bricht die Trendprüfung ab.
+    hard_cap = 20 * s.max_iter_thermal
+    while it < hard_cap:
+        it += 1
         delta = 0.0
         for e in net.edges:
             i = e.index
@@ -114,9 +121,17 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
                 t_new = alpha * (num / den) + (1.0 - alpha) * t_node[i]
                 delta = max(delta, abs(t_new - t_node[i]))
                 t_node[i] = t_new
+        deltas.append(delta)
         if delta < s.tol_t:
             converged = True
             break
+        if it >= s.max_iter_thermal:
+            # Trendprüfung: klar fallender Fehler über die letzten 50 Sweeps
+            # (Fenstermaxima, robust gegen nicht-monotone Verläufe) → weiter.
+            w = 50
+            if not (len(deltas) > w + 5
+                    and max(deltas[-5:]) < 0.995 * max(deltas[-w - 5:-w])):
+                break
         if t_prev2 is not None and delta > s.tol_t:
             step2 = float(np.max(np.abs(t_node - t_prev2)))
             # Periode-2-Grenzzyklus (Eigenwert ≈ −1, z.B. durch die q_max-Klemme
@@ -134,10 +149,15 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
         # Drift-Erkennung: hat sich das Feld seit der Halbzeit weit bewegt,
         # obwohl der Sweep-Fehler stagniert, sinkt/steigt ein thermisch
         # isolierter Umlauf mit fester Leistung ohne Grenze.
-        drifting = (t_half is not None
+        drifting = (it < hard_cap
+                    and t_half is not None
                     and float(np.max(np.abs(t_node - t_half))) > 10.0 * delta)
         hint = ""
-        if drifting:
+        if it >= hard_cap:
+            hint = (" Der Fehler fällt zwar, aber extrem langsam (Kontraktionsfaktor "
+                    "nahe 1, z.B. sehr großes Rezirkulationsverhältnis). Abhilfe: "
+                    "settings.max_iter_thermal erhöhen.")
+        elif drifting:
             hint = (" Die Temperaturen driften mit konstanter Rate: vermutlich zirkuliert "
                     "ein Teilkreis thermisch isoliert (kein Zustrom, kein UA-Verlust) mit "
                     "fest vorgegebener Leistung (q_prescribed/prescribed_q) – dafür existiert "
@@ -145,7 +165,7 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
                     "Wärmeübertragermodell verwenden oder nur hydraulisch rechnen "
                     "(net.solve(thermal=False)).")
         raise ConvergenceError(
-            f"Thermik-Solver nicht konvergiert nach {s.max_iter_thermal} Sweeps "
+            f"Thermik-Solver nicht konvergiert nach {it} Sweeps "
             f"(max. Temperaturänderung {delta:.2e} K).{hint}")
 
     stagnant = [nd.index for nd in net.nodes

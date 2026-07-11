@@ -12,7 +12,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (111 Tests)
+pytest                                   # Testsuite (113 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
@@ -20,6 +20,7 @@ hydraulik serve [--port 8091]                  # Editor + Rechen-Endpunkt (Rechn
 python3 examples/run_examples.py         # alle YAML-Beispiele mit Bericht
 python3 examples/07_twe_heizkreisverteiler.py    # Auslegung + Verifikation + Abschaltfall
 python3 examples/validation_fh_verteiler.py      # Validierungs-Kennlinienplots
+python3 examples/08_ventilautoritaet.py          # Wirkung der Ventilautorität (Plots)
 ```
 
 ## Struktur
@@ -56,7 +57,7 @@ src/hydraulik/
   cli.py             Konsolenskript `hydraulik`
 docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
 examples/            YAML-Schaltungen 01–06, Lösungs-/Validierungsskripte 07 + FH-Verteiler
-tests/               111 Tests: analytische Referenzen + Validierung gegen Musterlösungen
+tests/               113 Tests: analytische Referenzen + Validierung gegen Musterlösungen
 ```
 
 ## Konventionen

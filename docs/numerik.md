@@ -74,7 +74,11 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 - **Kante**: Komponentenmodell liefert `T_aus, Q̇ = f(T_ein, |ṁ|)`.
 - **Knoten**: ideale Mischung
   `T = (Σ ṁ_zu·cp·T_aus + ṁ_RB·cp·T_zulauf + UA·T_amb) / (Σ ṁ_zu·cp + ṁ_RB·cp + UA)`
-- Gauss-Seidel-Sweeps bis max|ΔT| < 1e-6 K. Konvergiert, weil jedes
+- Gauss-Seidel-Sweeps bis max|ΔT| < 1e-6 K; fällt der Fehler am Sweep-Limit
+  nachweislich geometrisch (Trendprüfung über Fenstermaxima, z.B. große
+  Rezirkulationsverhältnisse über Bypässe → Kontraktionsfaktor nahe 1),
+  wird bis 20× max_iter_thermal fortgesetzt; echte Drift (konstante Rate)
+  bricht die Trendprüfung wie bisher ab. Konvergiert, weil jedes
   Wärmeübertragungsmodell |∂T_aus/∂T_ein| ≤ 1 hat (Kontraktion in Kreisen).
 - **Grenzzyklus-Wächter**: Komponenten mit Verstärkung exakt 1 (feste
   Leistung, geklemmte Erzeuger an der q_max-Grenze) können Periode-2-
@@ -106,7 +110,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 111 Tests)
+## 3. Testabdeckung (tests/, 113 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/
@@ -124,7 +128,9 @@ widerstandsfrei, zu = exakte Absperrung), doppelte YAML-Schlüssel, Editor-Serve
 Robustheit: Ventil zu (exakte Absperrung, V̇ = 0 als RB), Kennlinien-Floor,
 Ventil-Sweep monoton, absurder Startwert, unbilanzierte Konstantstrom-
 Pumpen (Compile-Zeit-Fehler), Konstantstrom-Pumpe gegen zu, Drift-Meldung
-bei isoliertem Umlauf, Fehlermeldungsqualität des Loaders.
+bei isoliertem Umlauf (langsame Rezirkulations-Konvergenz wird davon
+unterschieden und zu Ende iteriert), Ventilautorität (installierte
+Kennlinie analytisch), Fehlermeldungsqualität des Loaders.
 
 **Validierung gegen unabhängige Referenzlösungen** (FH Burgenland):
 - Verteiler-Übung (Umlenk- + Einspritzschaltung, Excel-Modell):
