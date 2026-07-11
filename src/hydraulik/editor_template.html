@@ -1217,6 +1217,17 @@ document.getElementById("btn-del").onclick = deleteSelection;
 /* ---------- Inspector ----------------------------------------------------- */
 function renderInspector() {
   const el = document.getElementById("inspector");
+  // Läuft gerade eine Eingabe (Fokus in einem Formularfeld des Inspectors),
+  // wird das Formular NICHT neu aufgebaut – sonst verschluckt der DOM-Tausch
+  // Folgeklicks auf die Spinner-Pfeile der Zahlenfelder. Nur die Prüfliste
+  // wird aktualisiert; der nächste Render (Klick in die Zeichnung, Auswahl-
+  // wechsel, …) baut das Formular regulär neu.
+  const ae = document.activeElement;
+  if (el.contains(ae) && (ae instanceof HTMLInputElement || ae instanceof HTMLSelectElement)
+      && ae.dataset.kind !== "suffix" && ae.dataset.kind !== "choice") {
+    refreshIssues();
+    return;
+  }
   let html = fluidForm();
   if (selection && selection.kind === "comp") html += compForm(selection.ref);
   else if (selection && selection.kind === "wire") html += wireForm(selection.ref);
@@ -1226,13 +1237,18 @@ function renderInspector() {
       Strg+V fügt ein · Strg+D dupliziert · Entf löscht · Shift+Klick ergänzt/entfernt.</div>
       <div class="field"><button id="btn-save-tpl">Auswahl als Vorlage speichern…</button></div>`;
   html += `<h3>Prüfungen <span class="hint">(gesamte Zeichnung – klicken wählt aus)</span></h3>` +
-          `<ul id="issues">` +
-          validate().map(i => `<li class="${i.err?'err':''}"` +
-            (i.comp !== undefined ? ` data-focus="${i.comp}"` : "") +
-            `>${esc(i.msg)}</li>`).join("") +
-          `</ul>`;
+          `<ul id="issues"></ul>`;
   el.innerHTML = html;
-  el.querySelectorAll("#issues li[data-focus]").forEach(li => {
+  refreshIssues();
+  bindInspector();
+}
+function refreshIssues() {
+  const ul = document.getElementById("issues");
+  if (!ul) return;
+  ul.innerHTML = validate().map(i => `<li class="${i.err?'err':''}"` +
+    (i.comp !== undefined ? ` data-focus="${i.comp}"` : "") +
+    `>${esc(i.msg)}</li>`).join("");
+  ul.querySelectorAll("li[data-focus]").forEach(li => {
     li.onclick = () => {
       const c = compById(Number(li.dataset.focus));
       if (c) {
@@ -1244,7 +1260,6 @@ function renderInspector() {
       }
     };
   });
-  bindInspector();
 }
 function fluidForm() {
   const f = state.fluid;
@@ -1303,10 +1318,13 @@ function paramField(c, p) {
   const factors = CATALOG.units[p.group];
   const sfx = used.slice(p.name.length + 1);
   const ph = p.default != null ? ` placeholder="${round6(p.default / factors[sfx])}"` : "";
+  // min/max in der Anzeigeeinheit (minv/maxv sind SI) – begrenzt die Spinner-Pfeile
+  const lim = (p.minv != null ? ` min="${round6(p.minv / factors[sfx])}"` : "") +
+              (p.maxv != null ? ` max="${round6(p.maxv / factors[sfx])}"` : "");
   return `<div class="field"${help}><label>${p.name}${req} <span class="hint">[${GROUP_LABEL[p.group] || p.group}]</span></label>
     <div class="unitrow">
       <input type="number" step="any" data-param="${p.name}" data-kind="unit" data-key="${used}"
-             value="${c.params[used] ?? ""}"${ph}>
+             value="${c.params[used] ?? ""}"${ph}${lim}
       <select data-param="${p.name}" data-kind="suffix" data-base="${p.name}">` +
       keys.map(k => `<option value="${k}"${k===used?" selected":""}>${unitLabel(k.slice(p.name.length+1))}</option>`).join("") +
       `</select></div></div>`;
