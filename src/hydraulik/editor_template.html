@@ -594,7 +594,7 @@ function portPosRaw(comp) {
   if (t === "mixing_valve_3way") return {a:{dx:-21,dy:0}, b:{dx:0,dy:21}, ab:{dx:21,dy:0}};
   if (t === "control_valve" || t === "balancing_valve" || t === "ball_valve")
     return {in:{dx:-21,dy:0}, out:{dx:21,dy:0}};
-  if (t === "check_valve") return {in:{dx:-28,dy:0}, out:{dx:28,dy:0}};
+  if (t === "check_valve") return {in:{dx:-21,dy:0}, out:{dx:21,dy:0}};
   if (t === "tee") return {a:{dx:-22,dy:0}, b:{dx:22,dy:0}, c:{dx:0,dy:22}};
   if (t === "open_end") return {port:{dx:-20,dy:0}};
   if (t === "inflow") return {port:{dx:20,dy:0}};
@@ -667,10 +667,11 @@ function symbol(comp) {
              (comp.params && comp.params.open === false
               ? `<line class="sym" x1="-4" y1="-4" x2="4" y2="4"/><line class="sym" x1="-4" y1="4" x2="4" y2="-4"/>` : "");
     case "check_valve":
-      return `<line class="sym" x1="-24" y1="0" x2="-10" y2="0"/>
-              <polygon class="sym" points="-10,-9 -10,9 8,0"/>
-              <line class="sym" x1="8" y1="-10" x2="8" y2="10" stroke-width="3"/>
-              <line class="sym" x1="8" y1="0" x2="24" y2="0"/>`;
+      // HVAC-Symbol: Gehäuse-Rechteck, Diagonale = Klappe, Punkt = Drehlager
+      // (zuströmseitig; definiert die Durchflussrichtung in → out)
+      return `<rect class="sym" x="-16" y="-9" width="32" height="18"/>
+              <line class="sym" x1="-16" y1="-9" x2="16" y2="9" stroke-width="2"/>
+              <circle class="sym" r="3.2" cx="-16" cy="-9" fill="#222"/>`;
     case "flow_resistance":
       return `<rect class="sym" x="-18" y="-8" width="36" height="16"/>
               <line class="sym" x1="-18" y1="8" x2="18" y2="-8"/>`;
