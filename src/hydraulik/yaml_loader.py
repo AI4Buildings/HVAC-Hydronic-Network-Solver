@@ -24,13 +24,37 @@ from .network import Network, component_from_dict
 from .solver.settings import SolverSettings
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """SafeLoader, der doppelte Mapping-Schlüssel meldet statt sie
+    stillschweigend zu überschreiben (YAML-Standardverhalten wäre
+    'last wins' – ein mehrfach vergebener Komponentenname würde sonst
+    unbemerkt eine Komponente verschlucken)."""
+
+
+def _construct_mapping_unique(loader, node, deep=False):
+    seen = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in seen:
+            raise NetworkValidationError(
+                [f"Doppelter Schlüssel '{key}' in der YAML-Datei "
+                 f"(Zeile {key_node.start_mark.line + 1}) – z.B. ein mehrfach "
+                 f"vergebener Komponentenname. Bitte eindeutig benennen."])
+        seen.add(key)
+    return yaml.SafeLoader.construct_mapping(loader, node, deep)
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping_unique)
+
+
 def load(source: str | Path | dict) -> Network:
     """Lädt eine Schaltung aus YAML-/JSON-Datei, YAML-String oder dict."""
     if isinstance(source, dict):
         doc = source
     else:
         text = Path(source).read_text(encoding="utf-8") if _is_path(source) else str(source)
-        doc = yaml.safe_load(text)
+        doc = yaml.load(text, Loader=_UniqueKeyLoader)
     if not isinstance(doc, dict):
         raise NetworkValidationError(
             ["Eingabe muss ein Mapping mit den Schlüsseln 'components' und 'connections' sein."])
@@ -85,7 +109,7 @@ def load_settings(source: str | Path | dict) -> SolverSettings:
         doc = source
     else:
         text = Path(source).read_text(encoding="utf-8") if _is_path(source) else str(source)
-        doc = yaml.safe_load(text) or {}
+        doc = yaml.load(text, Loader=_UniqueKeyLoader) or {}
     raw = doc.get("settings") or {}
     valid = {f.name for f in SolverSettings.__dataclass_fields__.values()}
     unknown = set(raw) - valid

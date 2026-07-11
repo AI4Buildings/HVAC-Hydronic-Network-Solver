@@ -103,3 +103,20 @@ def test_cli_runs(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "konvergiert: ja" in out
     assert (tmp_path / "out.csv").exists()
+
+
+def test_duplicate_component_names_are_detected():
+    """Doppelte YAML-Schlüssel (Komponentennamen) dürfen nicht stillschweigend
+    überschrieben werden ('last wins' des YAML-Standards)."""
+    yaml_text = """\
+components:
+  hk1: {type: radiator, q_prescribed_kW: 5, kv_m3h: 100}
+  pu1: {type: pump, mode: constant_flow, q_m3h: 1}
+  hk1: {type: radiator, q_prescribed_kW: 3, kv_m3h: 100}
+connections:
+  - [pu1.out, hk1.in]
+  - [hk1.out, pu1.in]
+"""
+    with pytest.raises(h.NetworkValidationError) as exc:
+        h.load(yaml_text)
+    assert "hk1" in str(exc.value) and "Doppelter Schlüssel" in str(exc.value)
