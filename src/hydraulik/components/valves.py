@@ -73,23 +73,26 @@ class BalancingValve(_KvValveBase):
 class BallValve(TwoPortComponent):
     """Kugelhahn (Absperrarmatur): auf oder zu.
 
-    Auf wirkt der Kvs-Wert (Default 1000 m³/h ≈ praktisch widerstandsfrei;
-    für reale Armaturen den Hersteller-Kvs angeben). Zu sperrt exakt:
-    V̇ = 0 als Randbedingung, Δp über der Armatur ist Ergebnis — dieselbe
-    Semantik wie ein Regelventil mit opening = 0.
+    Im Regelbetrieb offen (Default): es wirkt der Kvs-Wert (Default
+    1000 m³/h ≈ praktisch widerstandsfrei; für reale Armaturen den
+    Hersteller-Kvs angeben). closed = true bildet den Revisionsfall ab
+    (z.B. Pumpentausch) und sperrt exakt: V̇ = 0 als Randbedingung,
+    Δp über der Armatur ist Ergebnis — dieselbe Semantik wie ein
+    Regelventil mit opening = 0.
     """
 
     kvs: float
-    open: bool
+    closed: bool
 
     PARAMS = (
-        Param("open", "bool", default=True, help="auf (true) / zu (false)"),
+        Param("closed", "bool", default=False,
+              help="geschlossen (Revisionsfall); Default offen"),
         Param("kvs", "kv", default=1000.0, minv=1e-4,
               help="Kvs-Wert offen [m³/h]; Default praktisch widerstandsfrei"),
     )
 
     def build(self, b) -> None:
-        if not self.open:
+        if self.closed:
             b.edge(b.port("in"), b.port("out"), self.hydraulic_coefficients,
                    self.thermal_outlet, fixed_q=0.0)
         else:

@@ -269,7 +269,7 @@ def test_ball_valve_closed_blocks_exactly():
     doc = {
         "components": {
             "pu": {"type": "pump", "mode": "constant_dp", "dp_kPa": 30, "q_nom_m3h": 2.0},
-            "kh": {"type": "ball_valve", "open": False},
+            "kh": {"type": "ball_valve", "closed": True},
             "rv1": {"type": "control_valve", "kvs_m3h": 4.0},
             "rv2": {"type": "control_valve", "kvs_m3h": 4.0},
         },

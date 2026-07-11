@@ -664,7 +664,7 @@ function symbol(comp) {
     case "ball_valve":
       return `${tri(-16,0,15,-9,9)}${tri(16,0,-15,-9,9)}
               <circle class="sym" r="5" fill="var(--bg,#fff)"/>` +
-             (comp.params && comp.params.open === false
+             (comp.params && comp.params.closed === true
               ? `<line class="sym" x1="-4" y1="-4" x2="4" y2="4"/><line class="sym" x1="-4" y1="4" x2="4" y2="-4"/>` : "");
     case "check_valve":
       // HVAC-Symbol: Gehäuse-Rechteck, Diagonale = Klappe, Punkt = Drehlager
