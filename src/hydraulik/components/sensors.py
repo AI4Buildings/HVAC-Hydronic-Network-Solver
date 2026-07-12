@@ -3,8 +3,9 @@
 Zweck des Pakets ist ein maschinenlesbares Strangschema — nicht nur zur
 hydraulischen Berechnung, sondern auch als semantische Karte für die
 Betriebsdatenanalyse eines Building Energy Management Systems (BEMS,
-z.B. Aedifion). Sensoren tragen dafür die Datenpunkt-Bezeichner
-(`bems_id`, `bems_key`, `description`); ihre Position im Schema liefert
+z.B. Aedifion). Jede Komponente trägt dafür die generische Messpunktliste
+`bems: [{id, key, description}, …]` (frei viele Datenpunkte) sowie eine
+`description`; ihre Position im Schema liefert
 einem LLM die Semantik: welche Leitung, welcher Kreis, vor/nach welcher
 Komponente gemessen wird.
 
@@ -20,7 +21,7 @@ Modellierung:
 from __future__ import annotations
 
 from ..fluids import Fluid
-from ..params import Param, bems_id_params
+from ..params import Param
 from .base import Component, EdgeCoefficients, NetworkBuilder, TwoPortComponent
 from .registry import register
 
@@ -41,7 +42,7 @@ class _TapSensor(Component):
 class TemperatureSensor(_TapSensor):
     """Temperaturfühler: liest die Knotentemperatur der Messstelle."""
 
-    PARAMS = bems_id_params("des Temperaturmesswerts [°C]")
+    PARAMS = ()
 
     def port_names(self) -> tuple[str, ...]:
         return ("port",)
@@ -54,7 +55,7 @@ class TemperatureSensor(_TapSensor):
 class PressureSensor(_TapSensor):
     """Drucksensor: liest den Knotendruck (Überdruck/gauge) der Messstelle."""
 
-    PARAMS = bems_id_params("des Druckmesswerts [kPa ü]")
+    PARAMS = ()
 
     def port_names(self) -> tuple[str, ...]:
         return ("port",)
@@ -68,7 +69,7 @@ class PressureDiffSensor(_TapSensor):
     """Differenzdrucksensor: Δp = p(plus) − p(minus) zwischen zwei Messstellen
     (z.B. über einer Pumpe, einem Ventil oder als Schmutzfänger-Überwachung)."""
 
-    PARAMS = bems_id_params("des Differenzdruck-Messwerts [kPa]")
+    PARAMS = ()
 
     def port_names(self) -> tuple[str, ...]:
         return ("plus", "minus")
@@ -85,7 +86,7 @@ class FlowSensor(TwoPortComponent):
 
     q_nom: float
 
-    PARAMS = (_Q_NOM_PARAM,) + bems_id_params("des Volumenstrom-Messwerts [m³/h]")
+    PARAMS = (_Q_NOM_PARAM,)
 
     def hydraulic_coefficients(self, q: float, fluid: Fluid) -> EdgeCoefficients:
         return EdgeCoefficients(b=1.0 / self.q_nom ** 2)
@@ -106,21 +107,13 @@ class EnergyMeter(TwoPortComponent):
     Durchflussteils im RÜCKLAUF, Fühler t_ref im Vorlauf → Q̇ > 0 ist die vom
     Kreis abgegebene Wärme (Heizfall). Einbau im Vorlauf kehrt das Vorzeichen.
     Der WMZ misst nur — er trägt selbst nichts zur Energiebilanz bei.
-    Die fünf BEMS-Datenpunkte eines realen WMZ (V̇, Q̇, kumulierte Energie,
-    ϑ_VL, ϑ_RL) haben eigene ID-Felder.
+    Die Datenpunkte eines realen WMZ (V̇, Q̇, kumulierte Energie, ϑ_VL, ϑ_RL)
+    werden als Einträge der bems-Messpunktliste hinterlegt.
     """
 
     q_nom: float
 
-    PARAMS = (
-        _Q_NOM_PARAM,
-        Param("bems_id_v_dot", "str", help="BEMS-ID Momentan-Volumenstrom [m³/h]"),
-        Param("bems_id_q_dot", "str", help="BEMS-ID Momentanleistung [kW]"),
-        Param("bems_id_q_cum", "str", help="BEMS-ID kumulierte Wärmemenge [kWh]"),
-        Param("bems_id_t_vl", "str", help="BEMS-ID Vorlauftemperatur des Zählers [°C]"),
-        Param("bems_id_t_rl", "str", help="BEMS-ID Rücklauftemperatur des Zählers [°C]"),
-        Param("bems_key", "str", help="sprechender Datenpunkt-Alias/Präfix (z.B. EXP_HP_SEK)"),
-    )
+    PARAMS = (_Q_NOM_PARAM,)
 
     def port_names(self) -> tuple[str, ...]:
         return ("in", "out", "t_ref")

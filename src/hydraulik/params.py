@@ -147,14 +147,3 @@ def params_doc(specs: tuple[Param, ...]) -> str:
         lines.append(f"  {s.display_key()}  ({req})" + (f" – {s.help}" if s.help else ""))
     return "\n".join(lines)
 
-
-def bems_id_params(target: str) -> tuple:
-    """Standard-Parametertripel für die BEMS-Anbindung (z.B. Aedifion):
-    abfragbare Datenpunkt-ID, sprechender Alias und freie Semantikbeschreibung.
-    Rein deklarativ — ohne Einfluss auf die Berechnung."""
-    return (
-        Param("bems_id", "str",
-              help=f"BEMS-/Aedifion-Datenpunkt-ID {target} (abfragbarer Bezeichner)"),
-        Param("bems_key", "str",
-              help="sprechender Datenpunkt-Alias (z.B. EXP_HP_SEK_T_VL)"),
-    )

@@ -12,7 +12,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (117 Tests)
+pytest                                   # Testsuite (118 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
@@ -36,9 +36,10 @@ src/hydraulik/
     base.py          Solver-Verträge: EdgeCoefficients (a, b, dp_source), ThermalResult;
                      reserviertes kwarg ts=<label> (Teilstrecken-Gruppierung)
     pipe/pump/resistance/valves (inkl. check_valve, ball_valve)/emitters/coils/plants/
-    sensors.py       Sensoren (T/p/Δp/V̇/WMZ): rückwirkungsfreie Messstellen mit
-                     BEMS-Datenpunkt-Feldern (bems_id/bems_key/description; auch an
-                     Ventilen+Pumpe) → result.sensors; Messleitung = reine Verbindung
+    sensors.py       Sensoren (T/p/Δp/V̇/WMZ): rückwirkungsfreie Messstellen →
+                     result.sensors; Messleitung = reine Verbindung. BEMS generisch:
+                     JEDE Komponente hat bems: [{id,key,description},…] (reserviert,
+                     base._parse_bems) + description; Editor-Register Fluid-/BEMS-Info
     storage/separators/connectors (link)/conduit (Verbindungsleitung = Linie
     im Editor: ideal|C-Wert|Auslegungspunkt|Rohrmodell)/boundaries
     (inflow/outflow/cap/open_end)
@@ -62,7 +63,7 @@ src/hydraulik/
 docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               117 Tests: analytische Referenzen + Validierung gegen Musterlösungen
+tests/               118 Tests: analytische Referenzen + Validierung gegen Musterlösungen
 ```
 
 ## Konventionen

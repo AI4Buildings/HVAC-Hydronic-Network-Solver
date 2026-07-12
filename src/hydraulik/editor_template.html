@@ -54,6 +54,12 @@
   .port { fill:#fff; stroke:#444; stroke-width:1.4; cursor:crosshair; }
   .port:hover, .port.pending { fill:#ffd54d; }
   .sym { stroke:#222; stroke-width:1.6; fill:#fff; }
+  .tabs { display:flex; gap:4px; margin:10px 0 8px; }
+  .tab { flex:1; padding:4px 6px; border:1px solid #ccc; border-radius:6px;
+         background:#f6f5f0; cursor:pointer; font-size:12px; }
+  .tab.active { background:#fff; border-color:#0b7a3e; color:#0b7a3e; font-weight:600; }
+  .bems-box { border:1px solid #ddd; border-radius:6px; padding:6px 8px; margin-bottom:8px; }
+  .bems-del { margin-top:2px; font-size:11px; }
   .wire { fill:none; stroke-width:3.2; pointer-events:none; }
   .wire.measure { stroke-width:1.4; stroke:#555; }   /* Messleitung eines Fühlers */
   .wire-hit { fill:none; stroke:transparent; stroke-width:14; cursor:pointer; }
@@ -333,7 +339,8 @@ function templateFromSelection() {
   const idx = new Map(comps.map((c, i) => [c.id, i]));
   return {
     comps: comps.map(c => ({type: c.type, name: c.name, ts: c.ts || "", rot: c.rot || 0,
-                            dx: c.x - cx, dy: c.y - cy, params: deepClone(c.params || {})})),
+                            dx: c.x - cx, dy: c.y - cy, params: deepClone(c.params || {}),
+                            bems: c.bems ? deepClone(c.bems) : undefined})),
     wires: state.wires
       .filter(w => idx.has(w.a.comp) && idx.has(w.b.comp))
       .map(w => {
@@ -355,6 +362,7 @@ function insertTemplate(tpl, x, y) {
                ts: tc.ts || "", rot: tc.rot || 0,
                x: snap(x + tc.dx), y: snap(y + tc.dy),
                params: deepClone(tc.params || {})};
+    if (tc.bems && tc.bems.length) c.bems = deepClone(tc.bems);
     state.comps.push(c); newIds.push(c.id); ids.add(c.id);
   }
   for (const tw of tpl.wires) {
@@ -392,7 +400,7 @@ function limitLabel(p, si) {        // Grenzwert in der Anzeige-Einheit des erst
 
 /* ---------- Typ-Metadaten (Anzeige) ------------------------------------ */
 const META = {
-  pump:{de:"Pumpe",grp:"Erzeuger & Speicher",pre:"pu"},
+  pump:{de:"Pumpe",grp:"Verteilung",pre:"pu"},
   heat_pump:{de:"Wärmepumpe",grp:"Erzeuger & Speicher",pre:"wp"},
   chiller:{de:"Kältemaschine",grp:"Erzeuger & Speicher",pre:"km"},
   ideal_storage:{de:"Speicher (ideal, geladen)",grp:"Erzeuger & Speicher",pre:"sp"},
@@ -443,7 +451,8 @@ let boxSel = null;                  // Auswahlrechteck {x0,y0,x1,y1,active}
 let clipboard = null;               // kopierte Komponenten + interne Leitungen
 let wpDrag = null;                  // Knickpunkt-Verschiebung {w, idx, moved}
 let dblTrack = {key: "", t: 0};     // eigene Doppelklick-Erkennung
-let inspectorHold = false;          // Formular bei reiner Wertänderung nicht neu aufbauen
+let inspectorHold = false;
+let inspectorTab = "fluid";         // Inspector-Register: "fluid" | "bems"          // Formular bei reiner Wertänderung nicht neu aufbauen
                                     // (native change-Events beim Fokuswechsel würden sonst
                                     // das nächste angeklickte Feld ersetzen/verschlucken)
 
@@ -748,6 +757,17 @@ function symbol(comp) {
   }
 }
 
+function uprightText(svgStr, rot) {
+  // Beschriftungen in Symbolen (T, p, Δp, V̇, WMZ, ϑ, WP, …) gegenrotieren,
+  // damit sie bei 90°/180°/270° lesbar bleiben (Drehpunkt ≈ optische Mitte).
+  if (!rot) return svgStr;
+  return svgStr.replace(/<text\s([^>]*?)>/g, (m, attrs) => {
+    const x = Number((/(?:^|\s)x="([-\d.]+)"/.exec(attrs) || [0, 0])[1]);
+    const y = Number((/(?:^|\s)y="([-\d.]+)"/.exec(attrs) || [0, 0])[1]);
+    return `<text ${attrs} transform="rotate(${-rot} ${x} ${y - 4})">`;
+  });
+}
+
 /* ---------- Rendering ---------------------------------------------------- */
 const svg = document.getElementById("cv");
 const BASE_W = 4000, BASE_H = 2600;
@@ -812,7 +832,7 @@ function render() {
     // unsichtbare Trefferfläche (Symbole mit Lücken bleiben klick-/hoverbar)
     const hw = Math.max(compWidth(c) / 2 + 6, 32);
     out += `<rect x="${-hw}" y="-32" width="${2 * hw}" height="64" fill="transparent"/>`;
-    out += `<g transform="rotate(${c.rot || 0})">` + symbol(c) + `</g>`;
+    out += `<g transform="rotate(${c.rot || 0})">` + uprightText(symbol(c), c.rot || 0) + `</g>`;
     out += `<text class="comp-label" x="0" y="44" text-anchor="middle">${esc(c.name)}</text>`;
     const rr = resultRows(c.name);
     if (rr.length) {
@@ -889,9 +909,10 @@ function fmtSensor(s) {
     const [sym, unit] = u[k] || [k, ""];
     return `${sym} = ${fmt(v, 2)} ${unit}`;
   }).join("   ");
-  const ids = [s.bems.bems_key, s.bems.bems_id].filter(Boolean).join("  ·  ");
-  if (ids) out += `\n   BEMS: ${ids}`;
-  if (s.bems.description) out += `\n   ${s.bems.description}`;
+  const ids = (s.bems || []).map(e => [e.key, e.id].filter(Boolean).join("  ·  "))
+                            .filter(Boolean);
+  if (ids.length) out += `\n   BEMS: ${ids.join("\n         ")}`;
+  if (s.description) out += `\n   ${s.description}`;
   return out;
 }
 function tooltipText(target) {
@@ -1344,11 +1365,44 @@ function compForm(c) {
   const t = TYPES[c.type];
   let html = `<h3>${esc((META[c.type]||{de:c.type}).de)} <span class="hint">(${c.type})</span></h3>
     <div class="field"><label>Name</label><input type="text" id="c-name" value="${esc(c.name)}"></div>
-    <div class="field"><label>Ausrichtung: ${c.rot || 0}°</label>
+    <div class="tabs">
+      <button class="tab${inspectorTab==="fluid"?" active":""}" data-tab="fluid">Fluid-Info</button>
+      <button class="tab${inspectorTab==="bems"?" active":""}" data-tab="bems">BEMS-Info</button>
+    </div>`;
+  if (inspectorTab === "bems") return html + bemsForm(c);
+  html += `<div class="field"><label>Ausrichtung: ${c.rot || 0}°</label>
       <button id="c-rot">↻ 90° drehen (Taste r)</button></div>
     <div class="field"><label>Teilstrecke (ts, optional)</label>
       <input type="text" id="c-ts" value="${esc(c.ts)}"></div>`;
-  for (const p of t.params) html += paramField(c, p);
+  for (const p of t.params) if (p.name !== "description") html += paramField(c, p);
+  return html;
+}
+function bemsForm(c) {
+  // BEMS-Info: Semantikbeschreibung + frei viele Messpunkte (id/key/description)
+  const t = TYPES[c.type];
+  const descSpec = t.params.find(p => p.name === "description");
+  let html = descSpec ? paramField(c, descSpec) : "";
+  const list = c.bems || [];
+  html += `<h3>Messpunkte <span class="hint">(${list.length} BEMS-Datenpunkte)</span></h3>`;
+  list.forEach((e, i) => {
+    html += `<div class="bems-box">
+      <div class="field"><label>bems_id <span class="hint">(Datenpunkt-ID)</span></label>
+        <input type="text" data-bems="id" data-i="${i}" spellcheck="false"
+               placeholder="abfragbare BEMS-/Aedifion-ID…" value="${esc(e.id || "")}"></div>
+      <div class="field"><label>bems_key <span class="hint">(Alias)</span></label>
+        <input type="text" data-bems="key" data-i="${i}" spellcheck="false"
+               placeholder="z.B. EXP_VENT_VE_T_VL" value="${esc(e.key || "")}"></div>
+      <div class="field"><label>description</label>
+        <input type="text" data-bems="description" data-i="${i}"
+               placeholder="Messgröße, Einbauort…" value="${esc(e.description || "")}"></div>
+      <button class="bems-del" data-i="${i}">× Messpunkt entfernen</button>
+    </div>`;
+  });
+  html += `<div class="field"><button id="bems-add">+ Messpunkt hinzufügen</button></div>`;
+  if (!list.length)
+    html += `<div class="hint">Je Messpunkt: abfragbare Datenpunkt-ID (bems_id),
+      sprechender Alias (bems_key) und Beschreibung — beliebig viele je Komponente
+      (z.B. WMZ: V̇, Q̇, Q_kum, ϑ_VL, ϑ_RL; Speicher: mehrere Fühler).</div>`;
   return html;
 }
 function paramField(c, p) {
@@ -1462,13 +1516,36 @@ function bindInspector() {
     inspectorHold = true;
     try { render(); } finally { inspectorHold = false; }
   };
+  el.querySelectorAll(".tab").forEach(btn => btn.onclick = () => {
+    inspectorTab = btn.dataset.tab; renderInspector();
+  });
+  el.querySelectorAll("[data-bems]").forEach(inp => {
+    inp.onchange = () => {
+      invalidate();
+      c.bems = c.bems || [];
+      const e = c.bems[Number(inp.dataset.i)], v = inp.value.trim();
+      if (v) e[inp.dataset.bems] = v; else delete e[inp.dataset.bems];
+      commit(); holdRender();
+    };
+  });
+  el.querySelectorAll(".bems-del").forEach(btn => btn.onclick = () => {
+    invalidate();
+    c.bems.splice(Number(btn.dataset.i), 1);
+    if (!c.bems.length) delete c.bems;
+    commit(); renderInspector();
+  });
+  const bemsAdd = el.querySelector("#bems-add");
+  if (bemsAdd) bemsAdd.onclick = () => {
+    invalidate(); (c.bems = c.bems || []).push({}); commit(); renderInspector();
+  };
   const nm = el.querySelector("#c-name");
   nm.onchange = () => {
     const v = nm.value.trim();
     if (!v || nameTaken(v, c)) { nm.value = c.name; return; }
     invalidate(); c.name = v; commit(); holdRender();
   };
-  el.querySelector("#c-ts").onchange = ev => { invalidate(); c.ts = ev.target.value.trim(); commit(); holdRender(); };
+  const tsInp = el.querySelector("#c-ts");   // nur im Register Fluid-Info vorhanden
+  if (tsInp) tsInp.onchange = ev => { invalidate(); c.ts = ev.target.value.trim(); commit(); holdRender(); };
   const rotBtn = el.querySelector("#c-rot");
   if (rotBtn) rotBtn.onclick = rotateSelection;
   el.querySelectorAll("[data-param]").forEach(inp => {
@@ -1574,6 +1651,10 @@ function exportYAML() {
     const parts = [`type: ${c.type}`];
     for (const [k, v] of Object.entries(c.params || {})) parts.push(`${k}: ${yamlScalar(v)}`);
     if (c.ts) parts.push(`ts: ${JSON.stringify(c.ts)}`);
+    if (c.bems && c.bems.length)
+      parts.push(`bems: [${c.bems.map(e => "{" +
+        ["id", "key", "description"].filter(f => e[f])
+          .map(f => `${f}: ${JSON.stringify(e[f])}`).join(", ") + "}").join(", ")}]`);
     return `  ${c.name}: {${parts.join(", ")}}\n`;
   };
   for (const c of state.comps) y += compEntry(c);
@@ -1613,6 +1694,8 @@ function splitTop(s, sep) {                       // Kommasplit auf oberster Ebe
 }
 function parseValue(s) {
   s = s.trim();
+  if (s.startsWith("{")) return parseInlineMap(s);
+  if (s.startsWith("[")) return splitTop(s.slice(1, -1), ",").map(parseValue);
   if (/^".*"$/.test(s) || /^'.*'$/.test(s)) return s.slice(1, -1);
   if (s === "true") return true;
   if (s === "false") return false;
@@ -1704,7 +1787,9 @@ function loadDoc(doc) {
     if (!TYPES[type]) { alert(`Unbekannter Typ '${type}' bei '${name}' – übersprungen.`); return; }
     const c = {id: idSeq++, type, name, ts: spec.ts !== undefined ? String(spec.ts) : "",
                x: 120 + (i % grid) * 160, y: 100 + Math.floor(i / grid) * 140, rot: 0, params: {}};
-    for (const [k, v] of Object.entries(spec)) if (k !== "type" && k !== "ts") c.params[k] = v;
+    if (Array.isArray(spec.bems) && spec.bems.length) c.bems = spec.bems;
+    for (const [k, v] of Object.entries(spec))
+      if (k !== "type" && k !== "ts" && k !== "bems") c.params[k] = v;
     const lay = doc.layout.components[name];
     if (lay && lay.x !== undefined) { c.x = lay.x; c.y = lay.y; c.rot = lay.rot || 0; }
     state.comps.push(c);
@@ -1736,7 +1821,9 @@ function loadDoc(doc) {
     const spec = doc.components[name];
     const wire = {type: "conduit", name, ts: spec.ts !== undefined ? String(spec.ts) : "",
                   params: {}, a, b, color: "n"};
-    for (const [k, v] of Object.entries(spec)) if (k !== "type" && k !== "ts") wire.params[k] = v;
+    if (Array.isArray(spec.bems) && spec.bems.length) wire.bems = spec.bems;
+    for (const [k, v] of Object.entries(spec))
+      if (k !== "type" && k !== "ts" && k !== "bems") wire.params[k] = v;
     applyMeta(wire, wireMeta["name:" + name] || wireMeta[`${aRef}|${name}.in`] || {});
     state.wires.push(wire);
   }

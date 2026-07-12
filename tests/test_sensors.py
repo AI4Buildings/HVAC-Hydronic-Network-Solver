@@ -14,10 +14,13 @@ def _heizkreis(mit_sensoren: bool) -> dict:
     conns = [["sp.out", "pu.in"], ["pu.out", "hk.in"]]
     if mit_sensoren:
         comps["wmz"] = {"type": "energy_meter", "q_nom_m3h": 100,
-                        "bems_id_q_dot": "FHPinkEgk'AS03-2099203_PXC03'MtrHC'Mtr02'PrPwr-AI45",
-                        "bems_key": "EXP_HK_WMZ", "description": "WMZ Heizkreis, Einbau RL"}
+                        "description": "WMZ Heizkreis, Einbau RL",
+                        "bems": [{"id": "FHPinkEgk'AS03-2099203_PXC03'MtrHC'Mtr02'PrPwr-AI45",
+                                  "key": "EXP_HK_WMZ_Q_dot", "description": "Momentanleistung"},
+                                 {"id": "FHPinkEgk'AS03-2099203_PXC03'MtrHC'Mtr02'PrVlm-AI46",
+                                  "key": "EXP_HK_WMZ_V_dot"}]}
         comps["tf_vl"] = {"type": "temperature_sensor",
-                          "bems_id": "FHPinkEgk'AS03-2099203_PXC03'MtrHC'Mtr02'TFI-AI47"}
+                          "bems": [{"id": "FHPinkEgk'AS03-2099203_PXC03'MtrHC'Mtr02'TFI-AI47"}]}
         comps["pf"] = {"type": "pressure_sensor"}
         comps["pdf"] = {"type": "pressure_diff_sensor"}
         comps["vf"] = {"type": "flow_sensor", "q_nom_m3h": 100}
@@ -56,29 +59,39 @@ def test_sensor_messwerte_konsistent():
 
 def test_bems_ids_in_yaml_und_ergebnis():
     """Aedifion-IDs (mit Apostrophen!) überleben YAML-Text → Ergebnis-JSON;
-    Stellventile und Pumpen akzeptieren bems_id/bems_key/description."""
+    JEDE Komponente akzeptiert die bems-Messpunktliste (frei viele Punkte)."""
     yaml_text = """\
 components:
   pu: {type: pump, mode: constant_flow, q_m3h: 1,
-       bems_id: "FHPinkEgk'AS01-2099201_PXC01'HC'HCGen'Hpu'Sec'PuP2'Cmd-BO69",
-       bems_id_w_elek: "FHPinkEgk'AS01-2099201_PXC01'E'MtrEl'MtrEl06-pulseConverter9",
-       bems_key: EXP_HP_SEK_PUMP_P2}
+       bems: [{id: "FHPinkEgk'AS01-2099201_PXC01'HC'HCGen'Hpu'Sec'PuP2'Cmd-BO69",
+               key: EXP_HP_SEK_PUMP_P2, description: "Betriebsstatus"},
+              {id: "FHPinkEgk'AS01-2099201_PXC01'E'MtrEl'MtrEl06-pulseConverter9",
+               key: EXP_HP_SEK_PUMP_P2_W_elek, description: "kWh-Zähler"}]}
   rv: {type: control_valve, kvs_m3h: 4, opening: 0.5,
-       bems_id: "FHPinkEgk'AS04'HC'VTFBHS12'MxCrt'Vlv-AO12",
+       bems: [{id: "FHPinkEgk'AS04'HC'VTFBHS12'MxCrt'Vlv-AO12"}],
        description: "Stellventil FBH Büro 12"}
   tf: {type: temperature_sensor,
-       bems_id: "FHPinkEgk'AS04-2099204_PXC04'HC'VTFBHS12'MxCrt'TFl-AI254",
-       bems_key: EXP_ROOM_12_FBH_T_VL, description: "Vorlauf FBH Büro 12 (OG)"}
+       bems: [{id: "FHPinkEgk'AS04-2099204_PXC04'HC'VTFBHS12'MxCrt'TFl-AI254",
+               key: EXP_ROOM_12_FBH_T_VL, description: "Vorlauf FBH Büro 12 (OG)"}]}
 connections:
   - [pu.out, rv.in, tf.port]
   - [rv.out, pu.in]
 """
     net = h.load(yaml_text)
-    assert net.components["pu"].bems_id.endswith("Cmd-BO69")
+    assert len(net.components["pu"].bems) == 2
+    assert net.components["pu"].bems[0]["id"].endswith("Cmd-BO69")
     assert net.components["rv"].description == "Stellventil FBH Büro 12"
     r = net.solve(thermal=False)
     d = r.to_dict()
     (tf,) = d["sensors"]
-    assert tf["bems"]["bems_id"] == "FHPinkEgk'AS04-2099204_PXC04'HC'VTFBHS12'MxCrt'TFl-AI254"
-    assert tf["bems"]["bems_key"] == "EXP_ROOM_12_FBH_T_VL"
+    assert tf["bems"][0]["id"] == "FHPinkEgk'AS04-2099204_PXC04'HC'VTFBHS12'MxCrt'TFl-AI254"
+    assert tf["bems"][0]["key"] == "EXP_ROOM_12_FBH_T_VL"
     assert "Sensor" in r.report() and "EXP_ROOM_12_FBH_T_VL" in r.report()
+
+def test_bems_liste_validierung():
+    """Fehlerhafte bems-Strukturen werden mit klarer Meldung abgewiesen."""
+    with pytest.raises(h.NetworkValidationError) as exc:
+        h.load({"components": {"tf": {"type": "temperature_sensor",
+                                      "bems": [{"idd": "x"}]}},
+                "connections": [["tf.port", "tf.port"]]})
+    assert "idd" in str(exc.value) and "erlaubt: id, key, description" in str(exc.value)

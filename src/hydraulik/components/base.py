@@ -48,6 +48,35 @@ class NetworkBuilder(Protocol):
     def flow_bc(self, el: str, q: float, t_supply: float) -> None: ...
 
 
+def _parse_bems(name: str, raw) -> list[dict]:
+    """BEMS-Messpunktliste (reserviert für JEDE Komponente): frei viele
+    Datenpunkte je Komponente, jeder mit id (abfragbare BEMS-/Aedifion-ID),
+    key (sprechender Alias) und description (Semantik). Rein deklarativ."""
+    if raw is None:
+        return []
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        raise ComponentParamError(name, [
+            "'bems' muss eine Liste von Messpunkten sein, z.B. "
+            "bems: [{id: \"...\", key: EXP_..., description: \"...\"}]"])
+    out, errors = [], []
+    for k, entry in enumerate(raw):
+        if not isinstance(entry, dict):
+            errors.append(f"bems[{k}]: erwartet ein Mapping mit id/key/description, "
+                          f"erhalten: {entry!r}")
+            continue
+        unknown = set(entry) - {"id", "key", "description"}
+        if unknown:
+            errors.append(f"bems[{k}]: unbekannte Schlüssel {sorted(unknown)} "
+                          f"(erlaubt: id, key, description)")
+            continue
+        out.append({f: str(entry[f]) for f in ("id", "key", "description") if entry.get(f)})
+    if errors:
+        raise ComponentParamError(name, errors)
+    return out
+
+
 class Component(ABC):
     """Basisklasse. Parameter werden deklarativ über PARAMS definiert und im
     Konstruktor (Python-API wie YAML) mit Einheiten-Suffixen angenommen."""
@@ -63,6 +92,7 @@ class Component(ABC):
         self.name = str(name)
         ts = kwargs.pop("ts", None)
         self.ts = None if ts is None else str(ts)
+        self.bems = _parse_bems(self.name, kwargs.pop("bems", None))
         values, errors = parse_params(self.type_name, self.PARAMS, kwargs)
         if errors:
             raise ComponentParamError(self.name, errors)
