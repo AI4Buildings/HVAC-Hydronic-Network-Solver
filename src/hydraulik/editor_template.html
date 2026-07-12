@@ -451,10 +451,11 @@ let boxSel = null;                  // Auswahlrechteck {x0,y0,x1,y1,active}
 let clipboard = null;               // kopierte Komponenten + interne Leitungen
 let wpDrag = null;                  // Knickpunkt-Verschiebung {w, idx, moved}
 let dblTrack = {key: "", t: 0};     // eigene Doppelklick-Erkennung
-let inspectorHold = false;
-let inspectorTab = "fluid";         // Inspector-Register: "fluid" | "bems"          // Formular bei reiner Wertänderung nicht neu aufbauen
+let inspectorHold = false;          // Formular bei reiner Wertänderung nicht neu aufbauen
                                     // (native change-Events beim Fokuswechsel würden sonst
                                     // das nächste angeklickte Feld ersetzen/verschlucken)
+let inspectorForce = false;         // Modus-Wechsel: Umbau erzwingen (schlägt den Guard)
+let inspectorTab = "fluid";         // Inspector-Register: "fluid" | "bems"
 
 function wireEnds(w) {
   return [absPort(compById(w.a.comp), w.a.port), absPort(compById(w.b.comp), w.b.port)];
@@ -1322,10 +1323,11 @@ function renderInspector() {
   // wird aktualisiert; der nächste Render (Klick in die Zeichnung, Auswahl-
   // wechsel, …) baut das Formular regulär neu.
   const ae = document.activeElement;
-  if (inspectorHold ||
-      (el.contains(ae) && (ae instanceof HTMLInputElement || ae instanceof HTMLSelectElement)
-       && ae.dataset.kind !== "suffix" && ae.dataset.kind !== "choice"
-       && ae.dataset.mgroup === undefined)) {   // Modus-Wechsel baut das Formular um
+  if (!inspectorForce &&
+      (inspectorHold ||
+       (el.contains(ae) && (ae instanceof HTMLInputElement || ae instanceof HTMLSelectElement)
+        && ae.dataset.kind !== "suffix" && ae.dataset.kind !== "choice"
+        && ae.dataset.mgroup === undefined))) {
     refreshIssues();
     return;
   }
@@ -1403,29 +1405,29 @@ const PARAM_MODES = {
     {key: "kvs", de: "realer Kvs-Wert", fields: ["kvs"]}]}],
   radiator: [
     {label: "Leistungsmodell", options: [
-      {key: "en442", de: "EN-442-Modell (Q̇_nom)", fields: ["q_nom", "t_sup_nom", "t_ret_nom", "t_room", "n"], default: true},
-      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"]}]},
+      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"], default: true},
+      {key: "en442", de: "EN-442-Modell (Q̇_nom)", fields: ["q_nom", "t_sup_nom", "t_ret_nom", "t_room", "n"]}]},
     {label: "Hydraulik", options: [
       {key: "auto", de: "auto: 10 kPa beim Nennstrom", fields: [], default: true},
       {key: "kv", de: "Kv-Wert", fields: ["kv"]},
       {key: "c", de: "C-Wert", fields: ["c"]}]}],
   floor_heating: [
     {label: "Wärmeabgabe", options: [
-      {key: "model", de: "k·A-Modell", fields: ["k", "t_room"], default: true},
-      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"]}]},
+      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"], default: true},
+      {key: "model", de: "k·A-Modell", fields: ["k", "t_room"]}]},
     {label: "Hydraulik", options: [
       {key: "pipe", de: "Rohrmodell", fields: ["length", "d_inner", "roughness", "zeta"]},
       {key: "c", de: "C-Wert", fields: ["c"]}]}],
   heating_coil: [
     {label: "Leistungsmodell", options: [
-      {key: "ntu", de: "ε-NTU mit Teillast-UA", fields: ["ua_ref", "n", "q_w_ref", "m_dot_air_ref", "arrangement"], default: true},
-      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"]}]},
+      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"], default: true},
+      {key: "ntu", de: "ε-NTU mit Teillast-UA", fields: ["ua_ref", "n", "q_w_ref", "m_dot_air_ref", "arrangement"]}]},
     _HYD_WASSER],
   cooling_coil: [
     {label: "Leistungsmodell", options: [
-      {key: "ntu", de: "ε-NTU sensibel (ohne Kondensation)", fields: ["ua_ref", "n", "q_w_ref", "m_dot_air_ref", "arrangement"], default: true},
-      {key: "greybox", de: "Greybox mit Kondensation", fields: ["ua_ref", "n", "q_w_ref", "m_dot_air_ref", "arrangement", "ua_star_wet", "rh_air_in", "phi_out"]},
-      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"]}]},
+      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"], default: true},
+      {key: "ntu", de: "ε-NTU sensibel (ohne Kondensation)", fields: ["ua_ref", "n", "q_w_ref", "m_dot_air_ref", "arrangement"]},
+      {key: "greybox", de: "Greybox mit Kondensation", fields: ["ua_ref", "n", "q_w_ref", "m_dot_air_ref", "arrangement", "ua_star_wet", "rh_air_in", "phi_out"]}]},
     _HYD_WASSER],
   conduit: [{label: "Leitungsmodell", options: [
     {key: "ideal", de: "ideal (widerstandsfrei)", fields: ["q_nom"], default: true},
@@ -1649,15 +1651,28 @@ function bindInspector() {
       if (!opt) return;
       invalidate();
       const keep = new Set(opt.fields);
+      c.mstash = c.mstash || {};          // Werte verlassener Modi aufheben
       g.options.forEach(o => o.fields.forEach(f => {
         if (keep.has(f)) return;
         const p = paramSpec(type, f);
-        (p && p.keys ? p.keys : [f]).forEach(k => delete c.params[k]);
-        if (c.suffix) delete c.suffix[f];
+        (p && p.keys ? p.keys : [f]).forEach(k => {
+          if (c.params[k] !== undefined) { c.mstash[k] = c.params[k]; delete c.params[k]; }
+        });
       }));
+      opt.fields.forEach(f => {           // …und beim Zurückschalten wiederherstellen
+        const p = paramSpec(type, f);
+        (p && p.keys ? p.keys : [f]).forEach(k => {
+          if (c.mstash[k] !== undefined && !paramIsSet(c, type, f)) {
+            c.params[k] = c.mstash[k];
+          }
+          delete c.mstash[k];
+        });
+      });
       if (g.source) c.params[g.source] = opt.key;
       else (c.mchoice = c.mchoice || {})[sel.dataset.mgroup] = opt.key;
-      commit(); render();
+      commit();
+      inspectorForce = true;             // Umbau auch bei fokussiertem Eingabefeld
+      try { render(); } finally { inspectorForce = false; }
     };
   });
   el.querySelectorAll("[data-bems]").forEach(inp => {
@@ -1691,6 +1706,9 @@ function bindInspector() {
   if (rotBtn) rotBtn.onclick = rotateSelection;
   el.querySelectorAll("[data-param]").forEach(inp => {
     inp.onchange = () => {
+      // nachlaufende change-Events ersetzter/gerade ausgetauschter Felder
+      // (Blur während des Modus-Umbaus) sind veraltet — ignorieren
+      if (!inp.isConnected || inspectorForce) return;
       invalidate();
       const kind = inp.dataset.kind, pname = inp.dataset.param;
       if (kind === "choice") { setOrDelete(c.params, pname, inp.value || undefined); }
