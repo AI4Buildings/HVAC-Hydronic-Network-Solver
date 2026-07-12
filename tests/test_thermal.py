@@ -109,7 +109,7 @@ def test_cooling_coil_entu_counterflow():
     net = h.Network(fluid=h.water_at(10))
     net.add(h.OpenEnd("zu", bc="flow", q_m3h=1.0, t_supply_C=6))
     net.add(h.OpenEnd("ab", bc="pressure", p_kPa=100))
-    net.add(h.CoolingCoil("kr", ua_W_K=800, m_dot_air_kg_s=1.2, t_air_in_C=28, kv_m3h=3.0))
+    net.add(h.CoolingCoil("kr", ua_ref_W_K=800, m_dot_air_kg_s=1.2, t_air_in_C=28, kv_m3h=3.0))
     net.connect("zu.port", "kr.in")
     net.connect("kr.out", "ab.port")
     r = net.solve()
@@ -238,7 +238,7 @@ def test_floor_heating_with_c_value():
 def test_coil_with_c_value():
     net = h.Network()
     net.add(h.Inflow("zu", t_set_C=6, q_m3h=1.0))
-    net.add(h.CoolingCoil("kr", ua_W_K=800, m_dot_air_kg_s=1.2, t_air_in_C=28, c_Pa_m3h2=8000))
+    net.add(h.CoolingCoil("kr", ua_ref_W_K=800, m_dot_air_kg_s=1.2, t_air_in_C=28, c_Pa_m3h2=8000))
     net.add(h.Outflow("ab", p_kPa=0))
     net.connect("zu.port", "kr.in")
     net.connect("kr.out", "ab.port")
@@ -250,7 +250,7 @@ def test_emitters_reject_kv_and_c_together():
     with pytest.raises(h.ComponentParamError):
         h.Radiator("hk", q_nom_kW=2, kv_m3h=2, c_Pa_m3h2=1000)
     with pytest.raises(h.ComponentParamError):
-        h.HeatingCoil("hr", ua_W_K=500, m_dot_air_kg_s=1, t_air_in_C=20,
+        h.HeatingCoil("hr", ua_ref_W_K=500, m_dot_air_kg_s=1, t_air_in_C=20,
                       kv_m3h=2, c_Pa_m3h2=1000)
     with pytest.raises(h.ComponentParamError):
         h.FloorHeatingLoop("fbh", area_m2=10, length_m=50, c_Pa_m3h2=1000)  # beides
@@ -292,7 +292,7 @@ def test_coil_partload_ua_correction():
         doc = {
             "components": {
                 "zu": {"type": "inflow", "t_set_C": 60.0, "q_m3h": q_m3h},
-                "hr": {"type": "heating_coil", "ua_W_K": 800.0, "n": 0.4,
+                "hr": {"type": "heating_coil", "ua_ref_W_K": 800.0, "n": 0.4,
                        "q_w_ref_m3h": 2.0, "m_dot_air_kg_s": 1.2,
                        "t_air_in_C": 15.0, "arrangement": "counterflow"},
                 "ab": {"type": "outflow", "p_kPa": 150},
@@ -304,7 +304,7 @@ def test_coil_partload_ua_correction():
 
     r, fluid = solve(1.0)                    # halber Referenzstrom
     ua_exp = 800.0 * 0.5 ** 0.4
-    assert r["hr"].extras["ua_W_K"] == pytest.approx(ua_exp, rel=1e-9)
+    assert r["hr"].extras["ua_eff_W_K"] == pytest.approx(ua_exp, rel=1e-9)
     # manuelle ε-NTU-Gegenprobe
     c_w = 1.0 / 3600 * fluid.rho * fluid.cp
     c_a = 1.2 * 1006.0
@@ -317,7 +317,7 @@ def test_coil_partload_ua_correction():
     assert r["hr"].q_dot_kW == pytest.approx(q_exp / 1e3, rel=1e-6)
     # Referenzstrom → exakt UA_ref
     r2, _ = solve(2.0)
-    assert r2["hr"].extras["ua_W_K"] == pytest.approx(800.0, rel=1e-9)
+    assert r2["hr"].extras["ua_eff_W_K"] == pytest.approx(800.0, rel=1e-9)
 
 
 def test_cooling_coil_greybox_wet_vs_skill_reference():
@@ -331,7 +331,7 @@ def test_cooling_coil_greybox_wet_vs_skill_reference():
         "fluid": {"rho": rho, "mu": 1.3e-3, "cp": 4186.0},
         "components": {
             "zu": {"type": "inflow", "t_set_C": 8.0, "q_m3h": 4800.0 / rho},
-            "kr": {"type": "cooling_coil", "ua_W_K": 2958.78, "n": 0.3737,
+            "kr": {"type": "cooling_coil", "ua_ref_W_K": 2958.78, "n": 0.3737,
                    "ua_star_wet_kg_s": 2.2928, "rh_air_in": 0.6,
                    "m_dot_air_kg_s": 1.4682, "m_dot_air_ref_kg_s": 1.4682,
                    "q_w_ref_m3h": 5.0, "t_air_in_C": 24.0},
@@ -354,7 +354,7 @@ def test_cooling_coil_greybox_dry_regime_matches_sensible():
     import hydraulik as h
 
     def doc(greybox):
-        kr = {"type": "cooling_coil", "ua_W_K": 2000.0, "n": 0.4,
+        kr = {"type": "cooling_coil", "ua_ref_W_K": 2000.0, "n": 0.4,
               "m_dot_air_kg_s": 1.5, "t_air_in_C": 26.0}
         if greybox:
             kr.update({"ua_star_wet_kg_s": 1.5, "rh_air_in": 0.15})
@@ -384,4 +384,4 @@ def test_coil_q_prescribed_ohne_ua():
     del doc["components"]["hr"]["q_prescribed_kW"]
     with pytest.raises(h.NetworkValidationError) as exc:
         h.load(doc)
-    assert "ua_W_K" in str(exc.value)
+    assert "ua_ref_W_K" in str(exc.value)

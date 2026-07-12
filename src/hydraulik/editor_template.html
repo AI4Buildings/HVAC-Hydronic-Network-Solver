@@ -1445,6 +1445,7 @@ function paramField(c, p) {
     const lim = (p.minv != null ? ` min="${p.minv}"` : "") +
                 (p.maxv != null ? ` max="${p.maxv}"` : "");
     return `<div class="field"${help}><label>${p.name}${req}` +
+      (p.group === "none" ? ` <span class="hint">[–]</span>` : "") +
       (p.minv != null || p.maxv != null
         ? ` <span class="hint">[${p.minv ?? ""}…${p.maxv ?? ""}]</span>` : "") +
       `</label><input type="number" data-param="${p.name}" data-kind="num" data-key="${p.name}"
@@ -1463,7 +1464,7 @@ function paramField(c, p) {
   return `<div class="field"${help}><label>${p.name}${req} <span class="hint">[${GROUP_LABEL[p.group] || p.group}]</span></label>
     <div class="unitrow">
       <input type="number" step="any" data-param="${p.name}" data-kind="unit" data-key="${used}"
-             value="${c.params[used] ?? ""}"${ph}${lim}
+             value="${c.params[used] ?? ""}"${ph}${lim}>
       <select data-param="${p.name}" data-kind="suffix" data-base="${p.name}">` +
       keys.map(k => `<option value="${k}"${k===used?" selected":""}>${unitLabel(k.slice(p.name.length+1))}</option>`).join("") +
       `</select></div></div>`;

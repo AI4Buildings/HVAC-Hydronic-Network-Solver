@@ -14,7 +14,7 @@ fluid: {preset: water, t_C: 50}
 components:
   erz: {type: ideal_storage, t_set_C: 52, p_out_kPa: 150, description: "Wärmeerzeugung/Verteiler Energetikum, 52 °C Vorlauf"}
   pu_prim: {type: pump, mode: constant_dp, dp_kPa: 60, q_nom_m3h: 6.3, description: "Primärpumpe Verteiler, Δp konstant 60 kPa"}
-  ve: {type: heating_coil, ua_W_K: 551, m_dot_air_kg_s: 1.505, t_air_in_C: 13.1, arrangement: crossflow_unmixed, c_Pa_m3h2: 416.2, n: 0.4, q_w_ref_m3h: 2.9, description: "Vorerhitzer H241611A02311XV (RR/WW 1/2), 4500 m³/h Luft; UA_ref am Datenblattpunkt, Teillast n = 0,4"}
+  ve: {type: heating_coil, ua_ref_W_K: 551, m_dot_air_kg_s: 1.505, t_air_in_C: 13.1, arrangement: crossflow_unmixed, c_Pa_m3h2: 416.2, n: 0.4, q_w_ref_m3h: 2.9, description: "Vorerhitzer H241611A02311XV (RR/WW 1/2), 4500 m³/h Luft; UA_ref am Datenblattpunkt, Teillast n = 0,4"}
   pu_ve: {type: pump, mode: constant_dp, dp_kPa: 26.65, q_nom_m3h: 2.9, description: "Sekundärpumpe VE, H = 2,75 m (26,65 kPa bei ϑm = 50 °C)", bems: [{id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'PreHcl'Pu'Cmd-BO50", key: "EXP_VENT_VE_PUMP", description: "Betriebsstatus Pumpe (Cmd, 0/1)"}]}
   ab1_ve: {type: tee}
   srv2_ve: {type: balancing_valve, kvs_m3h: 16, description: "STAD DN 40, Voreinstellung 3,5 → Kv = 16,0 (Sekundär)"}
@@ -24,7 +24,7 @@ components:
   wmz_ve: {type: energy_meter, q_nom_m3h: 100, description: "WMZ Mtr33 VE-Kreis, Durchflussteil im Primärrücklauf", bems: [{id: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr33'PrVlm-AI28", key: "EXP_VENT_VE_V_dot", description: "Momentan-Volumenstrom [m³/h]"}, {id: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr33'PrPwr-AI27", key: "EXP_VENT_VE_Q_dot", description: "Momentanleistung [kW]"}, {id: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr33'CumEg-AI25", key: "EXP_VENT_VE_Q_cum", description: "Kumulierte Heizenergie [kWh]"}, {id: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr33'TFI-AI29", key: "EXP_VENT_VE_WMZ_T_VL", description: "Vorlauftemperatur WMZ [°C]"}, {id: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr33'TRt-AI30", key: "EXP_VENT_VE_WMZ_T_RL", description: "Rücklauftemperatur WMZ [°C]"}]}
   tf_vl_ve: {type: temperature_sensor, description: "Vorlauffühler VE (Regelung)", bems: [{id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'PreHcl'TFl-AI214", key: "EXP_VENT_VE_T_VL"}]}
   tf_rl_ve: {type: temperature_sensor, description: "Rücklauffühler VE (Regelung)", bems: [{id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'PreHcl'TRt-AI215", key: "EXP_VENT_VE_T_RL"}]}
-  ne: {type: heating_coil, ua_W_K: 654, m_dot_air_kg_s: 1.499, t_air_in_C: 12, arrangement: crossflow_unmixed, c_Pa_m3h2: 164.4, n: 0.4, q_w_ref_m3h: 3.4, description: "Nacherhitzer H241611C02411XV (RR/WW 2/2), 4500 m³/h Luft; UA_ref am Datenblattpunkt, Teillast n = 0,4"}
+  ne: {type: heating_coil, ua_ref_W_K: 654, m_dot_air_kg_s: 1.499, t_air_in_C: 12, arrangement: crossflow_unmixed, c_Pa_m3h2: 164.4, n: 0.4, q_w_ref_m3h: 3.4, description: "Nacherhitzer H241611C02411XV (RR/WW 2/2), 4500 m³/h Luft; UA_ref am Datenblattpunkt, Teillast n = 0,4"}
   pu_ne: {type: pump, mode: constant_dp, dp_kPa: 26.65, q_nom_m3h: 3.4, description: "Sekundärpumpe NE, H = 2,75 m (26,65 kPa bei ϑm = 50 °C)", bems: [{id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'ReHcl'Pu'Cmd-BO51", key: "EXP_VENT_NE_PUMP", description: "Betriebsstatus Pumpe (Cmd, 0/1)"}]}
   ab1_ne: {type: tee}
   srv2_ne: {type: balancing_valve, kvs_m3h: 16, description: "STAD DN 40, Voreinstellung 3,5 → Kv = 16,0 (Sekundär)"}

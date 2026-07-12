@@ -10,12 +10,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 # Suffix -> Faktor zur SI-Einheit. Erster Eintrag = bevorzugte Anzeige.
+# Reihenfolge je Gruppe: HVAC-übliche Einheit ZUERST (= Default-Anzeige im
+# Editor für leere Felder und display_key in Fehlermeldungen). Die Faktoren
+# rechnen unabhängig davon jeden Suffix exakt nach SI um.
 UNIT_GROUPS: dict[str, dict[str, float]] = {
-    "pressure":    {"Pa": 1.0, "kPa": 1e3, "bar": 1e5, "mbar": 1e2},
-    "flow":        {"m3s": 1.0, "m3h": 1.0 / 3600.0, "l_s": 1e-3, "l_min": 1e-3 / 60.0},
+    "pressure":    {"kPa": 1e3, "Pa": 1.0, "bar": 1e5, "mbar": 1e2},
+    "flow":        {"m3h": 1.0 / 3600.0, "l_s": 1e-3, "l_min": 1e-3 / 60.0, "m3s": 1.0},
     "massflow":    {"kg_s": 1.0, "kg_h": 1.0 / 3600.0},
     "temperature": {"C": 1.0},                       # intern °C
-    "power":       {"W": 1.0, "kW": 1e3},
+    "power":       {"kW": 1e3, "W": 1.0},
     "length":      {"m": 1.0, "mm": 1e-3, "cm": 1e-2},
     "area":        {"m2": 1.0},
     "kv":          {"m3h": 1.0},                     # Kv-Wert per Definition in m³/h

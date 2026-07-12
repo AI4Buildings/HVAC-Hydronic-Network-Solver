@@ -73,7 +73,7 @@ def t_air_from_h_phi(h: float, phi: float) -> float:
 
 
 class _WaterAirCoil(TwoPortComponent):
-    ua: float | None
+    ua_ref: float | None
     n: float
     q_w_ref: float | None
     m_dot_air_ref: float | None
@@ -85,8 +85,8 @@ class _WaterAirCoil(TwoPortComponent):
     q_prescribed: float | None
 
     PARAMS = (
-        Param("ua", "ua", minv=1.0,
-              help="UA-Wert am Referenzpunkt (UA_ref); Pflicht außer bei q_prescribed"),
+        Param("ua_ref", "ua", minv=1.0,
+              help="Übertragungsfähigkeit UA am Referenzpunkt; Pflicht außer bei q_prescribed"),
         Param("n", "none", default=0.4, minv=0.0, maxv=2.0,
               help="Teillastexponent der UA-Korrektur UA = UA_ref·[(V̇g/V̇g,ref)·(V̇w/V̇w,ref)]^n"),
         Param("q_w_ref", "flow", minv=1e-7,
@@ -110,9 +110,10 @@ class _WaterAirCoil(TwoPortComponent):
             errs.append("Entweder 'kv_m3h' ODER 'c_Pa_m3h2' angeben – nicht beides.")
         if self.c is not None and self.c <= 0.0:
             errs.append("Der C-Wert muss positiv sein.")
-        if self.ua is None and self.q_prescribed is None:
-            errs.append("'ua_W_K' (UA-Referenzwert) ist Pflicht, außer die Leistung "
-                        "wird mit 'q_prescribed_kW' fest vorgegeben.")
+        if self.ua_ref is None and self.q_prescribed is None:
+            errs.append("'ua_ref_W_K' (Übertragungsfähigkeit am Referenzpunkt) ist "
+                        "Pflicht, außer die Leistung wird mit 'q_prescribed_kW' fest "
+                        "vorgegeben.")
         return errs or None
 
     def hydraulic_coefficients(self, q: float, fluid: Fluid) -> EdgeCoefficients:
@@ -131,7 +132,7 @@ class _WaterAirCoil(TwoPortComponent):
         return ratio ** self.n if ratio > 0.0 else 0.0
 
     def _ua_actual(self, m_dot_w: float, fluid: Fluid) -> float:
-        return self.ua * self._partload_factor(m_dot_w, fluid)
+        return self.ua_ref * self._partload_factor(m_dot_w, fluid)
 
     def thermal_outlet(self, t_in: float, m_dot: float, fluid: Fluid) -> ThermalResult:
         c_w = m_dot * fluid.cp
@@ -147,7 +148,7 @@ class _WaterAirCoil(TwoPortComponent):
         t_air_out = self.t_air_in - q_dot / c_a
         return ThermalResult(t_in + q_dot / c_w, q_dot,
                              extras={"t_luft_aus_C": t_air_out, "epsilon": eps,
-                                     "ntu": ntu, "ua_W_K": ua})
+                                     "ntu": ntu, "ua_eff_W_K": ua})
 
 
 @register("heating_coil")

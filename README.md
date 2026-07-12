@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 122 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 128 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 Danach steht das CLI `hydraulik` zur Verfügung (`run`, `editor`, `serve`).
@@ -180,7 +180,7 @@ bereit:
 | `mixing_valve_3way` | a, b, ab | `kvs_m3h`, `opening` (A-Pfad), `characteristic` |
 | `radiator` | in, out | `q_nom_kW`, `t_sup_nom_C`, `t_ret_nom_C`, `t_room_C`, `n`, `q_prescribed_kW`; Hydraulik: `kv_m3h` ODER `c_Pa_m3h2` (Default 10 kPa bei Nennstrom) |
 | `floor_heating` | in, out | `area_m2`, `k_W_m2K`, `t_room_C`; Hydraulik: `length_m` (+ `d_inner_mm`, Rohrmodell) ODER `c_Pa_m3h2` |
-| `heating_coil` / `cooling_coil` | in, out | ε-NTU mit Teillast-UA nach Gl. 4.2 (`ua_W_K` = UA_ref, `n` Default 0.4, Referenzen `q_w_ref_m3h`/`m_dot_air_ref_kg_s`; ohne Referenzen UA konstant); `m_dot_air_kg_s`, `t_air_in_C`, `arrangement`; ODER feste Leistung `q_prescribed_kW` (dann kein UA nötig); Hydraulik: `kv_m3h` ODER `c_Pa_m3h2`. Kühlregister zusätzlich Greybox MIT Kondensation: `ua_star_wet_kg_s` + `rh_air_in` (0…1) → Q̇ = max(trocken, nass), Kondensatrate/Luftaustritt in extras |
+| `heating_coil` / `cooling_coil` | in, out | ε-NTU mit Teillast-UA nach Gl. 4.2 (`ua_ref_W_K`, `n` Default 0.4, Referenzen `q_w_ref_m3h`/`m_dot_air_ref_kg_s`; ohne Referenzen UA konstant); `m_dot_air_kg_s`, `t_air_in_C`, `arrangement`; ODER feste Leistung `q_prescribed_kW` (dann kein UA nötig); Hydraulik: `kv_m3h` ODER `c_Pa_m3h2`. Kühlregister zusätzlich Greybox MIT Kondensation: `ua_star_wet_kg_s` + `rh_air_in` (0…1) → Q̇ = max(trocken, nass), Kondensatrate/Luftaustritt in extras |
 | `heat_pump` / `chiller` | in, out | `mode: prescribed_q\|target_t_out`, `q_dot_kW` bzw. `t_out_set_C` + `q_max_kW`, `dp_nom_kPa`, `q_nom_m3h` |
 | `buffer_storage` | p1…pN | `n_ports`, `ua_W_K`, `t_amb_C` (ideal durchmischt) |
 | `inflow` (Zulauf) | port | `t_set_C` + ENTWEDER `q_m3h` (Zulauf-V̇) ODER `p_kPa` (Überdruck gauge) |

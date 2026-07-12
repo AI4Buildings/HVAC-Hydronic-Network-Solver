@@ -110,7 +110,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 122 Tests)
+## 3. Testabdeckung (tests/, 128 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/
@@ -130,7 +130,9 @@ Ventil-Sweep monoton, absurder Startwert, unbilanzierte Konstantstrom-
 Pumpen (Compile-Zeit-Fehler), Konstantstrom-Pumpe gegen zu, Drift-Meldung
 bei isoliertem Umlauf (langsame Rezirkulations-Konvergenz wird davon
 unterschieden und zu Ende iteriert), Ventilautorität (installierte
-Kennlinie analytisch), Fehlermeldungsqualität des Loaders.
+Kennlinie analytisch), Einheiten-Äquivalenz (alle Suffixe der Register,
+Wärmeabgabesysteme, Pumpen und Widerstände → bitidentische Ergebnisse),
+Fehlermeldungsqualität des Loaders.
 
 **Validierung gegen unabhängige Referenzlösungen** (FH Burgenland):
 - Verteiler-Übung (Umlenk- + Einspritzschaltung, Excel-Modell):
