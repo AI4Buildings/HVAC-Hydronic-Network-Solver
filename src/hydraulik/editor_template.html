@@ -1324,7 +1324,8 @@ function renderInspector() {
   const ae = document.activeElement;
   if (inspectorHold ||
       (el.contains(ae) && (ae instanceof HTMLInputElement || ae instanceof HTMLSelectElement)
-       && ae.dataset.kind !== "suffix" && ae.dataset.kind !== "choice")) {
+       && ae.dataset.kind !== "suffix" && ae.dataset.kind !== "choice"
+       && ae.dataset.mgroup === undefined)) {   // Modus-Wechsel baut das Formular um
     refreshIssues();
     return;
   }
