@@ -73,7 +73,8 @@ def main() -> None:
     print("   Verifikation nach Einregulierung:")
     for s in DESIGN:
         print(zeile(r3, s))
-    print("   → Sekundärströme auf Auslegung, Register fahren 52/47 °C.\n")
+    print("   → Sekundärströme auf Auslegung (UA wieder = UA_ref); die Auslegungs-")
+    print("     temperaturen 52/47 °C stellen sich nach der Hub-Anpassung ein (Schritt 4).\n")
 
     # -- 4) Ventilhübe & Ventilautorität im einregulierten Zustand -----------
     print("4) Regelventile VVG44.25-10 im einregulierten Zustand")
@@ -87,6 +88,8 @@ def main() -> None:
                       if x.name == f"wmz_{s}").readings["q_m3h"]
         dp_v100 = (q_prim / 10.0) ** 2 * 100.0 * fluid.rho / 1000.0   # kvs 10, voll offen
         kvs_50 = q_prim * (100.0 * fluid.rho / 1000.0 / (0.5 * 60.0)) ** 0.5
+        print(f"   {s.upper()}: Wasser {r4[s].t_in_C:.1f}→{r4[s].t_out_C:.1f} °C, "
+              f"Luft aus = {r4[s].extras['t_luft_aus_C']:.2f} °C")
         print(f"   {s.upper()}: Auslegungshub H = {op:.2f}, V̇_prim = {q_prim:.2f} m³/h, "
               f"Autorität a_V = Δp_V100/Δp_Verteiler = {dp_v100:.1f}/60 kPa "
               f"= {dp_v100 / 60.0:.2f}   (a_V ≥ 0,5 bräuchte kvs ≤ {kvs_50:.1f})")

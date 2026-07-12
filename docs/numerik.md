@@ -106,11 +106,11 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 |---|---|
 | Rohr / FBH | exponentielles Abklingen an T_amb bzw. T_raum: `T_aus = T_∞ + (T_ein − T_∞)·e^(−UA/ṁcp)` (analytisch, robust bei kleinem ṁ) |
 | Heizkörper | EN-442-Exponentenmodell `Q̇ = Q̇_N·(ΔT_lm/ΔT_lm,N)^n`, gekoppelt mit Enthalpiebilanz; Nullstelle via brentq auf [T_raum, T_ein] (Vorzeichenwechsel garantiert) |
-| Register | sensibles ε-NTU (Gegenstrom / Kreuzstrom unvermischt); ein Modell für Heiz- und Kühlregister (Vorzeichen ergibt sich aus T_luft − T_wasser) |
+| Register | sensibles ε-NTU (Gegenstrom / Kreuzstrom unvermischt) mit Teillastkorrektur UA = UA_ref·[(V̇g/V̇g,ref)·(V̇w/V̇w,ref)]^n (Gl. 4.2, FH-Skript Wärmetechnik 2; Default n = 0.4, ohne Referenzen konstant); Kühlregister optional als Greybox mit Kondensation (Skill cooling-coil-greybox): Q̇ = max(Q̇_trocken, ε*-NTU*-Nassmodell mit Enthalpietreiber h_ein − h_sat(ϑ_w)), Magnus-Psychrometrie, Kondensatrate in extras — validiert gegen die Skill-Referenzvorhersage (FläktGroup H241611, < 0.3 % Abweichung) |
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 118 Tests)
+## 3. Testabdeckung (tests/, 122 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/

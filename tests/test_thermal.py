@@ -280,3 +280,108 @@ def test_slow_recirculation_converges_beyond_sweep_limit():
     r = h.load(doc).solve(settings)
     assert r.converged
     assert abs(r.energy_imbalance_W) < 1.0
+
+
+def test_coil_partload_ua_correction():
+    """Teillast-UA nach Gl. (4.2): halber Wasserstrom → UA·0.5^n; Ergebnis
+    deckt sich mit der manuellen ε-NTU-Rechnung (Gegenstrom)."""
+    import math
+    import hydraulik as h
+
+    def solve(q_m3h):
+        doc = {
+            "components": {
+                "zu": {"type": "inflow", "t_set_C": 60.0, "q_m3h": q_m3h},
+                "hr": {"type": "heating_coil", "ua_W_K": 800.0, "n": 0.4,
+                       "q_w_ref_m3h": 2.0, "m_dot_air_kg_s": 1.2,
+                       "t_air_in_C": 15.0, "arrangement": "counterflow"},
+                "ab": {"type": "outflow", "p_kPa": 150},
+            },
+            "connections": [["zu.port", "hr.in"], ["hr.out", "ab.port"]],
+        }
+        net = h.load(doc)
+        return net.solve(), net.fluid
+
+    r, fluid = solve(1.0)                    # halber Referenzstrom
+    ua_exp = 800.0 * 0.5 ** 0.4
+    assert r["hr"].extras["ua_W_K"] == pytest.approx(ua_exp, rel=1e-9)
+    # manuelle ε-NTU-Gegenprobe
+    c_w = 1.0 / 3600 * fluid.rho * fluid.cp
+    c_a = 1.2 * 1006.0
+    c_min, c_max = min(c_w, c_a), max(c_w, c_a)
+    ntu = ua_exp / c_min
+    cr = c_min / c_max
+    e = math.exp(-ntu * (1 - cr))
+    eps = (1 - e) / (1 - cr * e)
+    q_exp = eps * c_min * (15.0 - 60.0)      # Q̇ ins Wasser (negativ: Heizfall)
+    assert r["hr"].q_dot_kW == pytest.approx(q_exp / 1e3, rel=1e-6)
+    # Referenzstrom → exakt UA_ref
+    r2, _ = solve(2.0)
+    assert r2["hr"].extras["ua_W_K"] == pytest.approx(800.0, rel=1e-9)
+
+
+def test_cooling_coil_greybox_wet_vs_skill_reference():
+    """Greybox-Kühlregister gegen die Referenzvorhersage des Skills
+    cooling-coil-greybox (FläktGroup H241611, kalibriert: UA_dry 2.959 kW/K,
+    UA*_wet 2.293 kg/s, n 0.374; Punkt 24 °C/60 %, Wasser 8 °C, 4800 kg/h):
+    Q = 27.59 kW, Kondensat 13.37 kg/h, Luftaustritt 11.84 °C (nass)."""
+    import hydraulik as h
+    rho = 999.9
+    doc = {
+        "fluid": {"rho": rho, "mu": 1.3e-3, "cp": 4186.0},
+        "components": {
+            "zu": {"type": "inflow", "t_set_C": 8.0, "q_m3h": 4800.0 / rho},
+            "kr": {"type": "cooling_coil", "ua_W_K": 2958.78, "n": 0.3737,
+                   "ua_star_wet_kg_s": 2.2928, "rh_air_in": 0.6,
+                   "m_dot_air_kg_s": 1.4682, "m_dot_air_ref_kg_s": 1.4682,
+                   "q_w_ref_m3h": 5.0, "t_air_in_C": 24.0},
+            "ab": {"type": "outflow", "p_kPa": 150},
+        },
+        "connections": [["zu.port", "kr.in"], ["kr.out", "ab.port"]],
+    }
+    r = h.load(doc).solve()
+    kr = r["kr"]
+    assert kr.extras["betrieb"] == "nass"
+    assert kr.q_dot_kW == pytest.approx(27.59, rel=0.015)          # Wärme INS Wasser
+    assert kr.extras["kondensat_kg_h"] == pytest.approx(13.37, rel=0.05)
+    assert kr.extras["t_luft_aus_C"] == pytest.approx(11.84, abs=0.2)
+    assert abs(r.energy_imbalance_W) < 1.0
+
+
+def test_cooling_coil_greybox_dry_regime_matches_sensible():
+    """Trockene Luft (niedrige rF) → Greybox wählt das Trockenmodell und
+    liefert exakt das sensible ε-NTU-Ergebnis; Kondensat = 0."""
+    import hydraulik as h
+
+    def doc(greybox):
+        kr = {"type": "cooling_coil", "ua_W_K": 2000.0, "n": 0.4,
+              "m_dot_air_kg_s": 1.5, "t_air_in_C": 26.0}
+        if greybox:
+            kr.update({"ua_star_wet_kg_s": 1.5, "rh_air_in": 0.15})
+        return {"components": {
+                    "zu": {"type": "inflow", "t_set_C": 16.0, "q_m3h": 2.0},
+                    "kr": kr, "ab": {"type": "outflow", "p_kPa": 150}},
+                "connections": [["zu.port", "kr.in"], ["kr.out", "ab.port"]]}
+
+    r_dry = h.load(doc(True)).solve()
+    r_ref = h.load(doc(False)).solve()
+    assert r_dry["kr"].extras["betrieb"] == "trocken"
+    assert r_dry["kr"].extras["kondensat_kg_h"] == 0.0
+    assert r_dry["kr"].q_dot_kW == pytest.approx(r_ref["kr"].q_dot_kW, rel=1e-9)
+
+
+def test_coil_q_prescribed_ohne_ua():
+    """Feste Leistung braucht keinen UA-Wert; ganz ohne beides → klare Meldung."""
+    import hydraulik as h
+    doc = {"components": {
+               "zu": {"type": "inflow", "t_set_C": 60.0, "q_m3h": 1.0},
+               "hr": {"type": "heating_coil", "q_prescribed_kW": -10.0,
+                      "m_dot_air_kg_s": 1.2, "t_air_in_C": 15.0},
+               "ab": {"type": "outflow", "p_kPa": 150}},
+           "connections": [["zu.port", "hr.in"], ["hr.out", "ab.port"]]}
+    r = h.load(doc).solve()
+    assert r["hr"].q_dot_kW == pytest.approx(-10.0, rel=1e-9)
+    del doc["components"]["hr"]["q_prescribed_kW"]
+    with pytest.raises(h.NetworkValidationError) as exc:
+        h.load(doc)
+    assert "ua_W_K" in str(exc.value)
