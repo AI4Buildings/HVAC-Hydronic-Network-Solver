@@ -431,8 +431,8 @@ const META = {
   open_end:{de:"Offenes Ende (RB)",grp:"Randbedingungen",pre:"oe"},
   cap:{de:"Endstück (dicht, V̇=0)",grp:"Randbedingungen",pre:"es"},
 };
-const GRP_ORDER = ["Erzeuger & Speicher","Verteilung","Ventile","Verbraucher","Sensoren",
-                   "Leitungen & Widerstände","Randbedingungen","Sonstige"];
+const GRP_ORDER = ["Erzeuger & Speicher","Verteilung","Ventile","Verbraucher",
+                   "Leitungen & Widerstände","Randbedingungen","Sensoren","Sonstige"];
 const TYPES = {};
 CATALOG.types.forEach(t => TYPES[t.type] = t);
 
@@ -975,40 +975,53 @@ document.getElementById("cv").addEventListener("mouseleave", () => { tip.style.d
 // 'open_end' ist durch inflow/outflow abgedeckt; 'conduit' wird nicht als
 // Kasten platziert, sondern entsteht beim Ziehen jeder Leitung (Linie).
 const PALETTE_HIDDEN = new Set(["open_end", "conduit", "link"]);
+let paletteTab = "comps";           // Palette-Register: "comps" | "tpl"
 function buildPalette(){
-  const groups = {};
-  for (const t of CATALOG.types) {
-    if (PALETTE_HIDDEN.has(t.type)) continue;
-    const m = META[t.type] || {de:t.type, grp:"Sonstige", pre:"k"};
-    (groups[m.grp] = groups[m.grp] || []).push({type:t.type, label:m.de, doc:t.doc});
+  let html = `<div class="tabs">
+    <button class="tab${paletteTab==="comps"?" active":""}" data-ptab="comps">Komponenten</button>
+    <button class="tab${paletteTab==="tpl"?" active":""}" data-ptab="tpl">Vorlagen</button>
+  </div>`;
+  if (paletteTab === "comps") {
+    const groups = {};
+    for (const t of CATALOG.types) {
+      if (PALETTE_HIDDEN.has(t.type)) continue;
+      const m = META[t.type] || {de:t.type, grp:"Sonstige", pre:"k"};
+      (groups[m.grp] = groups[m.grp] || []).push({type:t.type, label:m.de, doc:t.doc});
+    }
+    for (const g of GRP_ORDER) {
+      if (!groups[g]) continue;
+      groups[g].sort((a, b) => a.label.localeCompare(b.label, "de"));
+      html += `<h3>${g}</h3>`;
+      for (const it of groups[g])
+        html += `<button class="pal-item" data-type="${it.type}" title="${esc(it.doc)}">${esc(it.label)}</button>`;
+    }
+  } else {
+    html += `<h3>Vorlagen
+      <button class="tpl-io" id="tpl-export" title="Eigene Vorlagen als JSON-Datei sichern">⤓</button>
+      <button class="tpl-io" id="tpl-import" title="Vorlagen aus JSON-Datei laden">⤒</button></h3>`;
+    const names = [...Object.keys(BUILTIN_TEMPLATES), ...Object.keys(userTemplates).sort()];
+    for (const n of names) {
+      const own = !!userTemplates[n];
+      html += `<div class="tpl-row">
+        <button class="pal-item" data-tpl="${esc(n)}"
+          title="Einfügen: anklicken, dann auf die Zeichenfläche klicken">${esc(n)}</button>` +
+        (own ? `<button class="tpl-del" data-del="${esc(n)}" title="Vorlage löschen">×</button>` : "") +
+        `</div>`;
+    }
+    html += `<div class="hint" style="margin:4px">Eigene Vorlage: Bereich auswählen →
+      Inspector „Als Vorlage speichern".</div>
+      <input type="file" id="tpl-fileinput" accept=".json" style="display:none">`;
   }
-  let html = "";
-  for (const g of GRP_ORDER) {
-    if (!groups[g]) continue;
-    groups[g].sort((a, b) => a.label.localeCompare(b.label, "de"));
-    html += `<h3>${g}</h3>`;
-    for (const it of groups[g])
-      html += `<button class="pal-item" data-type="${it.type}" title="${esc(it.doc)}">${esc(it.label)}</button>`;
-  }
-  html += `<h3>Vorlagen
-    <button class="tpl-io" id="tpl-export" title="Eigene Vorlagen als JSON-Datei sichern">⤓</button>
-    <button class="tpl-io" id="tpl-import" title="Vorlagen aus JSON-Datei laden">⤒</button></h3>`;
-  const names = [...Object.keys(BUILTIN_TEMPLATES), ...Object.keys(userTemplates).sort()];
-  for (const n of names) {
-    const own = !!userTemplates[n];
-    html += `<div class="tpl-row">
-      <button class="pal-item" data-tpl="${esc(n)}"
-        title="Einfügen: anklicken, dann auf die Zeichenfläche klicken">${esc(n)}</button>` +
-      (own ? `<button class="tpl-del" data-del="${esc(n)}" title="Vorlage löschen">×</button>` : "") +
-      `</div>`;
-  }
-  html += `<div class="hint" style="margin:4px">Eigene Vorlage: Bereich auswählen →
-    Inspector „Als Vorlage speichern".</div>
-    <input type="file" id="tpl-fileinput" accept=".json" style="display:none">`;
   document.getElementById("palette").innerHTML = html;
 }
 buildPalette();
 document.getElementById("palette").addEventListener("click", ev => {
+  const pt = ev.target.closest("[data-ptab]");
+  if (pt) {
+    paletteTab = pt.dataset.ptab;
+    placing = null; placingTemplate = null; setStatus("");
+    buildPalette(); return;
+  }
   const del = ev.target.closest(".tpl-del");
   if (del) {
     if (confirm(`Vorlage '${del.dataset.del}' löschen?`)) {
