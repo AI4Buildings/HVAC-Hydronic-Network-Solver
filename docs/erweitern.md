@@ -57,7 +57,13 @@ Parametervalidierung.
 - `q_seed()` überschreiben, wenn ein Nennvolumenstrom bekannt ist
   (besserer Startwert, definiert auch den R-Floor-Maßstab).
 - Neue Parameter-Einheiten: Gruppe in `params.UNIT_GROUPS` ergänzen.
-- Reserviertes Kwarg: `ts=<label>` wird von der Basisklasse VOR der
+- Reservierte Kwargs (Basisklasse, VOR der Parameterprüfung abgeräumt):
+  `ts=<label>` (Teilstrecken-Gruppierung), `bems=[{id, key, description}, …]`
+  (BEMS-Messpunktliste, base._parse_bems). Zusätzlich hängt der
+  @register-Dekorator jedem Typ automatisch den Param `description` an.
+- Editor: Betriebsarten-Felder deklariert PARAM_MODES in
+  editor_template.html (nur relevante Felder je Modus sichtbar).
+- Reserviertes Kwarg im Detail: `ts=<label>` wird von der Basisklasse VOR der
   Param-Auswertung abgegriffen (Teilstrecken-Gruppierung) — kein eigener
   Parameter darf `ts` heißen.
 

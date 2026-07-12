@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hydraulik"
-version = "0.3.0"
+version = "0.4.0"
 description = "Stationäre hydraulisch-thermische Berechnung von HVAC-Hydraulikschaltungen (SIMPLE-Netzwerksolver)"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -2,9 +2,12 @@
 
 Python-Paket zur stationären hydraulisch-thermischen Berechnung von
 HVAC-Hydraulikschaltungen (1D-Netzwerk, SIMPLE-artiger Druckkorrektur-Solver)
-mit grafischem Schaltbild-Editor (Rechnen im GUI, Human in the Loop).
-Stand: v0.3.0 (Juli 2026); validiert gegen zwei unabhängige
-FH-Burgenland-Referenzlösungen (Verteiler-Übung, TWE-Übung Bsp 6).
+mit grafischem Hydraulikschema-Editor (Rechnen im GUI, Human in the Loop).
+Doppelzweck: Rechenmodell UND maschinenlesbare semantische Karte für die
+BEMS-Betriebsdatenanalyse (Aedifion-Datenpunkt-IDs an jeder Komponente).
+Stand: v0.4.0 (Juli 2026); validiert gegen zwei unabhängige
+FH-Burgenland-Referenzlösungen (Verteiler-Übung, TWE-Übung Bsp 6) sowie
+gegen die Skill-Referenz cooling-coil-greybox (FläktGroup-Register).
 GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 — Änderungen nach Abschluss committen und pushen (Co-Authored-By-Trailer).
 
@@ -35,7 +38,11 @@ src/hydraulik/
   components/        Eine Datei je Komponentengruppe; registry.py: @register("typname")
     base.py          Solver-Verträge: EdgeCoefficients (a, b, dp_source), ThermalResult;
                      reserviertes kwarg ts=<label> (Teilstrecken-Gruppierung)
-    pipe/pump/resistance/valves (inkl. check_valve, ball_valve)/emitters/coils/plants/
+    pipe/pump/resistance/valves (inkl. check_valve, ball_valve=Kugelhahn:
+    ohne Kvs druckverlustfrei, closed=Revisionsfall)/emitters/
+    coils (Register: Teillast-UA = UA_ref·[(V̇g/V̇g,ref)·(V̇w/V̇w,ref)]^n, Gl. 4.2
+    FH-Skript; Kühlregister zusätzlich Greybox mit Kondensation — Betriebsarten
+    feste Leistung | ε-NTU | Greybox)/plants/
     sensors.py       Sensoren (T/p/Δp/V̇/WMZ): rückwirkungsfreie Messstellen →
                      result.sensors; Messleitung = reine Verbindung. BEMS generisch:
                      JEDE Komponente hat bems: [{id,key,description},…] (reserviert,
@@ -53,9 +60,15 @@ src/hydraulik/
   yaml_loader.py     load(), load_settings(); LLM-taugliche Fehlermeldungen;
                      toleriert 'layout:'-Block des Editors
   editor.py          Katalogexport (Registry+ParamSpec → JSON) + render/build_editor()
-  editor_template.html  Single-File-Schaltbild-Editor (Platzhalter __CATALOG_JSON__);
-                     jede gezogene Linie = conduit; Zoom, Undo/Redo, Multi-Select,
-                     Knickpunkte, Drag-to-Connect, Ergebnis-Tooltips
+  editor_template.html  Single-File-Hydraulikschema-Editor (__CATALOG_JSON__);
+                     jede gezogene Linie = conduit (Sensor-Messleitungen = reine
+                     Verbindung); Zoom, Undo/Redo, Multi-Select, Knickpunkte,
+                     Drag-to-Connect, Ergebnis-Tooltips; Palette-Register
+                     Komponenten/Vorlagen (7 Grundschaltungen mitgeliefert,
+                     eigene via localStorage/JSON); Inspector-Register
+                     Fluid-Info/BEMS-Info; modusabhängige Eingabefelder
+                     (PARAM_MODES: nur Felder des gewählten Modus, Werte-
+                     erhalt via mstash); Symboltexte rotationsfest
   server.py          hydraulik serve: Editor + POST /solve (nur 127.0.0.1)
   results.py         SolutionResult: report(), to_dict(), to_csv(), result["name"],
                      Teilstrecken-Tabelle (ts-Gruppen als Ketten in Strömungsrichtung)

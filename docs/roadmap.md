@@ -1,10 +1,49 @@
 # Status & Roadmap
 
-## Stand v0.3.0 (2026-07-10)
+## Stand v0.4.0 (2026-07-14)
 
-111 Tests, alle grün; 6 YAML-Beispielschaltungen + Lösungs-/Validierungs-
-skripte; validiert gegen zwei unabhängige FH-Burgenland-Referenzlösungen;
-grafischer Schaltbild-Editor mit integriertem Solver (`hydraulik serve`).
+128 Tests, alle grün; 7 YAML-Beispielschaltungen + Lösungs-/Validierungs-
+skripte (07 TWE, 08 Ventilautorität, 09 Energetikum-Lüftung mit echten
+Aedifion-BEMS-IDs); validiert gegen zwei unabhängige FH-Burgenland-
+Referenzlösungen und die cooling-coil-greybox-Skill-Referenz;
+grafischer Hydraulikschema-Editor mit integriertem Solver (`hydraulik serve`).
+
+v0.4.0 – Sensoren/BEMS, Vorlagen, Teillast-Register, Editor-UX:
+
+- Kugelhahn `ball_valve` (Default druckverlustfrei: 1 Pa bei q_nom wie link;
+  optional realer Kvs; `closed: true` = Revisionsfall, sperrt exakt).
+- Rückschlagklappe im HVAC-Symbolstil (Gehäuse + Klappendiagonale + Drehlager).
+- 7 mitgelieferte Editor-Vorlagen nach den FH-Übungsschemata (Beimischung
+  einfach/doppelt/doppelt-differenzdruckarm, Drossel, Umlenk, Einspritzung
+  DGV/3WV); eigene Vorlagen speichern/teilen (localStorage + JSON).
+- Sensoren-Rubrik (T/p/Δp/V̇/WMZ): rückwirkungsfreie Messstellen (Fühler =
+  Knotenanzapfung ohne Kante, Messleitung = reine Verbindung; V̇/WMZ inline
+  quasi-ideal); Messwerte in result.sensors + Editor-Tooltip. BEMS generisch:
+  JEDE Komponente trägt `bems: [{id, key, description}, …]` (reserviert,
+  base._parse_bems) + `description` (zentral im @register-Dekorator).
+- Register-Teillast nach NTU-Verfahren (Gl. 4.2, Skill heat-exchanger-
+  partload): UA = UA_ref·[(V̇g/V̇g,ref)·(V̇w/V̇w,ref)]^n; Kühlregister-Greybox
+  mit Kondensation (Skill cooling-coil-greybox, max(Q̇_trocken, Q̇_nass),
+  Magnus-Psychrometrie, Kondensatrate) — validiert < 0.3 % gegen die
+  Skill-Referenz. q_prescribed braucht kein UA mehr.
+- Thermik-Solver: langsame Rezirkulations-Konvergenz (Kontraktionsfaktor
+  nahe 1) wird per Fehlertrend von echter Drift unterschieden und bis
+  20× max_iter zu Ende iteriert.
+- Loader: doppelte YAML-Schlüssel werden gemeldet statt still überschrieben.
+- Einheiten: HVAC-übliche Anzeigeeinheiten als Default (m³/h, kPa, kW);
+  Äquivalenz aller Suffixe testgesichert (tests/test_units_equivalence.py);
+  Register-Parameter heißt ua_ref_W_K (effektiv: extras.ua_eff_W_K).
+- Editor-UX: Palette-Register Komponenten/Vorlagen (Sensoren unterste
+  Gruppe, Pumpe unter Verteilung); Inspector-Register Fluid-Info/BEMS-Info
+  mit frei vielen BEMS-Messpunkten je Komponente; modusabhängige
+  Eingabefelder (PARAM_MODES) mit Werteerhalt beim Umschalten (mstash);
+  Default „feste Leistung" bei allen Wärmeabgabesystemen; Symboltexte
+  bleiben bei Rotation lesbar; Spinner-/Fokus-/Einheiten-Dropdown-Fixes;
+  Titel „Hydraulikschema-Editor".
+- Beispiele 08 (Ventilautorität, installierte Kennlinien) und
+  09 (Energetikum VE/NE als Einspritzschaltung, Ventil im Rücklauf,
+  STAD-Kv aus TA-Tabelle, UA aus Datenblatt kalibriert, echte Aedifion-IDs;
+  Analyse: Datenblatt-Reproduktion, Einregulierung, Ventilautorität).
 Veröffentlicht: https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 (public, MIT; Übungs-PDFs und generierte Editor-HTML via .gitignore
 ausgeschlossen, Lösungswerte in Tests/Beispielen bewusst enthalten).

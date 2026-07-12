@@ -83,6 +83,36 @@ YAML/dict ──load()──> Network ──compile()──> CompiledNetwork
 Da ρ, μ, cp konstant sind, ist die Hydraulik exakt von der Temperatur
 entkoppelt — die sequentielle Reihenfolge ist keine Näherung.
 
+## Sensoren & BEMS-Integration (components/sensors.py)
+
+Das Schema ist zugleich semantische Karte für die Betriebsdatenanalyse
+(BEMS, z.B. Aedifion). Fühler (temperature/pressure/pressure_diff_sensor)
+sind reine Knotenanzapfungen: build() erzeugt nur Ports, keine Kante —
+Verbinden = Knoten verschmelzen, die Hydraulik bleibt unberührt (im Editor
+als dünne Messleitung = reine Verbindung, kein conduit). Volumenstromsensor
+und Wärmemengenzähler sitzen als quasi-ideale Zweitore in der Leitung
+(1 Pa bei q_nom); der WMZ hat zusätzlich den Fühlerport t_ref in der
+Gegenleitung und misst Q̇ = ṁ·cp·(ϑ_ref − ϑ_Leitung).
+
+Messwerte entstehen NACH dem Lösen über den duck-typed Hook
+`measure(net, hyd, th, node_of)` (results.build_result sammelt sie in
+SolutionResult.sensors / to_dict()["sensors"]; der Editor zeigt sie als
+Tooltip). BEMS-Zuordnung: JEDE Komponente trägt die reservierten Attribute
+`bems: [{id, key, description}, …]` (base._parse_bems, beliebig viele
+Messpunkte) und `description` (Param, zentral im @register-Dekorator
+angehängt) — rein deklarativ, ohne Einfluss auf die Berechnung.
+
+## Register-Teillast & Greybox (components/coils.py)
+
+Betriebsarten je Register: feste Leistung (q_prescribed, kein UA nötig) |
+ε-NTU mit Teillastkorrektur UA = UA_ref·[(V̇g/V̇g,ref)·(V̇w/V̇w,ref)]^n
+(Gl. 4.2 FH-Skript Wärmetechnik 2; Default n = 0.4, ohne Referenzströme
+konstant) | nur Kühlregister: Greybox MIT Kondensation (Q̇ = max aus
+trockenem ε-NTU und nassem ε*-NTU* mit Enthalpietreiber h_ein − h_sat(ϑ_w);
+Magnus-Psychrometrie im Modul, Kondensatrate/Betriebsmodus in extras).
+Der Wasserstrom kommt in jeder Iteration aus der Hydraulik; die Luftseite
+ist Parameter. Im Editor wählt PARAM_MODES die sichtbaren Felder je Modus.
+
 ## Parametersystem (params.py)
 
 `Param("dp", "pressure", required=True, ...)` deklariert einen Parameter
