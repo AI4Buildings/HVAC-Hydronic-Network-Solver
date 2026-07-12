@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
-<title>hydraulik – Schaltbild-Editor</title>
+<title>Hydraulikschema-Editor</title>
 <style>
   :root { --bg:#f4f4f2; --panel:#ffffff; --line:#d8d7d2; --ink:#1c1c1a; --muted:#6b6a65;
           --vl:#c62828; --rl:#1565c0; --sel:#0b7a3e; }
@@ -76,7 +76,7 @@
 </head>
 <body>
 <header>
-  <h1>hydraulik – Schaltbild-Editor</h1>
+  <h1>Hydraulikschema-Editor</h1>
   <button id="btn-new">Neu</button>
   <button id="btn-undo" title="Rückgängig (Strg+Z)">↶</button>
   <button id="btn-redo" title="Wiederholen (Strg+Shift+Z)">↷</button>
@@ -1374,6 +1374,112 @@ function fluidForm() {
          <div class="field"><label>μ [Pa·s]</label><input type="number" id="fl-mu" value="${f.mu}" step="0.0001"></div>
          <div class="field"><label>cp [J/(kg·K)]</label><input type="number" id="fl-cp" value="${f.cp}"></div>`);
 }
+/* Modusabhängige Eingabefelder: je Komponententyp Gruppen von Betriebsarten.
+   source = echter Parameter (z.B. pump.mode); ohne source wird der Modus aus
+   den gesetzten Parametern erkannt (Option mit den meisten Treffern gewinnt,
+   sonst die default-Option). Beim Umschalten werden die Parameter der anderen
+   Optionen entfernt — die YAML bleibt konsistent. */
+const _HYD_WASSER = {label: "Hydraulik (wasserseitig)", options: [
+  {key: "kv", de: "Kv-Wert", fields: ["kv"], default: true},
+  {key: "c", de: "C-Wert", fields: ["c"]}]};
+const _PLANT_MODES = [{source: "mode", label: "Betriebsart", options: [
+  {key: "prescribed_q", de: "feste Leistung", fields: ["q_dot"]},
+  {key: "target_t_out", de: "Austritts-Solltemperatur", fields: ["t_out_set", "q_max"]}]}];
+const PARAM_MODES = {
+  pump: [{source: "mode", label: "Regelung", options: [
+    {key: "constant_dp", de: "konstante Druckdifferenz", fields: ["dp", "q_nom", "dp_internal_frac"]},
+    {key: "constant_flow", de: "konstanter Volumenstrom", fields: ["q"]}]}],
+  heat_pump: _PLANT_MODES,
+  chiller: _PLANT_MODES,
+  inflow: [{label: "Randbedingung", options: [
+    {key: "q", de: "Volumenstrom", fields: ["q"]},
+    {key: "p", de: "Druck (Überdruck)", fields: ["p"]}]}],
+  outflow: [{label: "Randbedingung", options: [
+    {key: "p", de: "Druck (Überdruck)", fields: ["p"]},
+    {key: "q", de: "Entnahme-Volumenstrom", fields: ["q"]}]}],
+  ball_valve: [{label: "Durchflusswiderstand", options: [
+    {key: "ideal", de: "druckverlustfrei", fields: ["q_nom"], default: true},
+    {key: "kvs", de: "realer Kvs-Wert", fields: ["kvs"]}]}],
+  radiator: [
+    {label: "Leistungsmodell", options: [
+      {key: "en442", de: "EN-442-Modell (Q̇_nom)", fields: ["q_nom", "t_sup_nom", "t_ret_nom", "t_room", "n"], default: true},
+      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"]}]},
+    {label: "Hydraulik", options: [
+      {key: "auto", de: "auto: 10 kPa beim Nennstrom", fields: [], default: true},
+      {key: "kv", de: "Kv-Wert", fields: ["kv"]},
+      {key: "c", de: "C-Wert", fields: ["c"]}]}],
+  floor_heating: [
+    {label: "Wärmeabgabe", options: [
+      {key: "model", de: "k·A-Modell", fields: ["k", "t_room"], default: true},
+      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"]}]},
+    {label: "Hydraulik", options: [
+      {key: "pipe", de: "Rohrmodell", fields: ["length", "d_inner", "roughness", "zeta"]},
+      {key: "c", de: "C-Wert", fields: ["c"]}]}],
+  heating_coil: [
+    {label: "Leistungsmodell", options: [
+      {key: "ntu", de: "ε-NTU mit Teillast-UA", fields: ["ua_ref", "n", "q_w_ref", "m_dot_air_ref", "arrangement"], default: true},
+      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"]}]},
+    _HYD_WASSER],
+  cooling_coil: [
+    {label: "Leistungsmodell", options: [
+      {key: "ntu", de: "ε-NTU sensibel (ohne Kondensation)", fields: ["ua_ref", "n", "q_w_ref", "m_dot_air_ref", "arrangement"], default: true},
+      {key: "greybox", de: "Greybox mit Kondensation", fields: ["ua_ref", "n", "q_w_ref", "m_dot_air_ref", "arrangement", "ua_star_wet", "rh_air_in", "phi_out"]},
+      {key: "fix", de: "feste Leistung", fields: ["q_prescribed"]}]},
+    _HYD_WASSER],
+  conduit: [{label: "Leitungsmodell", options: [
+    {key: "ideal", de: "ideal (widerstandsfrei)", fields: ["q_nom"], default: true},
+    {key: "c", de: "C-Wert", fields: ["c"]},
+    {key: "design", de: "Auslegungspunkt (Δp + V̇)", fields: ["dp", "q"]},
+    {key: "pipe", de: "Rohrmodell", fields: ["length", "d_inner", "roughness", "zeta", "u_linear", "t_amb"]}]}],
+};
+function paramSpec(type, name) { return TYPES[type].params.find(p => p.name === name); }
+function paramIsSet(c, type, name) {
+  const p = paramSpec(type, name);
+  const keys = p && p.keys ? p.keys : [name];
+  return keys.some(k => c.params[k] !== undefined);
+}
+function activeModeOption(c, type, group, gi) {
+  if (group.source) {
+    const v = c.params[group.source] ?? (paramSpec(type, group.source) || {}).default;
+    return group.options.find(o => o.key === v) || null;
+  }
+  // Erkennung aus gesetzten Parametern; die explizite Wahl (c.mchoice, nur
+  // Editor-Zustand) entscheidet bei Gleichstand bzw. leeren Feldern.
+  const counts = group.options.map(o => o.fields.filter(f => paramIsSet(c, type, f)).length);
+  const maxN = Math.max(0, ...counts);
+  const cands = group.options.filter((o, i) => maxN > 0 ? counts[i] === maxN : true);
+  const chosen = c.mchoice && c.mchoice[gi];
+  const byChoice = cands.find(o => o.key === chosen);
+  if (byChoice) return byChoice;
+  if (maxN > 0) return cands[0];
+  return group.options.find(o => o.default) || null;
+}
+function paramsSection(c, type) {
+  const t = TYPES[type];
+  const groups = PARAM_MODES[type] || [];
+  const moded = new Set();
+  groups.forEach(g => {
+    if (g.source) moded.add(g.source);
+    g.options.forEach(o => o.fields.forEach(f => moded.add(f)));
+  });
+  let html = "";
+  for (const p of t.params)
+    if (p.name !== "description" && !moded.has(p.name)) html += paramField(c, p);
+  groups.forEach((g, gi) => {
+    const act = activeModeOption(c, type, g, gi);
+    html += `<div class="field"><label>${esc(g.label)}</label>
+      <select data-mgroup="${gi}" data-mtype="${type}">` +
+      (act ? "" : `<option value="" selected>– wählen –</option>`) +
+      g.options.map(o => `<option value="${o.key}"${act && act.key === o.key ? " selected" : ""}>${esc(o.de)}</option>`).join("") +
+      `</select></div>`;
+    if (act)
+      for (const f of act.fields) {
+        const p = paramSpec(type, f);
+        if (p) html += paramField(c, p);
+      }
+  });
+  return html;
+}
 function compForm(c) {
   const t = TYPES[c.type];
   let html = `<h3>${esc((META[c.type]||{de:c.type}).de)} <span class="hint">(${c.type})</span></h3>
@@ -1387,7 +1493,7 @@ function compForm(c) {
       <button id="c-rot">↻ 90° drehen (Taste r)</button></div>
     <div class="field"><label>Teilstrecke (ts, optional)</label>
       <input type="text" id="c-ts" value="${esc(c.ts)}"></div>`;
-  for (const p of t.params) if (p.name !== "description") html += paramField(c, p);
+  html += paramsSection(c, c.type);
   return html;
 }
 function bemsForm(c) {
@@ -1478,9 +1584,7 @@ function wireForm(w) {
   let html;
   if (w.type === "conduit") {
     html = `<h3>Verbindungsleitung <span class="hint">(conduit)</span></h3>
-      <div class="hint">${esc(portRef(w.a))} → ${esc(portRef(w.b))}<br>
-      Ohne Hydraulik-Angabe: ideale Verbindung. Alternativ C-Wert,
-      Auslegungspunkt (dp + q) oder Rohrmodell (length + d_inner …).</div>
+      <div class="hint">${esc(portRef(w.a))} → ${esc(portRef(w.b))}</div>
       <div class="field"><label>Name</label><input type="text" id="c-name" value="${esc(w.name)}"></div>
       <div class="field"><label>Teilstrecke (ts, optional)</label>
         <input type="text" id="c-ts" value="${esc(w.ts || "")}"></div>`;
@@ -1493,8 +1597,11 @@ function wireForm(w) {
       <select id="w-color">` +
       ["vl","rl","kvl","krl","n"].map(cl => `<option value="${cl}"${w.color===cl?" selected":""}>${label(cl)}</option>`).join("") +
       `</select></div>`;
-  if (w.type === "conduit")
-    for (const p of TYPES.conduit.params) html += paramField(w, p);
+  if (w.type === "conduit") {
+    html += paramsSection(w, "conduit");
+    const d = TYPES.conduit.params.find(p => p.name === "description");
+    if (d) html += paramField(w, d);
+  }
   html += `<div class="hint">Leitungsführung: Doppelklick auf die Leitung setzt einen
       Knickpunkt (Umlenkung); Griffe ziehen zum Verschieben; Doppelklick auf
       einen Griff entfernt ihn.</div>` +
@@ -1532,6 +1639,25 @@ function bindInspector() {
   };
   el.querySelectorAll(".tab").forEach(btn => btn.onclick = () => {
     inspectorTab = btn.dataset.tab; renderInspector();
+  });
+  el.querySelectorAll("select[data-mgroup]").forEach(sel => {
+    sel.onchange = () => {
+      const type = sel.dataset.mtype;
+      const g = (PARAM_MODES[type] || [])[Number(sel.dataset.mgroup)];
+      const opt = g && g.options.find(o => o.key === sel.value);
+      if (!opt) return;
+      invalidate();
+      const keep = new Set(opt.fields);
+      g.options.forEach(o => o.fields.forEach(f => {
+        if (keep.has(f)) return;
+        const p = paramSpec(type, f);
+        (p && p.keys ? p.keys : [f]).forEach(k => delete c.params[k]);
+        if (c.suffix) delete c.suffix[f];
+      }));
+      if (g.source) c.params[g.source] = opt.key;
+      else (c.mchoice = c.mchoice || {})[sel.dataset.mgroup] = opt.key;
+      commit(); render();
+    };
   });
   el.querySelectorAll("[data-bems]").forEach(inp => {
     inp.onchange = () => {
