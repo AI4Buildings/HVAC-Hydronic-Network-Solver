@@ -82,7 +82,7 @@ Selektion), `ts`-Label und eigenen Ergebniswerten im Hover (V̇, Δp, T, v).
 **Leitungsführung mit Knickpunkten** (Doppelklick auf Leitung setzt eine
 Umlenkung, Griffe ziehen, Doppelklick auf Griff entfernt; ohne Knick
 automatisch gerade bzw. abgewinkelt), **Vorlagen für Standardschaltungen**
-(Palette-Sektion VORLAGEN: mitgeliefert sind die sieben Grundschaltungen
+(Palette-Register „Vorlagen“: mitgeliefert sind die sieben Grundschaltungen
 Beimischschaltung einfach/doppelt/doppelt-differenzdruckarm, Drossel-,
 Umlenk- sowie Einspritzschaltung mit Durchgangs- bzw. Dreiwegeventil;
 eigene Vorlagen: Bereich auswählen → „Als Vorlage speichern" → per Klick
@@ -137,7 +137,7 @@ Regeln:
 
 Das maschinenlesbare Strangschema ist nicht nur Rechenmodell, sondern auch
 semantische Karte für die Betriebsdatenanalyse eines Building Energy Management
-Systems (BEMS, z.B. Aedifion). Die Palette-Rubrik **SENSOREN** stellt dafür
+Systems (BEMS, z.B. Aedifion). Die Palette-Rubrik **SENSOREN** (unterste Gruppe im Register „Komponenten“) stellt dafür
 Temperatur-, Druck-, Differenzdruck-, Volumenstromsensoren und Wärmemengenzähler
 bereit:
 
