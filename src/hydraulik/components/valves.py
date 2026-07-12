@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from ..friction import kv_to_b
 from ..fluids import Fluid
-from ..params import Param
+from ..params import Param, bems_id_params
 from .base import Component, EdgeCoefficients, NetworkBuilder, TwoPortComponent
 from .registry import register
 
@@ -54,7 +54,7 @@ class ControlValve(_KvValveBase):
         Param("characteristic", "str", default="equal_percentage",
               choices=("equal_percentage", "linear"), help="Ventilkennlinie"),
         Param("rangeability", "none", default=100.0, minv=2.0, help="Stellverhältnis Kvs/Kv0"),
-    )
+    ) + bems_id_params("des Stellsignals/der Ventilstellung")
 
 
 @register("balancing_valve")
@@ -66,7 +66,7 @@ class BalancingValve(_KvValveBase):
         Param("characteristic", "str", default="linear",
               choices=("equal_percentage", "linear")),
         Param("rangeability", "none", default=50.0, minv=2.0),
-    )
+    ) + bems_id_params("der Voreinstellung/Stellungsanzeige")
 
 
 @register("ball_valve")
@@ -95,7 +95,7 @@ class BallValve(TwoPortComponent):
               help="optional: realer Kvs-Wert; ohne Angabe druckverlustfrei"),
         Param("q_nom", "flow", default=10.0 / 3600.0, minv=1e-7,
               help="Nennvolumenstrom im druckverlustfreien Fall (Referenzverlust dort 1 Pa)"),
-    )
+    ) + bems_id_params("der Auf/Zu-Stellung (z.B. Umschaltventil-Cmd)")
 
     def build(self, b) -> None:
         if self.closed:
@@ -159,7 +159,7 @@ class MixingValve3Way(Component):
         Param("characteristic", "str", default="equal_percentage",
               choices=("equal_percentage", "linear")),
         Param("rangeability", "none", default=100.0, minv=2.0),
-    )
+    ) + bems_id_params("des Stellsignals (A-Pfad)")
 
     def port_names(self) -> tuple[str, ...]:
         return ("a", "b", "ab")

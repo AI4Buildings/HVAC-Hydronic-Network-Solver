@@ -55,6 +55,7 @@
   .port:hover, .port.pending { fill:#ffd54d; }
   .sym { stroke:#222; stroke-width:1.6; fill:#fff; }
   .wire { fill:none; stroke-width:3.2; pointer-events:none; }
+  .wire.measure { stroke-width:1.4; stroke:#555; }   /* Messleitung eines Fühlers */
   .wire-hit { fill:none; stroke:transparent; stroke-width:14; cursor:pointer; }
   .wp { fill:#fff; stroke:#0b7a3e; stroke-width:1.6; cursor:move; }
   .wire.vl { stroke:var(--vl); }
@@ -410,6 +411,11 @@ const META = {
   floor_heating:{de:"Fußbodenheizung",grp:"Verbraucher",pre:"fbh"},
   heating_coil:{de:"Heizregister",grp:"Verbraucher",pre:"hr"},
   cooling_coil:{de:"Kühlregister",grp:"Verbraucher",pre:"kr"},
+  temperature_sensor:{de:"Temperatursensor",grp:"Sensoren",pre:"tf"},
+  pressure_sensor:{de:"Drucksensor",grp:"Sensoren",pre:"pf"},
+  pressure_diff_sensor:{de:"Differenzdrucksensor",grp:"Sensoren",pre:"pdf"},
+  flow_sensor:{de:"Volumenstromsensor",grp:"Sensoren",pre:"vf"},
+  energy_meter:{de:"Wärmemengenzähler",grp:"Sensoren",pre:"wmz"},
   pipe:{de:"Rohrleitung",grp:"Leitungen & Widerstände",pre:"ro"},
   flow_resistance:{de:"Strömungswiderstand",grp:"Leitungen & Widerstände",pre:"r"},
   link:{de:"Ideale Verbindung (link)",grp:"Leitungen & Widerstände",pre:"lk"},
@@ -417,7 +423,7 @@ const META = {
   open_end:{de:"Offenes Ende (RB)",grp:"Randbedingungen",pre:"oe"},
   cap:{de:"Endstück (dicht, V̇=0)",grp:"Randbedingungen",pre:"es"},
 };
-const GRP_ORDER = ["Erzeuger & Speicher","Verteilung","Ventile","Verbraucher",
+const GRP_ORDER = ["Erzeuger & Speicher","Verteilung","Ventile","Verbraucher","Sensoren",
                    "Leitungen & Widerstände","Randbedingungen","Sonstige"];
 const TYPES = {};
 CATALOG.types.forEach(t => TYPES[t.type] = t);
@@ -437,6 +443,9 @@ let boxSel = null;                  // Auswahlrechteck {x0,y0,x1,y1,active}
 let clipboard = null;               // kopierte Komponenten + interne Leitungen
 let wpDrag = null;                  // Knickpunkt-Verschiebung {w, idx, moved}
 let dblTrack = {key: "", t: 0};     // eigene Doppelklick-Erkennung
+let inspectorHold = false;          // Formular bei reiner Wertänderung nicht neu aufbauen
+                                    // (native change-Events beim Fokuswechsel würden sonst
+                                    // das nächste angeklickte Feld ersetzen/verschlucken)
 
 function wireEnds(w) {
   return [absPort(compById(w.a.comp), w.a.port), absPort(compById(w.b.comp), w.b.port)];
@@ -595,6 +604,10 @@ function portPosRaw(comp) {
   if (t === "control_valve" || t === "balancing_valve" || t === "ball_valve")
     return {in:{dx:-21,dy:0}, out:{dx:21,dy:0}};
   if (t === "check_valve") return {in:{dx:-21,dy:0}, out:{dx:21,dy:0}};
+  if (t === "temperature_sensor" || t === "pressure_sensor") return {port:{dx:-20,dy:0}};
+  if (t === "pressure_diff_sensor") return {plus:{dx:-20,dy:0}, minus:{dx:20,dy:0}};
+  if (t === "flow_sensor") return {in:{dx:-21,dy:0}, out:{dx:21,dy:0}};
+  if (t === "energy_meter") return {in:{dx:-21,dy:0}, out:{dx:21,dy:0}, t_ref:{dx:0,dy:-21}};
   if (t === "tee") return {a:{dx:-22,dy:0}, b:{dx:22,dy:0}, c:{dx:0,dy:22}};
   if (t === "open_end") return {port:{dx:-20,dy:0}};
   if (t === "inflow") return {port:{dx:20,dy:0}};
@@ -672,6 +685,27 @@ function symbol(comp) {
       return `<rect class="sym" x="-16" y="-9" width="32" height="18"/>
               <line class="sym" x1="-16" y1="-9" x2="16" y2="9" stroke-width="2"/>
               <circle class="sym" r="3.2" cx="-16" cy="-9" fill="#222"/>`;
+    case "temperature_sensor": case "pressure_sensor":
+      return `<line class="sym" x1="-20" y1="0" x2="-12" y2="0"/>
+              <circle class="sym" r="12"/>
+              <text x="0" y="4" text-anchor="middle" class="comp-label">${t==="temperature_sensor"?"T":"p"}</text>`;
+    case "pressure_diff_sensor":
+      return `<line class="sym" x1="-20" y1="0" x2="-12" y2="0"/>
+              <line class="sym" x1="12" y1="0" x2="20" y2="0"/>
+              <circle class="sym" r="12"/>
+              <text x="0" y="4" text-anchor="middle" class="comp-label">Δp</text>
+              <text x="-19" y="-6" class="comp-label">+</text>`;
+    case "flow_sensor":
+      return `<line class="sym" x1="-21" y1="0" x2="-13" y2="0"/>
+              <line class="sym" x1="13" y1="0" x2="21" y2="0"/>
+              <circle class="sym" r="13"/>
+              <text x="0" y="4" text-anchor="middle" class="comp-label">V̇</text>`;
+    case "energy_meter":
+      return `<rect class="sym" x="-16" y="-10" width="32" height="20"/>
+              <line class="sym" x1="-21" y1="0" x2="-16" y2="0"/>
+              <line class="sym" x1="16" y1="0" x2="21" y2="0"/>
+              <line class="sym" x1="0" y1="-10" x2="0" y2="-21"/>
+              <text x="0" y="4" text-anchor="middle" class="comp-label" font-size="9">WMZ</text>`;
     case "flow_resistance":
       return `<rect class="sym" x="-18" y="-8" width="36" height="16"/>
               <line class="sym" x1="-18" y1="8" x2="18" y2="-8"/>`;
@@ -742,7 +776,9 @@ function render() {
     const i = state.wires.indexOf(w);
     const sel = (selection && selection.kind==="wire" && selection.ref===w) ? " selected" : "";
     const d = wireD(w);
-    out += `<path class="wire ${w.color}${sel}" d="${d}"/>`;
+    const meas = (isTapPort(w.a.comp, w.a.port) || isTapPort(w.b.comp, w.b.port))
+      ? " measure" : "";
+    out += `<path class="wire ${w.color}${sel}${meas}" d="${d}"/>`;
     out += `<path class="wire-hit" data-wire="${i}" d="${d}"/>`;
     if (sel && w.pts)                              // Knickpunkt-Griffe der Auswahl
       w.pts.forEach((p, k) => {
@@ -845,11 +881,26 @@ document.getElementById("btn-solve").onclick = solveNow;
 
 /* ---------- Ergebnis-Tooltips --------------------------------------------- */
 const tip = document.getElementById("tip");
+function fmtSensor(s) {
+  const u = {t_C:["ϑ","°C"], p_kPa:["p","kPa (ü)"], dp_kPa:["Δp","kPa"],
+             q_m3h:["V̇","m³/h"], m_dot_kg_s:["ṁ","kg/s"],
+             t_leitung_C:["ϑ_Leitung","°C"], t_ref_C:["ϑ_Fühler","°C"], q_dot_kW:["Q̇","kW"]};
+  let out = `${s.name}:  ` + Object.entries(s.readings).map(([k, v]) => {
+    const [sym, unit] = u[k] || [k, ""];
+    return `${sym} = ${fmt(v, 2)} ${unit}`;
+  }).join("   ");
+  const ids = [s.bems.bems_key, s.bems.bems_id].filter(Boolean).join("  ·  ");
+  if (ids) out += `\n   BEMS: ${ids}`;
+  if (s.bems.description) out += `\n   ${s.bems.description}`;
+  return out;
+}
 function tooltipText(target) {
   if (!lastResult) return null;
   const compEl = target.closest("g.comp");
   if (compEl) {
     const c = compById(Number(compEl.dataset.comp));
+    const sens = (lastResult.sensors || []).find(s => s.name === c.name);
+    if (sens) return fmtSensor(sens);          // Sensoren: Messwerte + BEMS-Zuordnung
     const rows = resultRows(c.name);
     if (!rows.length) return null;
     return rows.map(r => {
@@ -1015,13 +1066,27 @@ function addComp(type, x, y) {
 const snap = v => Math.round(v / 8) * 8;
 
 /* ---------- Canvas-Interaktion ------------------------------------------- */
+function isTapPort(compId, port) {
+  const c = compById(compId);
+  if (!c) return false;
+  return c.type === "temperature_sensor" || c.type === "pressure_sensor" ||
+         c.type === "pressure_diff_sensor" || (c.type === "energy_meter" && port === "t_ref");
+}
 function addWire(a, b) {
   if (a.comp === b.comp && a.port === b.port) return;
   invalidate();
-  // Jede gezeichnete Linie ist eine Verbindungsleitung (Default: ideal)
-  state.wires.push({type: "conduit", name: freshName("conduit"), ts: "", params: {},
-                    a: {comp: a.comp, port: a.port}, b: {comp: b.comp, port: b.port},
-                    color: "n"});
+  if (isTapPort(a.comp, a.port) || isTapPort(b.comp, b.port)) {
+    // Messleitung eines Fühlers: reine Verbindung (Knotenverschmelzung mit
+    // der Messstelle), KEINE Verbindungsleitung – der Fühler liest den
+    // Zustand des angezapften Knotens, ohne die Hydraulik zu beeinflussen.
+    state.wires.push({a: {comp: a.comp, port: a.port}, b: {comp: b.comp, port: b.port},
+                      color: "n"});
+  } else {
+    // Jede andere gezeichnete Linie ist eine Verbindungsleitung (Default: ideal)
+    state.wires.push({type: "conduit", name: freshName("conduit"), ts: "", params: {},
+                      a: {comp: a.comp, port: a.port}, b: {comp: b.comp, port: b.port},
+                      color: "n"});
+  }
   commit();
 }
 svg.addEventListener("mousedown", ev => {
@@ -1223,8 +1288,9 @@ function renderInspector() {
   // wird aktualisiert; der nächste Render (Klick in die Zeichnung, Auswahl-
   // wechsel, …) baut das Formular regulär neu.
   const ae = document.activeElement;
-  if (el.contains(ae) && (ae instanceof HTMLInputElement || ae instanceof HTMLSelectElement)
-      && ae.dataset.kind !== "suffix" && ae.dataset.kind !== "choice") {
+  if (inspectorHold ||
+      (el.contains(ae) && (ae instanceof HTMLInputElement || ae instanceof HTMLSelectElement)
+       && ae.dataset.kind !== "suffix" && ae.dataset.kind !== "choice")) {
     refreshIssues();
     return;
   }
@@ -1299,6 +1365,12 @@ function paramField(c, p) {
   if (p.group === "bool") {
     return `<div class="field"${help}><label><input type="checkbox" data-param="${p.name}"
       data-kind="bool"${c.params[p.name] ? " checked" : ""}> ${p.name}${req}</label></div>`;
+  }
+  if (p.group === "str") {                   // Freitext (BEMS-IDs, Beschreibungen)
+    const cur = c.params[p.name] ?? "";
+    return `<div class="field"${help}><label>${p.name}${req}</label>
+      <input type="text" data-param="${p.name}" data-kind="str" spellcheck="false"
+             value="${esc(String(cur))}" placeholder="${p.name.startsWith("bems") ? "BEMS-Datenpunkt…" : ""}"></div>`;
   }
   if (p.group === "int" || p.group === "none") {
     const cur = firstKeyValue(c, [p.name]);
@@ -1386,13 +1458,17 @@ function bindInspector() {
   const c = selection && selection.kind === "comp" ? selection.ref
           : (wireSel && wireSel.type === "conduit" ? wireSel : null);
   if (!c) return;
+  const holdRender = () => {              // Wertänderung: Formular stehen lassen
+    inspectorHold = true;
+    try { render(); } finally { inspectorHold = false; }
+  };
   const nm = el.querySelector("#c-name");
   nm.onchange = () => {
     const v = nm.value.trim();
     if (!v || nameTaken(v, c)) { nm.value = c.name; return; }
-    invalidate(); c.name = v; commit(); render();
+    invalidate(); c.name = v; commit(); holdRender();
   };
-  el.querySelector("#c-ts").onchange = ev => { invalidate(); c.ts = ev.target.value.trim(); commit(); render(); };
+  el.querySelector("#c-ts").onchange = ev => { invalidate(); c.ts = ev.target.value.trim(); commit(); holdRender(); };
   const rotBtn = el.querySelector("#c-rot");
   if (rotBtn) rotBtn.onclick = rotateSelection;
   el.querySelectorAll("[data-param]").forEach(inp => {
@@ -1401,6 +1477,7 @@ function bindInspector() {
       const kind = inp.dataset.kind, pname = inp.dataset.param;
       if (kind === "choice") { setOrDelete(c.params, pname, inp.value || undefined); }
       else if (kind === "bool") { c.params[pname] = inp.checked; }
+      else if (kind === "str") { setOrDelete(c.params, pname, inp.value.trim() || undefined); }
       else if (kind === "num") { setOrDelete(c.params, pname, inp.value === "" ? undefined : Number(inp.value)); }
       else if (kind === "unit") { setOrDelete(c.params, inp.dataset.key, inp.value === "" ? undefined : Number(inp.value)); }
       else if (kind === "suffix") {
@@ -1417,7 +1494,10 @@ function bindInspector() {
         }
       }
       commit();
-      render();
+      // Reine Wertänderung: Formularstruktur bleibt – nicht neu aufbauen.
+      // Nur Suffixwechsel (Wert wird umgerechnet angezeigt) braucht den Umbau.
+      inspectorHold = (kind !== "suffix");
+      try { render(); } finally { inspectorHold = false; }
     };
   });
 }

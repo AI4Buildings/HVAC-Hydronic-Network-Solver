@@ -10,6 +10,8 @@ from .emitters import FloorHeatingLoop, Radiator
 from .coils import CoolingCoil, HeatingCoil
 from .plants import Chiller, HeatPump
 from .storage import BufferStorage, IdealStorage
+from .sensors import (EnergyMeter, FlowSensor, PressureDiffSensor,
+                      PressureSensor, TemperatureSensor)
 from .separators import HydraulicSeparator, Manifold, Tee
 from .connectors import Link
 from .conduit import Conduit

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..fluids import Fluid
-from ..params import Param
+from ..params import Param, bems_id_params
 from .base import EdgeCoefficients, NetworkBuilder, TwoPortComponent
 from .registry import register
 
@@ -25,7 +25,9 @@ class Pump(TwoPortComponent):
         Param("dp_internal_frac", "none", default=0.05, minv=1e-4, maxv=0.5,
               help="interner Druckverlust bei q_nom als Anteil von dp (Default 5 %; "
                    "klein wählen für ideale Δp-Quelle, z.B. 1e-4)"),
-    )
+        Param("bems_id_w_elek", "str",
+              help="BEMS-ID des elektrischen Energiezählers der Pumpe [kWh]"),
+    ) + bems_id_params("des Pumpenbefehls/-status (Cmd/Status)")
 
     def check_params(self):
         errs = []

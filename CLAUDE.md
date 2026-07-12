@@ -12,7 +12,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (113 Tests)
+pytest                                   # Testsuite (116 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
@@ -35,6 +35,9 @@ src/hydraulik/
     base.py          Solver-Verträge: EdgeCoefficients (a, b, dp_source), ThermalResult;
                      reserviertes kwarg ts=<label> (Teilstrecken-Gruppierung)
     pipe/pump/resistance/valves (inkl. check_valve, ball_valve)/emitters/coils/plants/
+    sensors.py       Sensoren (T/p/Δp/V̇/WMZ): rückwirkungsfreie Messstellen mit
+                     BEMS-Datenpunkt-Feldern (bems_id/bems_key/description; auch an
+                     Ventilen+Pumpe) → result.sensors; Messleitung = reine Verbindung
     storage/separators/connectors (link)/conduit (Verbindungsleitung = Linie
     im Editor: ideal|C-Wert|Auslegungspunkt|Rohrmodell)/boundaries
     (inflow/outflow/cap/open_end)
@@ -57,7 +60,7 @@ src/hydraulik/
   cli.py             Konsolenskript `hydraulik`
 docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
 examples/            YAML-Schaltungen 01–06, Lösungs-/Validierungsskripte 07 + FH-Verteiler
-tests/               113 Tests: analytische Referenzen + Validierung gegen Musterlösungen
+tests/               116 Tests: analytische Referenzen + Validierung gegen Musterlösungen
 ```
 
 ## Konventionen

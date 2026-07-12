@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 113 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 116 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 Danach steht das CLI `hydraulik` zur Verfügung (`run`, `editor`, `serve`).
@@ -132,6 +132,33 @@ Regeln:
 - Validierungsfehler werden **gesammelt** als nummerierte Liste gemeldet
   (mit Korrekturvorschlägen), sodass eine Datei in einem Durchgang korrigierbar ist.
 
+
+## Sensoren & BEMS-Integration (Betriebsdatenanalyse)
+
+Das maschinenlesbare Strangschema ist nicht nur Rechenmodell, sondern auch
+semantische Karte für die Betriebsdatenanalyse eines Building Energy Management
+Systems (BEMS, z.B. Aedifion). Die Palette-Rubrik **SENSOREN** stellt dafür
+Temperatur-, Druck-, Differenzdruck-, Volumenstromsensoren und Wärmemengenzähler
+bereit:
+
+- **Rückwirkungsfrei:** Fühler zapfen den Messknoten nur an (Messleitung =
+  dünne Linie, reine Knotenverschmelzung, keine Rohrleitung); V̇-Sensor und WMZ
+  sitzen quasi-ideal in der Leitung. Die Hydraulik bleibt unverändert.
+- **Messwerte per Mouseover:** nach dem Rechnen zeigt der Tooltip die simulierten
+  Sensorwerte (ϑ, p, Δp, V̇, WMZ zusätzlich Q̇ aus ṁ·cp·Δϑ) samt BEMS-Zuordnung;
+  im Python-Ergebnis stehen sie unter `result.sensors` bzw. `to_dict()["sensors"]`.
+- **BEMS-Datenpunkte:** jeder Sensor trägt `bems_id` (abfragbare Datenpunkt-ID),
+  `bems_key` (sprechender Alias, z.B. `EXP_HP_SEK_T_VL`) und `description`
+  (Semantik: Ort, Kreis, Bezug). Der WMZ hat je ein ID-Feld für seine fünf
+  realen Datenpunkte (V̇, Q̇, kumulierte Wärmemenge, ϑ_VL, ϑ_RL). Auch
+  **Stellventile** (`bems_id` = Stellsignal), Kugelhähne (Auf/Zu-Cmd) und
+  **Pumpen** (`bems_id` = Cmd/Status, `bems_id_w_elek` = kWh-Zähler) nehmen
+  IDs auf.
+- **Zweck:** Ein LLM, das die YAML-Datei liest, erhält damit beides zugleich —
+  die Netzwerktopologie (wo sitzt der Sensor, was liegt strom­auf/-ab) und den
+  Schlüssel zu den realen Zeitreihen. Simulation und Messdaten lassen sich so
+  automatisiert verknüpfen (Soll-Ist-Vergleich, Performance-Gap-Analyse).
+
 ## Komponententypen
 
 | `type` | Ports | Wichtigste Parameter |
@@ -142,6 +169,11 @@ Regeln:
 | `control_valve` | in, out | `kvs_m3h`, `opening` (0…1), `characteristic: equal_percentage\|linear` |
 | `balancing_valve` | in, out | `kvs_m3h`, `opening` (Voreinstellung) |
 | `ball_valve` | in, out | Kugelhahn (Absperrarmatur): Default offen und druckverlustfrei (1 Pa Referenzverlust bei `q_nom_m3h`, wie `link`); optional realer `kvs_m3h`; `closed: true` = Revisionsfall, sperrt exakt (V̇ = 0) |
+| `temperature_sensor` | port | Temperaturfühler (Messstelle anzapfen, keine Kante): liest ϑ des Knotens; BEMS-Felder `bems_id`, `bems_key`, `description` |
+| `pressure_sensor` | port | Drucksensor: liest p (Überdruck) des Knotens; BEMS-Felder wie oben |
+| `pressure_diff_sensor` | plus, minus | Differenzdrucksensor: Δp = p(plus) − p(minus), z.B. über Pumpe/Ventil; BEMS-Felder wie oben |
+| `flow_sensor` | in, out | Volumenstromsensor in der Leitung (quasi-ideal, 1 Pa bei `q_nom_m3h`); BEMS-Felder wie oben |
+| `energy_meter` | in, out, t_ref | Wärmemengenzähler: Durchflussteil in der Leitung + Fühler `t_ref` in der Gegenleitung; misst V̇, beide ϑ und Q̇ = ṁ·cp·(ϑ_ref − ϑ_Leitung) (Einbau im RL → Q̇ > 0 = Kreisabgabe); ID-Felder `bems_id_v_dot/_q_dot/_q_cum/_t_vl/_t_rl` |
 | `check_valve` | in, out | Rückschlagklappe: `kvs_m3h` (Durchlassrichtung in→out); sperrt rückwärts (Restleckage kvs/1000, über `block_factor` einstellbar) |
 | `mixing_valve_3way` | a, b, ab | `kvs_m3h`, `opening` (A-Pfad), `characteristic` |
 | `radiator` | in, out | `q_nom_kW`, `t_sup_nom_C`, `t_ret_nom_C`, `t_room_C`, `n`, `q_prescribed_kW`; Hydraulik: `kv_m3h` ODER `c_Pa_m3h2` (Default 10 kPa bei Nennstrom) |

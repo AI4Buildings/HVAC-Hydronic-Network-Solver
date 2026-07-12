@@ -32,6 +32,16 @@ class ComponentResult:
 
 
 @dataclass
+class SensorReading:
+    """Messwert(e) eines Sensors samt hinterlegter BEMS-Datenpunkt-Zuordnung —
+    die maschinenlesbare Brücke zwischen Simulation und Betriebsdaten."""
+    name: str
+    type_name: str
+    readings: dict                # z.B. {"t_C": 55.2} oder WMZ: q_m3h/t_.../q_dot_kW
+    bems: dict                    # bems_id(_...), bems_key, description (nur belegte)
+
+
+@dataclass
 class TSSegment:
     """Ein zusammenhängender Abschnitt einer Teilstrecken-Gruppe (ts-Label).
 
@@ -63,6 +73,7 @@ class SolutionResult:
     components: list[ComponentResult]
     notices: list[str]
     teilstrecken: list[TSSegment] = field(default_factory=list)
+    sensors: list[SensorReading] = field(default_factory=list)
 
     def __getitem__(self, name: str) -> ComponentResult:
         for c in self.components:
@@ -83,6 +94,7 @@ class SolutionResult:
             "components": [{**vars(c)} for c in self.components],
             "nodes": [{**vars(n)} for n in self.nodes],
             "teilstrecken": [{**vars(s)} for s in self.teilstrecken],
+            "sensors": [{**vars(s)} for s in self.sensors],
         }
 
     def to_csv(self, path: str) -> None:
@@ -117,6 +129,22 @@ class SolutionResult:
         for c in self.components:
             lines.append(f"{c.name:<24}{c.type_name:<20}{c.q_m3h:>10.3f}{c.m_dot_kg_s:>10.4f}"
                          f"{c.dp_kPa:>10.3f}{c.t_in_C:>11.2f}{c.t_out_C:>11.2f}{c.q_dot_kW:>9.3f}")
+        if self.sensors:
+            lines.append("")
+            h2 = f"{'Sensor':<20}{'Typ':<24}{'Messwerte':<38}{'BEMS (Key / ID)'}"
+            lines.append(h2)
+            lines.append("-" * 100)
+            unit = {"t_C": "°C", "p_kPa": "kPa (ü)", "dp_kPa": "kPa", "q_m3h": "m³/h",
+                    "m_dot_kg_s": "kg/s", "t_leitung_C": "°C", "t_ref_C": "°C",
+                    "q_dot_kW": "kW"}
+            for s in self.sensors:
+                vals = "  ".join(f"{k.rsplit('_', 1)[0] if k in unit else k}="
+                                 f"{v:.3f} {unit.get(k, '')}".strip()
+                                 for k, v in s.readings.items())
+                ids = " / ".join(x for x in (s.bems.get("bems_key"),
+                                             s.bems.get("bems_id")) if x)
+                lines.append((f"{s.name:<20}{s.type_name:<24}" + vals.ljust(38)
+                              + ("  " + ids if ids else "")).rstrip())
         if self.teilstrecken:
             lines.append("")
             h3 = (f"{'TS':<5}{'Abschnitt':<10}{'Komponenten':<34}{'V̇ [m³/h]':>10}"
@@ -246,10 +274,25 @@ def build_result(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
              for nd in net.nodes]
     notices = list(net.notices)
     segments = _ts_segments(net, hyd, th, notices)
+
+    # Sensoren: Komponenten mit measure()-Hook lesen den gelösten Zustand ab
+    node_of_ref = {el: nd.index for nd in net.nodes for el in nd.elements}
+    sensors: list[SensorReading] = []
+    for comp in net.components.values():
+        fn = getattr(comp, "measure", None)
+        if fn is None:
+            continue
+        readings = fn(net, hyd, th, node_of_ref.__getitem__)
+        bems = {p.name: getattr(comp, p.name) for p in comp.PARAMS
+                if (p.name.startswith("bems") or p.name == "description")
+                and getattr(comp, p.name, None)}
+        sensors.append(SensorReading(name=comp.name, type_name=comp.type_name,
+                                     readings=readings, bems=bems))
+
     return SolutionResult(
         converged=hyd.converged and th.converged,
         iterations_hydraulic=hyd.iterations, iterations_thermal=th.iterations,
         mass_residual=hyd.mass_residual, momentum_residual=hyd.momentum_residual,
         energy_imbalance_W=th.energy_imbalance,
         fluid_name=fluid.name, nodes=nodes, components=comps, notices=notices,
-        teilstrecken=segments)
+        teilstrecken=segments, sensors=sensors)
