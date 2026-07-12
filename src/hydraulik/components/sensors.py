@@ -120,8 +120,6 @@ class EnergyMeter(TwoPortComponent):
         Param("bems_id_t_vl", "str", help="BEMS-ID Vorlauftemperatur des Zählers [°C]"),
         Param("bems_id_t_rl", "str", help="BEMS-ID Rücklauftemperatur des Zählers [°C]"),
         Param("bems_key", "str", help="sprechender Datenpunkt-Alias/Präfix (z.B. EXP_HP_SEK)"),
-        Param("description", "str",
-              help="Semantik für die Datenanalyse (welcher Kreis, Einbauort VL/RL)"),
     )
 
     def port_names(self) -> tuple[str, ...]:

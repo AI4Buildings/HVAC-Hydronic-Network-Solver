@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 116 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 117 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 Danach steht das CLI `hydraulik` zur Verfügung (`run`, `editor`, `serve`).
@@ -286,6 +286,7 @@ Validierung gegen unabhängige Referenzlösungen (FH-Burgenland-Übungen):
 |---|---|
 | `examples/validation_fh_verteiler.py` | Kennlinien-Plots (Ventilhub-Sweeps) zu Bsp 05/06 mit Referenzankern aus den Lösungsplots |
 | `examples/08_ventilautoritaet.py` | Wirkung der Ventilautorität: installierte Kennlinien (linear/gleichprozentig) für a_V = 0.1…0.9 |
+| `examples/09_energetikum_lueftungsregister.yaml` + `.py` | Reale Anlage (Energetikum-Lüftung): VE/NE-Register als Einspritzschaltung mit Durchgangsventil im Rücklauf, echte Aedifion-BEMS-IDs; Analyse: Datenblatt-Reproduktion, Einregulierung (STAD-Voreinstellung), Ventilautorität |
 | `examples/referenzwerte_fh_verteiler.txt` | alle aus dem Lösungs-PDF extrahierten Referenzwerte (exakt vs. abgelesen) |
 | `tests/test_validation_fh_verteiler.py` | Volllast-Volumenströme < 0.1 %, Ventilautoritäten, Kennlinien-Anker |
 

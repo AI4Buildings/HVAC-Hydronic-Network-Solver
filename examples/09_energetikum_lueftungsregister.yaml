@@ -1,0 +1,160 @@
+# Energetikum (FH Burgenland) – Lüftungsanlage: Vorerhitzer (VE) + Nacherhitzer (NE)
+# Hydraulik: je Register eine Einspritzschaltung mit Durchgangsventil im RÜCKLAUF.
+# Armaturen laut Planung: Siemens VVG44.25-10 (kvs 10, gleichprozentig),
+# STAD DN 40 Voreinstellung 3,5 (Kv = 16,0 lt. TA-Tabelle) primär und sekundär,
+# Primärpumpe Δp = 60 kPa konstant, Sekundärpumpen H = 2,75 m (26,65 kPa bei 50 °C).
+# Register-UA aus den Datenblatt-Auslegungspunkten kalibriert (ε-NTU, Kreuzstrom):
+#   VE H241611A02311XV: 4500 m³/h Luft 13,1→24,0 °C, 16,5 kW, Wasser 2,9 m³/h 52/47 °C, Δp 3,5 kPa
+#   NE H241611C02411XV: 4500 m³/h Luft 12,0→25,0 °C, 19,6 kW, Wasser 3,4 m³/h 52/47 °C, Δp 1,9 kPa
+# Ventilhübe auf Auslegungsleistung eingestellt. Alle BEMS-IDs sind echte
+# Aedifion-Datenpunkte der Anlage (Server VentilationSystem/Energetikum).
+# Analyse: python3 examples/09_energetikum_lueftungsregister.py
+fluid: {preset: water, t_C: 50}
+
+components:
+  erz: {type: ideal_storage, t_set_C: 52, p_out_kPa: 150, description: "Wärmeerzeugung/Verteiler Energetikum, 52 °C Vorlauf"}
+  pu_prim: {type: pump, mode: constant_dp, dp_kPa: 60, q_nom_m3h: 6.3, description: "Primärpumpe Verteiler, Δp konstant 60 kPa"}
+  ve: {type: heating_coil, ua_W_K: 551, m_dot_air_kg_s: 1.505, t_air_in_C: 13.1, arrangement: crossflow_unmixed, c_Pa_m3h2: 416.2, description: "Vorerhitzer H241611A02311XV (RR/WW 1/2), 4500 m³/h Luft"}
+  pu_ve: {type: pump, mode: constant_dp, dp_kPa: 26.65, q_nom_m3h: 2.9, bems_id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'PreHcl'Pu'Cmd-BO50", bems_key: EXP_VENT_VE_PUMP, description: "Sekundärpumpe VE, H = 2,75 m (26,65 kPa bei ϑm = 50 °C)"}
+  ab1_ve: {type: tee}
+  srv2_ve: {type: balancing_valve, kvs_m3h: 16, description: "STAD DN 40, Voreinstellung 3,5 → Kv = 16,0 (Sekundär)"}
+  ab2_ve: {type: tee}
+  rv_ve: {type: control_valve, kvs_m3h: 10, opening: 0.845, characteristic: equal_percentage, bems_id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'PreHcl'Vlv-AO25", bems_key: EXP_VENT_VE_VENT, description: "Siemens VVG44.25-10 (kvs 10) im Rücklauf VE"}
+  srv1_ve: {type: balancing_valve, kvs_m3h: 16, description: "STAD DN 40, Voreinstellung 3,5 → Kv = 16,0 (Primär)"}
+  wmz_ve: {type: energy_meter, q_nom_m3h: 100, bems_id_v_dot: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr33'PrVlm-AI28", bems_id_t_vl: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr33'TFI-AI29", bems_id_t_rl: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr33'TRt-AI30", bems_id_q_dot: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr33'PrPwr-AI27", bems_id_q_cum: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr33'CumEg-AI25", bems_key: EXP_VENT_VE, description: "WMZ Mtr33 VE-Kreis, Durchflussteil im Primärrücklauf"}
+  tf_vl_ve: {type: temperature_sensor, bems_id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'PreHcl'TFl-AI214", bems_key: EXP_VENT_VE_T_VL, description: "Vorlauffühler VE (Regelung)"}
+  tf_rl_ve: {type: temperature_sensor, bems_id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'PreHcl'TRt-AI215", bems_key: EXP_VENT_VE_T_RL, description: "Rücklauffühler VE (Regelung)"}
+  ne: {type: heating_coil, ua_W_K: 654, m_dot_air_kg_s: 1.499, t_air_in_C: 12, arrangement: crossflow_unmixed, c_Pa_m3h2: 164.4, description: "Nacherhitzer H241611C02411XV (RR/WW 2/2), 4500 m³/h Luft"}
+  pu_ne: {type: pump, mode: constant_dp, dp_kPa: 26.65, q_nom_m3h: 3.4, bems_id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'ReHcl'Pu'Cmd-BO51", bems_key: EXP_VENT_NE_PUMP, description: "Sekundärpumpe NE, H = 2,75 m (26,65 kPa bei ϑm = 50 °C)"}
+  ab1_ne: {type: tee}
+  srv2_ne: {type: balancing_valve, kvs_m3h: 16, description: "STAD DN 40, Voreinstellung 3,5 → Kv = 16,0 (Sekundär)"}
+  ab2_ne: {type: tee}
+  rv_ne: {type: control_valve, kvs_m3h: 10, opening: 0.884, characteristic: equal_percentage, bems_id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'ReHcl'Vlv-AO27", bems_key: EXP_VENT_NE_VENT, description: "Siemens VVG44.25-10 (kvs 10) im Rücklauf NE"}
+  srv1_ne: {type: balancing_valve, kvs_m3h: 16, description: "STAD DN 40, Voreinstellung 3,5 → Kv = 16,0 (Primär)"}
+  wmz_ne: {type: energy_meter, q_nom_m3h: 100, bems_id_v_dot: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr34'PrVlm-AI34", bems_id_t_vl: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr34'TFI-AI35", bems_id_t_rl: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr34'TRt-AI36", bems_id_q_dot: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr34'PrPwr-AI33", bems_id_q_cum: "FHPinkEgk'AS03-2099203_PXC03'MtrH'Mtr34'CumEg-AI31", bems_key: EXP_VENT_NE, description: "WMZ Mtr34 NE-Kreis, Durchflussteil im Primärrücklauf"}
+  tf_vl_ne: {type: temperature_sensor, bems_id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'ReHcl'TFl-AI216", bems_key: EXP_VENT_NE_T_VL, description: "Vorlauffühler NE (Regelung)"}
+  tf_rl_ne: {type: temperature_sensor, bems_id: "FHPinkEgk'AS01-2099201_PXC01'A'AGrpL01'ReHcl'TRt-AI217", bems_key: EXP_VENT_NE_T_RL, description: "Rücklauffühler NE (Regelung)"}
+  lt1: {type: conduit}
+  lt2: {type: conduit}
+  lt3: {type: conduit}
+  lt4: {type: conduit}
+  lt5: {type: conduit}
+  lt6: {type: conduit}
+  lt7: {type: conduit}
+  lt8: {type: conduit}
+  lt9: {type: conduit}
+  lt10: {type: conduit}
+  lt11: {type: conduit}
+  lt12: {type: conduit}
+  lt13: {type: conduit}
+  lt14: {type: conduit}
+  lt15: {type: conduit}
+  lt16: {type: conduit}
+  lt17: {type: conduit}
+  lt18: {type: conduit}
+  lt19: {type: conduit}
+  lt20: {type: conduit}
+  lt21: {type: conduit}
+
+connections:
+  - [erz.out, lt1.in]
+  - [lt1.out, pu_prim.in]
+  - [pu_prim.out, lt2.in]
+  - [lt2.out, ab1_ve.a]
+  - [ab1_ve.b, lt3.in]
+  - [lt3.out, pu_ve.in]
+  - [pu_ve.out, lt4.in]
+  - [lt4.out, ve.in]
+  - [ve.out, lt5.in]
+  - [lt5.out, srv2_ve.in]
+  - [srv2_ve.out, lt6.in]
+  - [lt6.out, ab2_ve.a]
+  - [ab2_ve.c, lt7.in]
+  - [lt7.out, ab1_ve.c]
+  - [ab2_ve.b, lt8.in]
+  - [lt8.out, rv_ve.in]
+  - [rv_ve.out, lt9.in]
+  - [lt9.out, srv1_ve.in]
+  - [srv1_ve.out, lt10.in]
+  - [lt10.out, wmz_ve.in]
+  - [wmz_ve.out, lt11.in]
+  - [lt11.out, erz.in]
+  - [tf_vl_ve.port, ve.in]
+  - [tf_rl_ve.port, srv2_ve.in]
+  - [wmz_ve.t_ref, pu_prim.out]
+  - [pu_prim.out, lt12.in]
+  - [lt12.out, ab1_ne.a]
+  - [ab1_ne.b, lt13.in]
+  - [lt13.out, pu_ne.in]
+  - [pu_ne.out, lt14.in]
+  - [lt14.out, ne.in]
+  - [ne.out, lt15.in]
+  - [lt15.out, srv2_ne.in]
+  - [srv2_ne.out, lt16.in]
+  - [lt16.out, ab2_ne.a]
+  - [ab2_ne.c, lt17.in]
+  - [lt17.out, ab1_ne.c]
+  - [ab2_ne.b, lt18.in]
+  - [lt18.out, rv_ne.in]
+  - [rv_ne.out, lt19.in]
+  - [lt19.out, srv1_ne.in]
+  - [srv1_ne.out, lt20.in]
+  - [lt20.out, wmz_ne.in]
+  - [wmz_ne.out, lt21.in]
+  - [lt21.out, erz.in]
+  - [tf_vl_ne.port, ne.in]
+  - [tf_rl_ne.port, srv2_ne.in]
+  - [wmz_ne.t_ref, pu_prim.out]
+
+layout:
+  components:
+    erz: {x: 96, y: 656}
+    pu_prim: {x: 216, y: 656}
+    ve: {x: 456, y: 128}
+    pu_ve: {x: 336, y: 224, rot: 270}
+    ab1_ve: {x: 336, y: 336, rot: 270}
+    srv2_ve: {x: 576, y: 224, rot: 90}
+    ab2_ve: {x: 576, y: 336, rot: 90}
+    rv_ve: {x: 576, y: 416, rot: 90}
+    srv1_ve: {x: 576, y: 496, rot: 90}
+    wmz_ve: {x: 576, y: 576, rot: 90}
+    tf_vl_ve: {x: 240, y: 192, rot: 180}
+    tf_rl_ve: {x: 672, y: 192}
+    ne: {x: 936, y: 128}
+    pu_ne: {x: 816, y: 224, rot: 270}
+    ab1_ne: {x: 816, y: 336, rot: 270}
+    srv2_ne: {x: 1056, y: 224, rot: 90}
+    ab2_ne: {x: 1056, y: 336, rot: 90}
+    rv_ne: {x: 1056, y: 416, rot: 90}
+    srv1_ne: {x: 1056, y: 496, rot: 90}
+    wmz_ne: {x: 1056, y: 576, rot: 90}
+    tf_vl_ne: {x: 720, y: 192, rot: 180}
+    tf_rl_ne: {x: 1152, y: 192}
+  wires:
+    - {name: lt1, a: erz.out, b: pu_prim.in, color: vl}
+    - {name: lt2, a: pu_prim.out, b: ab1_ve.a, color: vl}
+    - {name: lt3, a: ab1_ve.b, b: pu_ve.in, color: vl}
+    - {name: lt4, a: pu_ve.out, b: ve.in, color: vl}
+    - {name: lt5, a: ve.out, b: srv2_ve.in, color: rl}
+    - {name: lt6, a: srv2_ve.out, b: ab2_ve.a, color: rl}
+    - {name: lt7, a: ab2_ve.c, b: ab1_ve.c, color: rl}
+    - {name: lt8, a: ab2_ve.b, b: rv_ve.in, color: rl}
+    - {name: lt9, a: rv_ve.out, b: srv1_ve.in, color: rl}
+    - {name: lt10, a: srv1_ve.out, b: wmz_ve.in, color: rl}
+    - {name: lt11, a: wmz_ve.out, b: erz.in, color: rl}
+    - {a: tf_vl_ve.port, b: ve.in, color: n}
+    - {a: tf_rl_ve.port, b: srv2_ve.in, color: n}
+    - {a: wmz_ve.t_ref, b: pu_prim.out, color: n}
+    - {name: lt12, a: pu_prim.out, b: ab1_ne.a, color: vl}
+    - {name: lt13, a: ab1_ne.b, b: pu_ne.in, color: vl}
+    - {name: lt14, a: pu_ne.out, b: ne.in, color: vl}
+    - {name: lt15, a: ne.out, b: srv2_ne.in, color: rl}
+    - {name: lt16, a: srv2_ne.out, b: ab2_ne.a, color: rl}
+    - {name: lt17, a: ab2_ne.c, b: ab1_ne.c, color: rl}
+    - {name: lt18, a: ab2_ne.b, b: rv_ne.in, color: rl}
+    - {name: lt19, a: rv_ne.out, b: srv1_ne.in, color: rl}
+    - {name: lt20, a: srv1_ne.out, b: wmz_ne.in, color: rl}
+    - {name: lt21, a: wmz_ne.out, b: erz.in, color: rl}
+    - {a: tf_vl_ne.port, b: ne.in, color: n}
+    - {a: tf_rl_ne.port, b: srv2_ne.in, color: n}
+    - {a: wmz_ne.t_ref, b: pu_prim.out, color: n}

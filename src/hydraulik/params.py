@@ -157,6 +157,4 @@ def bems_id_params(target: str) -> tuple:
               help=f"BEMS-/Aedifion-Datenpunkt-ID {target} (abfragbarer Bezeichner)"),
         Param("bems_key", "str",
               help="sprechender Datenpunkt-Alias (z.B. EXP_HP_SEK_T_VL)"),
-        Param("description", "str",
-              help="Semantik für die Datenanalyse (Ort, Kreis, Bezug)"),
     )
