@@ -144,6 +144,10 @@ bereit:
 - **Rückwirkungsfrei:** Fühler zapfen den Messknoten nur an (Messleitung =
   dünne Linie, reine Knotenverschmelzung, keine Rohrleitung); V̇-Sensor und WMZ
   sitzen quasi-ideal in der Leitung. Die Hydraulik bleibt unverändert.
+- **Mitwachsende Zeichenfläche:** das Canvas vergrößert sich automatisch,
+  sobald Komponenten oder Knickpunkte an den Rand rücken (immer ~600 px
+  Reserve hinter dem äußersten Element) — beliebig große Strangschemas ohne
+  Einstellungen; beim Löschen schrumpft es auf die Standardgröße zurück.
 - **Strömungsrichtung im Bild:** nach erfolgreicher Rechnung zeigt jede
   Verbindungsleitung in ihrer Mitte ein schlankes Richtungsdreieck in
   Linienfarbe (V̇ ≈ 0 oder zu kurze Stücke bleiben pfeilfrei; bei jeder

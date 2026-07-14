@@ -812,7 +812,18 @@ function uprightText(svgStr, rot) {
 
 /* ---------- Rendering ---------------------------------------------------- */
 const svg = document.getElementById("cv");
-const BASE_W = 4000, BASE_H = 2600;
+// Mindestgröße der Zeichenfläche; wächst automatisch mit dem Inhalt
+// (immer GROW_MARGIN Reserve hinter dem äußersten Element, nie kleiner als BASE)
+const BASE_W = 4000, BASE_H = 2600, GROW_MARGIN = 600;
+let canvasW = BASE_W, canvasH = BASE_H;
+function updateCanvasSize() {
+  let mx = 0, my = 0;
+  for (const c of state.comps) { mx = Math.max(mx, c.x); my = Math.max(my, c.y); }
+  for (const w of state.wires)
+    (w.pts || []).forEach(p => { mx = Math.max(mx, p.x); my = Math.max(my, p.y); });
+  canvasW = Math.max(BASE_W, snap(mx + GROW_MARGIN));
+  canvasH = Math.max(BASE_H, snap(my + GROW_MARGIN));
+}
 let zoom = 1.0;
 function setZoom(z, ev) {
   z = Math.min(3.0, Math.max(0.25, z));
@@ -829,11 +840,12 @@ function setZoom(z, ev) {
   document.getElementById("zoom-label").textContent = Math.round(zoom * 100) + " %";
 }
 function render() {
-  svg.setAttribute("width", BASE_W * zoom);
-  svg.setAttribute("height", BASE_H * zoom);
+  updateCanvasSize();
+  svg.setAttribute("width", canvasW * zoom);
+  svg.setAttribute("height", canvasH * zoom);
   let out = `<defs><pattern id="grid" width="16" height="16" patternUnits="userSpaceOnUse">
     <path d="M16 0H0V16" fill="none" stroke="#eee" stroke-width="1"/></pattern></defs>
-    <rect width="${BASE_W}" height="${BASE_H}" fill="url(#grid)"/>`;
+    <rect width="${canvasW}" height="${canvasH}" fill="url(#grid)"/>`;
   for (const w of state.wires) {
     const i = state.wires.indexOf(w);
     const sel = (selection && selection.kind==="wire" && selection.ref===w) ? " selected" : "";
@@ -1290,8 +1302,14 @@ svg.addEventListener("mousemove", ev => {
     return;
   }
   if (!drag) return;
-  for (const it of drag.items) { it.c.x = snap(pt.x - it.ox); it.c.y = snap(pt.y - it.oy); }
-  for (const it of drag.wpts) { it.p.x = snap(pt.x - it.ox); it.p.y = snap(pt.y - it.oy); }
+  for (const it of drag.items) {
+    it.c.x = Math.max(32, snap(pt.x - it.ox));
+    it.c.y = Math.max(32, snap(pt.y - it.oy));
+  }
+  for (const it of drag.wpts) {
+    it.p.x = Math.max(16, snap(pt.x - it.ox));
+    it.p.y = Math.max(16, snap(pt.y - it.oy));
+  }
   drag.moved = true;
   render();
 });
