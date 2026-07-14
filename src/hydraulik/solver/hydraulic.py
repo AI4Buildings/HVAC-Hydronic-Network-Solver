@@ -59,7 +59,13 @@ def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = Non
     pinned = np.array([nd.pinned for nd in net.nodes])
     p_bc = np.array([nd.p_bc if nd.p_bc is not None else s.p_ref for nd in net.nodes])
     sources = np.array([nd.flow_bc for nd in net.nodes])
-    fixed = np.array([e.is_fixed for e in net.edges])
+    fixed = np.array([e.is_fixed for e in net.edges], dtype=bool)
+
+    if m == 0:
+        # Netz ohne Kanten (nur verschmolzene Knoten mit Randbedingungen und
+        # Fühlern): trivial — Drücke aus den Ankern, nichts zu iterieren.
+        return HydraulicState(np.where(pinned, p_bc, s.p_ref).astype(float),
+                              np.zeros(0), 0, 0.0, 0.0, True, [])
     q_fix = np.array([e.fixed_q if e.fixed_q is not None else 0.0 for e in net.edges])
 
     # Startwerte
@@ -76,9 +82,24 @@ def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = Non
     b_arr = np.zeros(m)
     dp_src = np.zeros(m)
 
+    # Komponenten mit gekoppelten Kanten (z.B. T-Stück: ζ hängt vom
+    # Volumenstromverhältnis der Geschwisterkanten ab) erhalten vor jeder
+    # Koeffizientenauswertung ihre eigenen Kantenflüsse (Picard-nachgeführt).
+    coupled: list[tuple[object, list[int]]] = []
+    _seen: dict[int, list[int]] = {}
+    for e in net.edges:
+        if hasattr(e.component, "pre_coefficients"):
+            key = id(e.component)
+            if key not in _seen:
+                _seen[key] = []
+                coupled.append((e.component, _seen[key]))
+            _seen[key].append(e.index)
+
     mass_res = mom_res = np.inf
     for it in range(1, s.max_iter + 1):
         # 1. Koeffizienten beim aktuellen Q auswerten
+        for comp, idxs in coupled:
+            comp.pre_coefficients([float(q[i]) for i in idxs], fluid)
         for e in net.edges:
             c = e.coeff_fn(q[e.index], fluid)
             a_arr[e.index], b_arr[e.index], dp_src[e.index] = c.a, c.b, c.dp_source

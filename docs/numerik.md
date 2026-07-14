@@ -62,6 +62,25 @@ Impulsdefekt 5× in Folge steigt (bis minimal 0.1).
 Konstantstrom-Kanten: `Q = fix`, Koeffizient d = 1/J = 0 im Laplacian
 (keine Druckkopplung), Δp ist Ergebnis.
 
+### T-Stück mit Idelchik-Druckverlust (components/idelchik.py, separators.Tee)
+
+ζ hängt vom Volumenstromverhältnis der GESCHWISTERKANTEN ab → generischer
+Solver-Hook `pre_coefficients(q_eigene_kanten, fluid)`: Komponenten mit
+gekoppelten Kanten erhalten vor jeder Koeffizientenauswertung ihre aktuellen
+Kantenflüsse (Picard-nachgeführt). Der kombinierte Strang (max |Q|) bleibt
+verlustfrei, Abzweig-/Durchgangskante tragen die vollen Pfadbeiwerte
+(Vereinigung/Trennung automatisch aus der Flussrichtung; Tabellen bilinear
+interpoliert, an den Rändern geklemmt). Die ζ sind TOTALDRUCK-Beiwerte —
+je Pfad wird die Bernoulli-Differenz auf statische Knotendrücke umgerechnet:
+p_ein − p_aus = ζ·ρw_c²/2 + ρ(w_aus² − w_ein²)/2. Widerstandsartige Anteile
+gehen als quadratischer Koeffizient in J ein; Druck-GEWINNE (negative ζ_c.s
+der Vereinigung, Injektorwirkung; Diffusor-Rückgewinn) werden als
+nachgeführte Druckquelle dp_source behandelt, damit der Laplacian SPD
+bleibt. Netz ganz ohne Kanten: trivialer Frühausstieg (Drücke = Anker).
+Validierung: tests/test_tee_idelchik.py (Handrechnung Trennung x = 0.4 und
+Vereinigung x = 0.1 mit ζ = −0.65 auf 0.2 Pa genau; Tabellenquelle
+dokumentiert in docs/idelchik_t_stueck_*.md).
+
 Konvergenzkriterien (relativ): Massendefekt / max|Q| < 1e-8 und
 Impulsdefekt / Druckmaßstab < 1e-6.
 
@@ -110,7 +129,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 130 Tests)
+## 3. Testabdeckung (tests/, 135 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/

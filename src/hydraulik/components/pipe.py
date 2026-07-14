@@ -21,8 +21,8 @@ class Pipe(TwoPortComponent):
 
     PARAMS = (
         Param("length", "length", required=True, minv=1e-3, help="Rohrlänge"),
-        Param("d_inner", "length", required=True, minv=1e-3, maxv=2.0, help="Innendurchmesser"),
-        Param("roughness", "length", default=0.007e-3, minv=0.0, help="Rauheit k (Default 0.007 mm, Cu/PE)"),
+        Param("d_inner", "diameter", required=True, minv=1e-3, maxv=2.0, help="Innendurchmesser"),
+        Param("roughness", "diameter", default=0.007e-3, minv=0.0, help="Rauheit k (Default 0.007 mm, Cu/PE)"),
         Param("zeta", "none", default=0.0, minv=0.0, help="Summe Einzelwiderstände ζ"),
         Param("u_linear", "u_linear", default=0.0, minv=0.0, help="längenbez. Wärmeverlustkoeffizient U' [W/(m·K)]"),
         Param("t_amb", "temperature", default=20.0, help="Umgebungstemperatur für Wärmeverlust"),

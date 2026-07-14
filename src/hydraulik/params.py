@@ -20,6 +20,8 @@ UNIT_GROUPS: dict[str, dict[str, float]] = {
     "temperature": {"C": 1.0},                       # intern °C
     "power":       {"kW": 1e3, "W": 1.0},
     "length":      {"m": 1.0, "mm": 1e-3, "cm": 1e-2},
+    # wie length, aber mm als bevorzugte Anzeige (Durchmesser, Rauheiten)
+    "diameter":    {"mm": 1e-3, "m": 1.0, "cm": 1e-2},
     "area":        {"m2": 1.0},
     "kv":          {"m3h": 1.0},                     # Kv-Wert per Definition in m³/h
     "u_area":      {"W_m2K": 1.0},

@@ -63,6 +63,10 @@ Parametervalidierung.
   via parse_params gegen PIPE_SEGMENT_PARAMS geprüft)
   (BEMS-Messpunktliste, base._parse_bems). Zusätzlich hängt der
   @register-Dekorator jedem Typ automatisch den Param `description` an.
+- Solver-Hook für gekoppelte Kanten: implementiert eine Komponente
+  `pre_coefficients(q_edges, fluid)`, erhält sie vor jeder Koeffizienten-
+  auswertung die aktuellen Flüsse ihrer eigenen Kanten in Bau-Reihenfolge
+  (Beispiel: T-Stück mit Idelchik-ζ aus dem Volumenstromverhältnis).
 - Editor: Betriebsarten-Felder deklariert PARAM_MODES in
   editor_template.html (nur relevante Felder je Modus sichtbar).
 - Reserviertes Kwarg im Detail: `ts=<label>` wird von der Basisklasse VOR der

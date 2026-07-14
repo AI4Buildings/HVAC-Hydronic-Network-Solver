@@ -16,3 +16,5 @@ hydraulik_editor.html
 # Kursunterlagen mit Musterlösungen – nicht veröffentlichen
 *.pdf
 examples/*.png
+Trennung_Teil*.png
+Vereinigung_Teil*.png

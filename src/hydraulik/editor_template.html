@@ -139,6 +139,7 @@ const GROUP_LABEL = {
   pressure:"Druck (Überdruck)", flow:"Volumenstrom", massflow:"Massenstrom",
   temperature:"Temperatur", power:"Leistung", length:"Länge", area:"Fläche",
   kv:"Kv-Wert", u_area:"Wärmedurchgang", u_linear:"längenbez. Wärmeverlust",
+  diameter:"Durchmesser",
   ua:"UA-Wert", quad_resistance:"Widerstand C", lin_resistance:"linearer Widerstand",
 };
 function unitLabel(sfx){ return UNIT_LABEL[sfx] || sfx; }
@@ -1503,6 +1504,9 @@ const PARAM_MODES = {
       {key: "ntu", de: "ε-NTU sensibel (ohne Kondensation)", fields: ["ua_ref", "n", "q_w_ref", "m_dot_air_ref", "arrangement"]},
       {key: "greybox", de: "Greybox mit Kondensation", fields: ["ua_ref", "n", "q_w_ref", "m_dot_air_ref", "arrangement", "ua_star_wet", "rh_air_in", "phi_out"]}]},
     _HYD_WASSER],
+  tee: [{label: "Druckverlust", options: [
+    {key: "none", de: "ohne (idealer Knoten)", fields: [], default: true},
+    {key: "idelchik", de: "Idelchik 90° (ζ aus V̇-Verhältnis)", fields: ["d_run", "d_branch"]}]}],
   conduit: [{label: "Leitungsmodell", options: [
     {key: "ideal", de: "ideal (widerstandsfrei)", fields: ["q_nom"], default: true},
     {key: "c", de: "C-Wert", fields: ["c"]},

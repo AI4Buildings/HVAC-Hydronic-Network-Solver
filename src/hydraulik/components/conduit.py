@@ -24,8 +24,8 @@ from .registry import register
 #: Parameter EINES Rohrabschnitts der pipes-Liste (Einheiten-Suffixe wie üblich)
 PIPE_SEGMENT_PARAMS = (
     Param("length", "length", required=True, minv=1e-3, help="Rohrlänge des Abschnitts"),
-    Param("d_inner", "length", default=0.026, minv=1e-3, help="Rohrinnendurchmesser"),
-    Param("roughness", "length", default=0.007e-3, minv=0.0, help="Rohrrauheit"),
+    Param("d_inner", "diameter", default=0.026, minv=1e-3, help="Rohrinnendurchmesser"),
+    Param("roughness", "diameter", default=0.007e-3, minv=0.0, help="Rohrrauheit"),
     Param("zeta", "none", default=0.0, minv=0.0, help="Summe Einzelwiderstände des Abschnitts"),
 )
 
@@ -75,8 +75,8 @@ class Conduit(TwoPortComponent):
         Param("dp", "pressure", help="Auslegungspunkt-Druckverlust (nur zusammen mit q)"),
         Param("q", "flow", help="Auslegungspunkt-Volumenstrom (nur zusammen mit dp)"),
         Param("length", "length", minv=1e-3, help="Rohrlänge → Rohrmodell statt C/ideal"),
-        Param("d_inner", "length", default=0.026, minv=1e-3, help="Rohrinnendurchmesser (Default 26 mm)"),
-        Param("roughness", "length", default=0.007e-3, minv=0.0),
+        Param("d_inner", "diameter", default=0.026, minv=1e-3, help="Rohrinnendurchmesser (Default 26 mm)"),
+        Param("roughness", "diameter", default=0.007e-3, minv=0.0),
         Param("zeta", "none", default=0.0, minv=0.0, help="Summe Einzelwiderstände (Rohrmodell)"),
         Param("u_linear", "u_linear", default=0.0, minv=0.0,
               help="Wärmeverlust U' [W/(m·K)] (nur Rohrmodell)"),
