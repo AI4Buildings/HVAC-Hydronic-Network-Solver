@@ -663,11 +663,22 @@ function symbol(comp) {
               <line class="sym" x1="14" y1="0" x2="30" y2="0"/>
               <circle class="sym" r="14"/>${tri(-7,0,13,-8,8)}`;
     case "heat_pump": case "chiller":
-      return `<rect class="sym" x="-18" y="-16" width="36" height="32" rx="4"/>
+      return `<line class="sym" x1="-30" y1="0" x2="-18" y2="0"/>
+              <line class="sym" x1="18" y1="0" x2="30" y2="0"/>
+              <rect class="sym" x="-18" y="-16" width="36" height="32" rx="4"/>
               <text x="0" y="4" text-anchor="middle" class="comp-label">${t==="heat_pump"?"WP":"KM"}</text>`;
     case "ideal_storage": case "buffer_storage": {
       const h = t==="buffer_storage" ? Math.max(50, portNames(comp).length*18+12) : 48;
-      return `<rect class="sym" x="-16" y="${-h/2}" width="32" height="${h}" rx="10"/>` +
+      let stubs = "";
+      if (t === "ideal_storage")
+        stubs = `<line class="sym" x1="-30" y1="0" x2="-16" y2="0"/>
+                 <line class="sym" x1="16" y1="0" x2="30" y2="0"/>`;
+      else
+        portNames(comp).forEach((n, i) => {         // Anschluss-Stiche je Port
+          const y = -h/2 + 12 + i*18;
+          stubs += `<line class="sym" x1="-20" y1="${y}" x2="-16" y2="${y}"/>`;
+        });
+      return stubs + `<rect class="sym" x="-16" y="${-h/2}" width="32" height="${h}" rx="10"/>` +
              (t==="ideal_storage" ? `<text x="0" y="4" text-anchor="middle" class="comp-label">ϑ=</text>` : "");
     }
     case "inflow":
@@ -730,22 +741,37 @@ function symbol(comp) {
     case "link":
       return `<line class="sym" x1="-20" y1="0" x2="20" y2="0" stroke-dasharray="4 3"/>`;
     case "radiator":
-      return `<rect class="sym" x="-20" y="-13" width="40" height="26"/>
+      return `<line class="sym" x1="-30" y1="0" x2="-20" y2="0"/>
+              <line class="sym" x1="20" y1="0" x2="30" y2="0"/>
+              <rect class="sym" x="-20" y="-13" width="40" height="26"/>
               <line class="sym" x1="-10" y1="-13" x2="-10" y2="13"/>
               <line class="sym" x1="0" y1="-13" x2="0" y2="13"/>
               <line class="sym" x1="10" y1="-13" x2="10" y2="13"/>`;
     case "floor_heating":
-      return `<rect class="sym" x="-22" y="-14" width="44" height="28"/>
+      return `<line class="sym" x1="-30" y1="0" x2="-22" y2="0"/>
+              <line class="sym" x1="22" y1="0" x2="30" y2="0"/>
+              <rect class="sym" x="-22" y="-14" width="44" height="28"/>
               <polyline class="sym" points="-16,8 -16,-8 -8,-8 -8,8 0,8 0,-8 8,-8 8,8 16,8 16,-8" fill="none"/>`;
     case "heating_coil": case "cooling_coil":
-      return `<rect class="sym" x="-16" y="-16" width="32" height="32"/>
+      return `<line class="sym" x1="-30" y1="0" x2="-16" y2="0"/>
+              <line class="sym" x1="16" y1="0" x2="30" y2="0"/>
+              <rect class="sym" x="-16" y="-16" width="32" height="32"/>
               <line class="sym" x1="-16" y1="16" x2="16" y2="-16"/>
               <text x="0" y="28" text-anchor="middle" class="comp-label">${t==="heating_coil"?"HR":"KR"}</text>`;
     case "hydraulic_separator":
-      return `<rect class="sym" x="-13" y="-28" width="26" height="56" rx="6"/>`;
+      return `<line class="sym" x1="-20" y1="-22" x2="-13" y2="-22"/>
+              <line class="sym" x1="13" y1="-22" x2="20" y2="-22"/>
+              <line class="sym" x1="-20" y1="22" x2="-13" y2="22"/>
+              <line class="sym" x1="13" y1="22" x2="20" y2="22"/>
+              <rect class="sym" x="-13" y="-28" width="26" height="56" rx="6"/>`;
     case "manifold": {
       const w = compWidth(comp);
-      return `<rect class="sym" x="${-w/2}" y="-7" width="${w}" height="14"/>`;
+      let stubs = "";
+      portNames(comp).filter(n => n !== "main").forEach((n, i) => {
+        const x = -w/2 + 34 + i*30;
+        stubs += `<line class="sym" x1="${x}" y1="-14" x2="${x}" y2="-7"/>`;
+      });
+      return stubs + `<rect class="sym" x="${-w/2}" y="-7" width="${w}" height="14"/>`;
     }
     case "tee":
       return `<line class="sym" x1="-15" y1="0" x2="15" y2="0" stroke-width="3"/>
