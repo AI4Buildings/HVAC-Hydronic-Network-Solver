@@ -70,6 +70,12 @@
   .wire.kvl { stroke:#34a853; }   /* Kälte-Vorlauf hellgrün */
   .wire.krl { stroke:#0d5c2c; }   /* Kälte-Rücklauf dunkelgrün */
   .wire.n  { stroke:#777; }
+  .wire-arrow { pointer-events:none; stroke:none; }
+  .wire-arrow.vl { fill:var(--vl); }
+  .wire-arrow.rl { fill:var(--rl); }
+  .wire-arrow.kvl { fill:#34a853; }
+  .wire-arrow.krl { fill:#0d5c2c; }
+  .wire-arrow.n { fill:#777; }
   .wire.selected { stroke-width:5; }
   g.comp { cursor:grab; }
   g.comp.selected .sym { stroke:var(--sel); stroke-width:2.4; }
@@ -465,16 +471,19 @@ let inspectorTab = "fluid";         // Inspector-Register: "fluid" | "bems"
 function wireEnds(w) {
   return [absPort(compById(w.a.comp), w.a.port), absPort(compById(w.b.comp), w.b.port)];
 }
-function wireD(w) {                 // Pfad: gerade / Auto-Winkel / über Knickpunkte
+function wirePts(w) {               // Punktfolge: gerade / Auto-Winkel / Knickpunkte
   const [a, b] = wireEnds(w);
   const pts = w.pts || [];
   if (!pts.length) {
-    if (Math.abs(a.y - b.y) < 1 || Math.abs(a.x - b.x) < 1)
-      return `M${a.x},${a.y} L${b.x},${b.y}`;
+    if (Math.abs(a.y - b.y) < 1 || Math.abs(a.x - b.x) < 1) return [a, b];
     const mx = (a.x + b.x) / 2;
-    return `M${a.x},${a.y} L${mx},${a.y} L${mx},${b.y} L${b.x},${b.y}`;
+    return [a, {x: mx, y: a.y}, {x: mx, y: b.y}, b];
   }
-  return `M${a.x},${a.y} ` + pts.map(p => `L${p.x},${p.y}`).join(" ") + ` L${b.x},${b.y}`;
+  return [a, ...pts, b];
+}
+function wireD(w) {
+  const p = wirePts(w);
+  return `M${p[0].x},${p[0].y} ` + p.slice(1).map(q => `L${q.x},${q.y}`).join(" ");
 }
 function insertWaypoint(w, pt) {    // in das nächstgelegene Segment einfügen
   const [a, b] = wireEnds(w);
@@ -831,6 +840,7 @@ function render() {
     const meas = (isTapPort(w.a.comp, w.a.port) || isTapPort(w.b.comp, w.b.port))
       ? " measure" : "";
     out += `<path class="wire ${w.color}${sel}${meas}" d="${d}"/>`;
+    out += flowArrow(w);
     out += `<path class="wire-hit" data-wire="${i}" d="${d}"/>`;
     if (sel && w.pts)                              // Knickpunkt-Griffe der Auswahl
       w.pts.forEach((p, k) => {
@@ -1005,6 +1015,36 @@ document.getElementById("cv").addEventListener("mousemove", ev => {
   } else tip.style.display = "none";
 });
 document.getElementById("cv").addEventListener("mouseleave", () => { tip.style.display = "none"; });
+
+/* Strömungsrichtungspfeil: schlankes Dreieck in Leitungsfarbe, exakt in der
+   Mitte des Linienzugs. Nur für conduits mit gültigem Ergebnis; V̇ ≈ 0
+   (z.B. geschlossenes Ventil) und zu kurze Leitungen bleiben pfeilfrei.
+   Vorzeichenkonvention: q_m3h > 0 = Strömung von Endpunkt a nach b. */
+function flowArrow(w) {
+  if (!lastResult || w.type !== "conduit") return "";
+  const rows = resultRows(w.name);
+  if (!rows.length) return "";
+  const q = rows[0].q_m3h;
+  if (!(Math.abs(q) > 1e-6)) return "";
+  const p = wirePts(w);
+  const segLen = [];
+  let total = 0;
+  for (let i = 0; i < p.length - 1; i++) {
+    const l = Math.hypot(p[i+1].x - p[i].x, p[i+1].y - p[i].y);
+    segLen.push(l);
+    total += l;
+  }
+  if (total < 26) return "";                       // kürzer als der Pfeil selbst
+  let rest = total / 2, i = 0;
+  while (i < segLen.length - 1 && rest > segLen[i]) rest -= segLen[i++];
+  const f = segLen[i] > 0 ? rest / segLen[i] : 0.5;
+  const x = p[i].x + (p[i+1].x - p[i].x) * f;
+  const y = p[i].y + (p[i+1].y - p[i].y) * f;
+  let ang = Math.atan2(p[i+1].y - p[i].y, p[i+1].x - p[i].x) * 180 / Math.PI;
+  if (q < 0) ang += 180;                           // Rückströmung: umdrehen
+  return `<polygon class="wire-arrow ${w.color}" points="7,0 -6,4.2 -6,-4.2"
+          transform="translate(${round6(x)} ${round6(y)}) rotate(${round6(ang)})"/>`;
+}
 
 /* ---------- Palette ------------------------------------------------------ */
 // 'open_end' ist durch inflow/outflow abgedeckt; 'conduit' wird nicht als

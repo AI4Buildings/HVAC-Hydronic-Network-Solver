@@ -144,6 +144,10 @@ bereit:
 - **Rückwirkungsfrei:** Fühler zapfen den Messknoten nur an (Messleitung =
   dünne Linie, reine Knotenverschmelzung, keine Rohrleitung); V̇-Sensor und WMZ
   sitzen quasi-ideal in der Leitung. Die Hydraulik bleibt unverändert.
+- **Strömungsrichtung im Bild:** nach erfolgreicher Rechnung zeigt jede
+  Verbindungsleitung in ihrer Mitte ein schlankes Richtungsdreieck in
+  Linienfarbe (V̇ ≈ 0 oder zu kurze Stücke bleiben pfeilfrei; bei jeder
+  Änderung verschwinden die Pfeile mit dem Ergebnis).
 - **Messwerte per Mouseover:** nach dem Rechnen zeigt der Tooltip die simulierten
   Sensorwerte (ϑ, p, Δp, V̇, WMZ zusätzlich Q̇ aus ṁ·cp·Δϑ) samt BEMS-Zuordnung;
   im Python-Ergebnis stehen sie unter `result.sensors` bzw. `to_dict()["sensors"]`.
