@@ -1,5 +1,31 @@
 # Status & Roadmap
 
+## Stand v0.5.0 (2026-07-14)
+
+135 Tests, alle grün. Seit v0.4.0 ergänzt:
+
+- **T-Stück mit Idelchik-Druckverlust** (Diagramme 7-10/7-21, 3. Aufl.,
+  Quelle inkl. Buchdruckfehler-Korrekturen in docs/idelchik_t_stueck_*.md;
+  Buchscans nicht committet): Modus per d_run_mm + d_branch_mm (manuelle
+  Durchmessereingabe, bewusst NICHT aus angeschlossenen Leitungen);
+  Sammlung/Verteilung automatisch aus der Strömungsrichtung, Totaldruck-ζ
+  → Bernoulli-Umrechnung auf statische Drücke, Druckgewinne (negative ζ,
+  Injektor/Diffusor) als nachgeführte Druckquelle (SPD bleibt). Neuer
+  generischer Solver-Hook pre_coefficients() für Kanten, deren ζ vom
+  Geschwisterfluss abhängt. Handrechnungs-validiert (test_tee_idelchik.py).
+- **conduit-Rohrmodell als Abschnittsliste**: pipes: [{length, d_inner,
+  roughness, zeta}, …] — beliebig viele Rohrabschnitte in Reihe (a/b je
+  Abschnitt summiert, Wärmeverlust über Gesamtlänge); Editor mit +/−-Liste,
+  Alt-Einzelrohre werden migriert.
+- **Editor**: Strömungsrichtungspfeile auf Verbindungsleitungen nach dem
+  Rechnen (schlankes Dreieck in Linienfarbe, Leitungsmitte; V̇≈0/Kurzstücke
+  pfeilfrei, invalidate räumt ab); automatisch mitwachsende Zeichenfläche
+  (Inhalt + 600 px, min. 4000×2600); T-Stücke und Anschlusspunkte ~1/3
+  kleiner (unsichtbarer Fangring erhält Bedienbarkeit); Anschluss-Stich-
+  leitungen an Verbraucher-/Erzeuger-/Speicher-/Weichen-Symbolen;
+  Einheitengruppe diameter (mm-Default für Durchmesser/Rauheiten).
+- Robustheit: Netze ganz ohne Kanten (nur Fühler/RB) lösen trivial.
+
 ## Stand v0.4.0 (2026-07-14)
 
 128 Tests, alle grün; 7 YAML-Beispielschaltungen + Lösungs-/Validierungs-
