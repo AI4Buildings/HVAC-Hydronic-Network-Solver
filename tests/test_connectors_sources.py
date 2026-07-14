@@ -288,3 +288,61 @@ def test_conduit_rejects_multiple_modes():
         h.Conduit("lt1", c_Pa_m3h2=1000, length_m=10)
     with pytest.raises(h.ComponentParamError):
         h.Conduit("lt1", dp_kPa=10)                 # q fehlt
+
+
+def test_conduit_pipes_liste_mehrere_abschnitte():
+    """pipes-Liste: mehrere Rohrabschnitte in Reihe = Summe der Einzelrohre,
+    hydraulisch (a+b je Abschnitt) und thermisch (Gesamtlänge)."""
+    import hydraulik as h
+
+    def netz(comps_lt):
+        doc = {"components": {
+                   "zu": {"type": "inflow", "t_set_C": 70.0, "q_m3h": 1.5},
+                   **comps_lt,
+                   "ab": {"type": "outflow", "p_kPa": 150}},
+               "connections": [["zu.port", "lt1.in"]] + comps_lt["_conn"] + [["_last.out", "ab.port"]]}
+        del doc["components"]["_conn"]
+        return doc
+
+    seg1 = dict(length_m=12.0, d_inner_mm=26.0, zeta=2.0)
+    seg2 = dict(length_m=8.0, d_inner_mm=20.0, zeta=1.5)
+    # Variante A: EIN conduit mit pipes-Liste
+    doc_a = {"components": {
+                 "zu": {"type": "inflow", "t_set_C": 70.0, "q_m3h": 1.5},
+                 "lt1": {"type": "conduit", "pipes": [seg1, seg2],
+                         "u_linear_W_mK": 0.35, "t_amb_C": 15.0},
+                 "ab": {"type": "outflow", "p_kPa": 150}},
+             "connections": [["zu.port", "lt1.in"], ["lt1.out", "ab.port"]]}
+    # Variante B: zwei einzelne Rohr-conduits in Reihe (Referenz)
+    doc_b = {"components": {
+                 "zu": {"type": "inflow", "t_set_C": 70.0, "q_m3h": 1.5},
+                 "lt1": {"type": "conduit", **seg1, "u_linear_W_mK": 0.35, "t_amb_C": 15.0},
+                 "lt2": {"type": "conduit", **seg2, "u_linear_W_mK": 0.35, "t_amb_C": 15.0},
+                 "ab": {"type": "outflow", "p_kPa": 150}},
+             "connections": [["zu.port", "lt1.in"], ["lt1.out", "lt2.in"],
+                             ["lt2.out", "ab.port"]]}
+    ra = h.load(doc_a).solve()
+    rb = h.load(doc_b).solve()
+    assert ra["lt1"].dp_kPa == pytest.approx(rb["lt1"].dp_kPa + rb["lt2"].dp_kPa, rel=1e-9)
+    assert ra["lt1"].t_out_C == pytest.approx(rb["lt2"].t_out_C, rel=1e-9)
+    assert ra["lt1"].q_dot_kW == pytest.approx(rb["lt1"].q_dot_kW + rb["lt2"].q_dot_kW, rel=1e-9)
+
+
+def test_conduit_pipes_validierung():
+    """pipes + length gleichzeitig → Fehler; fehlerhafte Abschnitte → klare Meldung."""
+    import hydraulik as h
+    with pytest.raises(h.NetworkValidationError) as exc:
+        h.load({"components": {
+                    "zu": {"type": "inflow", "t_set_C": 70, "q_m3h": 1},
+                    "lt1": {"type": "conduit", "length_m": 5,
+                            "pipes": [{"length_m": 3}]},
+                    "ab": {"type": "outflow", "p_kPa": 150}},
+                "connections": [["zu.port", "lt1.in"], ["lt1.out", "ab.port"]]})
+    assert "Rohrmodell" in str(exc.value)
+    with pytest.raises(h.NetworkValidationError) as exc:
+        h.load({"components": {
+                    "zu": {"type": "inflow", "t_set_C": 70, "q_m3h": 1},
+                    "lt1": {"type": "conduit", "pipes": [{"d_inner_mm": 26}]},
+                    "ab": {"type": "outflow", "p_kPa": 150}},
+                "connections": [["zu.port", "lt1.in"], ["lt1.out", "ab.port"]]})
+    assert "pipes[0]" in str(exc.value) and "length" in str(exc.value)

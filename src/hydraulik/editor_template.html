@@ -51,7 +51,8 @@
   dialog textarea { width:100%; height:340px; font:12px/1.4 ui-monospace,monospace; }
   .comp-label { font:11px system-ui; fill:var(--ink); }
   .ts-badge { font:10px system-ui; fill:#7a4bd6; }
-  .port { fill:#fff; stroke:#444; stroke-width:1.4; cursor:crosshair; }
+  .port { fill:#fff; stroke:#444; stroke-width:1.2; cursor:crosshair; }
+  .port-hit-ring { cursor:crosshair; }   /* unsichtbare, größere Trefferfläche */
   .port:hover, .port.pending { fill:#ffd54d; }
   .sym { stroke:#222; stroke-width:1.6; fill:#fff; }
   .tabs { display:flex; gap:4px; margin:10px 0 8px; }
@@ -347,7 +348,9 @@ function templateFromSelection() {
         const t = {a: [idx.get(w.a.comp), w.a.port], b: [idx.get(w.b.comp), w.b.port],
                    color: w.color || "n"};
         if (w.type === "conduit") { t.type = "conduit"; t.name = w.name;
-          t.ts = w.ts || ""; t.params = deepClone(w.params || {}); }
+          t.ts = w.ts || ""; t.params = deepClone(w.params || {});
+          if (w.pipes) t.pipes = deepClone(w.pipes);
+          if (w.bems) t.bems = deepClone(w.bems); }
         if (w.pts) t.pts = w.pts.map(pt => [pt.x - cx, pt.y - cy]);
         return t;
       }),
@@ -373,6 +376,8 @@ function insertTemplate(tpl, x, y) {
       const base = tw.name || "lt1";
       w.name = nameTaken(base) ? uniqueName(base) : base;
       w.ts = tw.ts || ""; w.params = deepClone(tw.params || {});
+      if (tw.pipes) w.pipes = deepClone(tw.pipes);
+      if (tw.bems) w.bems = deepClone(tw.bems);
     }
     if (tw.pts) w.pts = tw.pts.map(([dx, dy]) => ({x: snap(x + dx), y: snap(y + dy)}));
     state.wires.push(w);
@@ -609,7 +614,7 @@ function portPos(comp) {                       // → {portname:{dx,dy}} (inkl. 
 }
 function portPosRaw(comp) {
   const t = comp.type, names = portNames(comp), pos = {};
-  // Anschlusspunkte tangieren die Ventilsymbole außen (r=4.5 am Scheitel bei ±16)
+  // Anschlusspunkte außen an den Ventilsymbolen (Kreis r=3, Fangring r=7)
   if (t === "mixing_valve_3way") return {a:{dx:-21,dy:0}, b:{dx:0,dy:21}, ab:{dx:21,dy:0}};
   if (t === "control_valve" || t === "balancing_valve" || t === "ball_valve")
     return {in:{dx:-21,dy:0}, out:{dx:21,dy:0}};
@@ -618,7 +623,7 @@ function portPosRaw(comp) {
   if (t === "pressure_diff_sensor") return {plus:{dx:-20,dy:0}, minus:{dx:20,dy:0}};
   if (t === "flow_sensor") return {in:{dx:-21,dy:0}, out:{dx:21,dy:0}};
   if (t === "energy_meter") return {in:{dx:-21,dy:0}, out:{dx:21,dy:0}, t_ref:{dx:0,dy:-21}};
-  if (t === "tee") return {a:{dx:-22,dy:0}, b:{dx:22,dy:0}, c:{dx:0,dy:22}};
+  if (t === "tee") return {a:{dx:-15,dy:0}, b:{dx:15,dy:0}, c:{dx:0,dy:15}};
   if (t === "open_end") return {port:{dx:-20,dy:0}};
   if (t === "inflow") return {port:{dx:20,dy:0}};
   if (t === "outflow") return {port:{dx:-20,dy:0}};
@@ -743,9 +748,9 @@ function symbol(comp) {
       return `<rect class="sym" x="${-w/2}" y="-7" width="${w}" height="14"/>`;
     }
     case "tee":
-      return `<line class="sym" x1="-22" y1="0" x2="22" y2="0" stroke-width="3"/>
-              <line class="sym" x1="0" y1="0" x2="0" y2="22" stroke-width="3"/>
-              <circle class="sym" r="4.5" fill="#222"/>`;
+      return `<line class="sym" x1="-15" y1="0" x2="15" y2="0" stroke-width="3"/>
+              <line class="sym" x1="0" y1="0" x2="0" y2="15" stroke-width="3"/>
+              <circle class="sym" r="3" fill="#222"/>`;
     case "open_end":
       return `<line class="sym" x1="-20" y1="0" x2="4" y2="0"/>
               <polygon class="sym" points="4,-8 4,8 16,0"/>`;
@@ -847,8 +852,11 @@ function render() {
       const pend = ((pendingPort && pendingPort.comp===c.id && pendingPort.port===pn) ||
                     (wireDrag && wireDrag.hover && wireDrag.hover.comp===c.id &&
                      wireDrag.hover.port===pn)) ? " pending" : "";
-      out += `<circle class="port${pend}" data-comp="${c.id}" data-port="${pn}"
-              cx="${p.dx}" cy="${p.dy}" r="4.5"><title>${esc(c.name)}.${pn}</title></circle>`;
+      out += `<circle class="port-hit-ring" data-comp="${c.id}" data-port="${pn}"
+              cx="${p.dx}" cy="${p.dy}" r="7" fill="transparent">
+              <title>${esc(c.name)}.${pn}</title></circle>
+              <circle class="port${pend}" data-comp="${c.id}" data-port="${pn}"
+              cx="${p.dx}" cy="${p.dy}" r="3"><title>${esc(c.name)}.${pn}</title></circle>`;
     }
     out += `</g>`;
   }
@@ -933,7 +941,7 @@ function tooltipText(target) {
       return s;
     }).join("\n");
   }
-  const wireEl = target.closest(".wire-hit, .port");
+  const wireEl = target.closest(".wire-hit, .port, .port-hit-ring");
   if (wireEl) {
     let ref;
     if (wireEl.classList.contains("port")) {
@@ -1126,7 +1134,7 @@ function addWire(a, b) {
 }
 svg.addEventListener("mousedown", ev => {
   const pt = svgPoint(ev);
-  const portEl = ev.target.closest(".port");
+  const portEl = ev.target.closest(".port, .port-hit-ring");
   if (portEl) {
     // Ziehen ODER Klick-Klick – entschieden wird beim mouseup
     wireDrag = {from: {comp: Number(portEl.dataset.comp), port: portEl.dataset.port},
@@ -1433,7 +1441,8 @@ const PARAM_MODES = {
     {key: "ideal", de: "ideal (widerstandsfrei)", fields: ["q_nom"], default: true},
     {key: "c", de: "C-Wert", fields: ["c"]},
     {key: "design", de: "Auslegungspunkt (Δp + V̇)", fields: ["dp", "q"]},
-    {key: "pipe", de: "Rohrmodell", fields: ["length", "d_inner", "roughness", "zeta", "u_linear", "t_amb"]}]}],
+    {key: "pipe", de: "Rohrmodell (Abschnittsliste)", fields: ["u_linear", "t_amb"],
+     list: "pipes", legacy: ["length", "d_inner", "roughness", "zeta"]}]}],
 };
 function paramSpec(type, name) { return TYPES[type].params.find(p => p.name === name); }
 function paramIsSet(c, type, name) {
@@ -1448,7 +1457,10 @@ function activeModeOption(c, type, group, gi) {
   }
   // Erkennung aus gesetzten Parametern; die explizite Wahl (c.mchoice, nur
   // Editor-Zustand) entscheidet bei Gleichstand bzw. leeren Feldern.
-  const counts = group.options.map(o => o.fields.filter(f => paramIsSet(c, type, f)).length);
+  const counts = group.options.map(o =>
+    o.fields.filter(f => paramIsSet(c, type, f)).length
+    + (o.legacy || []).filter(f => paramIsSet(c, type, f)).length
+    + (o.list && c[o.list] && c[o.list].length ? 1 : 0));
   const maxN = Math.max(0, ...counts);
   const cands = group.options.filter((o, i) => maxN > 0 ? counts[i] === maxN : true);
   const chosen = c.mchoice && c.mchoice[gi];
@@ -1463,7 +1475,10 @@ function paramsSection(c, type) {
   const moded = new Set();
   groups.forEach(g => {
     if (g.source) moded.add(g.source);
-    g.options.forEach(o => o.fields.forEach(f => moded.add(f)));
+    g.options.forEach(o => {
+      o.fields.forEach(f => moded.add(f));
+      (o.legacy || []).forEach(f => moded.add(f));
+    });
   });
   let html = "";
   for (const p of t.params)
@@ -1475,12 +1490,69 @@ function paramsSection(c, type) {
       (act ? "" : `<option value="" selected>– wählen –</option>`) +
       g.options.map(o => `<option value="${o.key}"${act && act.key === o.key ? " selected" : ""}>${esc(o.de)}</option>`).join("") +
       `</select></div>`;
-    if (act)
+    if (act) {
+      if (act.list) html += pipesForm(c);
       for (const f of act.fields) {
         const p = paramSpec(type, f);
         if (p) html += paramField(c, p);
       }
+    }
   });
+  return html;
+}
+/* Rohrabschnittsliste des conduit-Rohrmodells: beliebig viele Abschnitte
+   (Dimension/Länge/ζ je Abschnitt, in Reihe), Anzeige in festen Einheiten. */
+const SEG_FIELDS = [
+  {base: "length", sfx: "m", de: "Länge", unit: "m", group: "length"},
+  {base: "d_inner", sfx: "mm", de: "d innen", unit: "mm", group: "length"},
+  {base: "roughness", sfx: "mm", de: "Rauheit", unit: "mm", group: "length"},
+  {base: "zeta", sfx: null, de: "ζ Summe", unit: "–", group: null},
+];
+function segKey(f) { return f.sfx ? `${f.base}_${f.sfx}` : f.base; }
+function segDisplay(seg, f) {
+  if (seg[segKey(f)] !== undefined) return seg[segKey(f)];
+  for (const [k, v] of Object.entries(seg))       // fremder Suffix → umrechnen
+    if (f.sfx && k.startsWith(f.base + "_")) {
+      const si = v * CATALOG.units[f.group][k.slice(f.base.length + 1)];
+      return round6(si / CATALOG.units[f.group][f.sfx]);
+    }
+  return "";
+}
+function migrateLegacyPipe(c) {                    // Altbestand: Einzelrohr → pipes[0]
+  if (c.pipes && c.pipes.length) return;
+  if (!Object.keys(c.params).some(k => k.startsWith("length_"))) return;
+  const seg = {};
+  for (const f of SEG_FIELDS) {
+    for (const k of Object.keys(c.params)) {
+      const match = f.sfx ? k.startsWith(f.base + "_") : k === f.base;
+      if (!match) continue;
+      seg[segKey(f)] = f.sfx
+        ? round6(c.params[k] * CATALOG.units[f.group][k.slice(f.base.length + 1)]
+                 / CATALOG.units[f.group][f.sfx])
+        : c.params[k];
+      delete c.params[k];
+    }
+  }
+  c.pipes = [seg];
+}
+function pipesForm(c) {
+  migrateLegacyPipe(c);
+  const list = c.pipes || [];
+  let html = `<h3>Rohrabschnitte <span class="hint">(${list.length}, in Reihe)</span></h3>`;
+  list.forEach((seg, i) => {
+    html += `<div class="bems-box">` +
+      SEG_FIELDS.map(f => `<div class="field">
+        <label>${f.de} <span class="hint">[${f.unit}]</span>${f.base === "length" ? ' <span class="req">*</span>' : ""}</label>
+        <input type="number" step="any" data-pipe="${segKey(f)}" data-i="${i}"
+               value="${segDisplay(seg, f)}"
+               placeholder="${f.base === "d_inner" ? "26" : f.base === "roughness" ? "0.007" : f.base === "zeta" ? "0" : ""}"></div>`).join("") +
+      `<button class="pipe-del" data-i="${i}">× Abschnitt entfernen</button></div>`;
+  });
+  html += `<div class="field"><button id="pipe-add">+ Rohrabschnitt hinzufügen</button></div>`;
+  if (!list.length)
+    html += `<div class="hint">Je Abschnitt: Länge (Pflicht), Innendurchmesser,
+      Rauheit, ζ-Summe. Alle Abschnitte wirken in Reihe auf den Druckverlust;
+      der Wärmeverlust (U′, ϑ_Umgebung) wirkt über die Gesamtlänge.</div>`;
   return html;
 }
 function compForm(c) {
@@ -1643,6 +1715,29 @@ function bindInspector() {
   el.querySelectorAll(".tab").forEach(btn => btn.onclick = () => {
     inspectorTab = btn.dataset.tab; renderInspector();
   });
+  el.querySelectorAll("[data-pipe]").forEach(inp => {
+    inp.onchange = () => {
+      if (!inp.isConnected || inspectorForce) return;
+      invalidate();
+      const seg = c.pipes[Number(inp.dataset.i)];
+      const key = inp.dataset.pipe, base = key.split("_")[0] === "d" ? "d_inner" : key.split("_")[0];
+      Object.keys(seg).forEach(k => {               // alte Suffix-Varianten räumen
+        if (k === base || k.startsWith(base + "_")) delete seg[k];
+      });
+      if (inp.value.trim() !== "") seg[key] = Number(inp.value);
+      commit(); holdRender();
+    };
+  });
+  el.querySelectorAll(".pipe-del").forEach(btn => btn.onclick = () => {
+    invalidate();
+    c.pipes.splice(Number(btn.dataset.i), 1);
+    if (!c.pipes.length) delete c.pipes;
+    commit(); renderInspector();
+  });
+  const pipeAdd = el.querySelector("#pipe-add");
+  if (pipeAdd) pipeAdd.onclick = () => {
+    invalidate(); (c.pipes = c.pipes || []).push({}); commit(); renderInspector();
+  };
   el.querySelectorAll("select[data-mgroup]").forEach(sel => {
     sel.onchange = () => {
       const type = sel.dataset.mtype;
@@ -1668,6 +1763,14 @@ function bindInspector() {
           delete c.mstash[k];
         });
       });
+      g.options.forEach(o => {             // Segmentlisten ebenso stashen/holen
+        if (!o.list || o === opt) return;
+        if (c[o.list] && c[o.list].length) { c.mstash["__" + o.list] = c[o.list]; delete c[o.list]; }
+      });
+      if (opt.list && c.mstash["__" + opt.list]) {
+        c[opt.list] = c.mstash["__" + opt.list];
+        delete c.mstash["__" + opt.list];
+      }
       if (g.source) c.params[g.source] = opt.key;
       else (c.mchoice = c.mchoice || {})[sel.dataset.mgroup] = opt.key;
       commit();
@@ -1814,6 +1917,10 @@ function exportYAML() {
       parts.push(`bems: [${c.bems.map(e => "{" +
         ["id", "key", "description"].filter(f => e[f])
           .map(f => `${f}: ${JSON.stringify(e[f])}`).join(", ") + "}").join(", ")}]`);
+    if (c.pipes && c.pipes.length)
+      parts.push(`pipes: [${c.pipes.map(seg => "{" +
+        Object.entries(seg).map(([k, v]) => `${k}: ${yamlScalar(v)}`).join(", ")
+        + "}").join(", ")}]`);
     return `  ${c.name}: {${parts.join(", ")}}\n`;
   };
   for (const c of state.comps) y += compEntry(c);
@@ -1947,8 +2054,9 @@ function loadDoc(doc) {
     const c = {id: idSeq++, type, name, ts: spec.ts !== undefined ? String(spec.ts) : "",
                x: 120 + (i % grid) * 160, y: 100 + Math.floor(i / grid) * 140, rot: 0, params: {}};
     if (Array.isArray(spec.bems) && spec.bems.length) c.bems = spec.bems;
+    if (Array.isArray(spec.pipes) && spec.pipes.length) c.pipes = spec.pipes;
     for (const [k, v] of Object.entries(spec))
-      if (k !== "type" && k !== "ts" && k !== "bems") c.params[k] = v;
+      if (k !== "type" && k !== "ts" && k !== "bems" && k !== "pipes") c.params[k] = v;
     const lay = doc.layout.components[name];
     if (lay && lay.x !== undefined) { c.x = lay.x; c.y = lay.y; c.rot = lay.rot || 0; }
     state.comps.push(c);
@@ -1981,8 +2089,9 @@ function loadDoc(doc) {
     const wire = {type: "conduit", name, ts: spec.ts !== undefined ? String(spec.ts) : "",
                   params: {}, a, b, color: "n"};
     if (Array.isArray(spec.bems) && spec.bems.length) wire.bems = spec.bems;
+    if (Array.isArray(spec.pipes) && spec.pipes.length) wire.pipes = spec.pipes;
     for (const [k, v] of Object.entries(spec))
-      if (k !== "type" && k !== "ts" && k !== "bems") wire.params[k] = v;
+      if (k !== "type" && k !== "ts" && k !== "bems" && k !== "pipes") wire.params[k] = v;
     applyMeta(wire, wireMeta["name:" + name] || wireMeta[`${aRef}|${name}.in`] || {});
     state.wires.push(wire);
   }

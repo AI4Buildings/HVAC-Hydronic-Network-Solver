@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 128 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 130 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 Danach steht das CLI `hydraulik` zur Verfügung (`run`, `editor`, `serve`).
@@ -186,7 +186,7 @@ bereit:
 | `inflow` (Zulauf) | port | `t_set_C` + ENTWEDER `q_m3h` (Zulauf-V̇) ODER `p_kPa` (Überdruck gauge) |
 | `outflow` (Austritt) | port | ENTWEDER `p_kPa` (Überdruck gauge; Auslauf ins Freie: 0) ODER `q_m3h` (Entnahme-V̇); Austrittstemperatur ist Ergebnis |
 | `ideal_storage` | in, out | `t_set_C` (Vorlauf fest; Rücklauf und Leistung sind Ergebnis); optional `q_m3h` (eingeprägter Volumenstrom, Δp ist Ergebnis) und/oder `p_out_kPa` (Überdruck am Austritt = Druckanker); `dp_nom_kPa` + `q_nom_m3h` |
-| `conduit` (Verbindungsleitung) | in, out | universelle Leitung (im Editor als Linie): ohne Angabe ideal; `c_Pa_m3h2` ODER `dp_kPa`+`q_m3h` ODER `length_m` (+ `d_inner_mm`, `u_linear_W_mK`, ...) |
+| `conduit` (Verbindungsleitung) | in, out | universelle Leitung (im Editor als Linie): ohne Angabe ideal; `c_Pa_m3h2` ODER `dp_kPa`+`q_m3h` ODER Rohrmodell — ein Abschnitt via `length_m` (+ `d_inner_mm`, …) ODER beliebig viele Abschnitte in Reihe via `pipes: [{length_m, d_inner_mm, roughness_mm, zeta}, …]` (im Editor: Abschnittsliste mit +/−); Wärmeverlust `u_linear_W_mK`/`t_amb_C` über die Gesamtlänge |
 | `link` | in, out | `q_nom_m3h`. Widerstandsfreie Verbindung (Δp ≈ 1 Pa), die zwei Knoten **thermisch trennt** — für Anschlüsse entlang eines Sammlers, damit Zapfstellen nicht stromab eingemischtes Wasser „sehen" |
 | `hydraulic_separator` | prim_in, prim_out, sec_in, sec_out | `q_nom_m3h`, `dp_nom_Pa`, `ua_W_K` |
 | `manifold` | main, s1…sN | `n_ports` |

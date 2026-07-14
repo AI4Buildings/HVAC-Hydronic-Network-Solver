@@ -15,7 +15,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (128 Tests)
+pytest                                   # Testsuite (130 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
@@ -48,7 +48,9 @@ src/hydraulik/
                      JEDE Komponente hat bems: [{id,key,description},…] (reserviert,
                      base._parse_bems) + description; Editor-Register Fluid-/BEMS-Info
     storage/separators/connectors (link)/conduit (Verbindungsleitung = Linie
-    im Editor: ideal|C-Wert|Auslegungspunkt|Rohrmodell)/boundaries
+    im Editor: ideal|C-Wert|Auslegungspunkt|Rohrmodell; Rohrmodell wahlweise
+    als pipes-Liste beliebig vieler Abschnitte in Reihe, je Abschnitt
+    length/d_inner/roughness/zeta — reserviertes Kwarg wie bems)/boundaries
     (inflow/outflow/cap/open_end)
   network.py         Network (API) + compile(): Union-Find-Portmerge, Validierung,
                      Druckinsel-Analyse, Bilanzcheck fester Volumenströme
@@ -76,7 +78,7 @@ src/hydraulik/
 docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               128 Tests: analytische Referenzen + Validierung gegen Musterlösungen
+tests/               130 Tests: analytische Referenzen + Validierung gegen Musterlösungen
 ```
 
 ## Konventionen

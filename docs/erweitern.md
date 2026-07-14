@@ -58,7 +58,9 @@ Parametervalidierung.
   (besserer Startwert, definiert auch den R-Floor-Maßstab).
 - Neue Parameter-Einheiten: Gruppe in `params.UNIT_GROUPS` ergänzen.
 - Reservierte Kwargs (Basisklasse, VOR der Parameterprüfung abgeräumt):
-  `ts=<label>` (Teilstrecken-Gruppierung), `bems=[{id, key, description}, …]`
+  `ts=<label>` (Teilstrecken-Gruppierung), `bems=[{id, key, description}, …]`,
+  bei conduit zusätzlich `pipes=[{length_m, …}, …]` (Rohrabschnitte, je Eintrag
+  via parse_params gegen PIPE_SEGMENT_PARAMS geprüft)
   (BEMS-Messpunktliste, base._parse_bems). Zusätzlich hängt der
   @register-Dekorator jedem Typ automatisch den Param `description` an.
 - Editor: Betriebsarten-Felder deklariert PARAM_MODES in
