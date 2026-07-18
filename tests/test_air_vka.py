@@ -256,3 +256,50 @@ def test_abluft_volumenstrom_eingabe():
     with pytest.raises(h.NetworkValidationError) as exc:
         solve_air(doc)
     assert "abluft_raum" in str(exc.value)
+
+
+def test_gea_vollklima_winterfall():
+    """Editor-Vorlage 'GEA Vollklima Energetikum': Winter-Auslegungsfall der
+    Gerätedokumentation GEA CAIRplus SX 096.064 IVBV (Nr. 165225_463):
+    AUL −15 °C/90 %, ABL 22 °C/45 %, 4500/4500 m³/h, Zuluft 24,6 °C/53,6 %.
+    Referenzwerte lt. Datenblatt: Rotor-Austritt 13,8 °C/6,1 g/kg,
+    Dampfbefeuchter ~22–23 kg/h (max. 23), VHR-Bilanzpunkt ~15,3 kW."""
+    doc = {
+        "components": {
+            "aul1": {"type": "aussenluft", "t_C": -15, "rh": 90},
+            "fil1": {"type": "filter_luft"},
+            "ven_zul1": {"type": "ventilator_luft", "sfp": 1830},
+            "wrg1": {"type": "wrg", "typ": "ROT_SORP", "eta_hr_n": 0.778,
+                     "eta_xr_n": 0.807, "v_nom_m3h": 4500},
+            "vhr1": {"type": "vorheizer"},
+            "bef1": {"type": "befeuchter", "typ": "steam"},
+            "kr1": {"type": "kuehler"},
+            "nhr1": {"type": "nachheizer"},
+            "zul1": {"type": "zuluft", "v_m3h": 4500, "regelung": "fest",
+                     "t_C": 24.6, "rh": 53.6},
+            "abl1": {"type": "abluft_raum", "t_C": 22, "rh": 45, "v_m3h": 4500},
+            "fil2": {"type": "filter_luft"},
+            "ven_abl1": {"type": "ventilator_luft", "sfp": 1430},
+            "fol1": {"type": "fortluft"},
+        },
+        "connections": [
+            ["aul1.out", "fil1.in"], ["fil1.out", "ven_zul1.in"],
+            ["ven_zul1.out", "wrg1.zul_in"], ["wrg1.zul_out", "vhr1.in"],
+            ["vhr1.out", "bef1.in"], ["bef1.out", "kr1.in"],
+            ["kr1.out", "nhr1.in"], ["nhr1.out", "zul1.in"],
+            ["abl1.out", "fil2.in"], ["fil2.out", "wrg1.abl_in"],
+            ["wrg1.abl_out", "ven_abl1.in"], ["ven_abl1.out", "fol1.in"],
+        ],
+    }
+    r = solve_air(doc)
+    st = r["stationen"]
+    assert st["wrg1.zul_out"]["t_C"] == pytest.approx(13.8, abs=0.5)
+    assert st["wrg1.zul_out"]["x_gkg"] == pytest.approx(6.1, abs=0.3)
+    assert r["leistungen"]["befeuchter_wasser_kg_h"] == pytest.approx(22.5, abs=1.0)
+    assert r["leistungen"]["befeuchter_wasser_kg_h"] <= 23.0    # Hyline-Maximum
+    assert r["komponenten"]["vhr1"]["q_heizen_kW"] == pytest.approx(15.0, abs=1.0)
+    assert r["komponenten"]["vhr1"]["q_heizen_kW"] <= 16.5      # Auslegungsleistung
+    assert r["leistungen"]["kuehlen_kW"] == 0.0
+    assert r["zuluft"]["t_C"] == pytest.approx(24.6, abs=1e-3)
+    assert r["zuluft"]["phi_pct"] == pytest.approx(53.6, abs=0.1)
+    assert st["ven_abl1.in"]["t_C"] == pytest.approx(-6.8, abs=2.0)   # Fortluft

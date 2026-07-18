@@ -101,7 +101,7 @@ src/hydraulik/
                      Leitungs-/Sensor-Tooltips
   air_editor_template.html  Lüftungsschema-Editor (Fork des Hydraulik-Editors,
                      Ketten-Semantik: Ports 1× verbunden, keine conduits;
-                     2 Vorlagen Vollklima/KVS; Ergebnispanel + Tooltips;
+                     3 Vorlagen Vollklima/GEA-Energetikum (Winterfall, Datenblatt)/KVS; Ergebnispanel + Tooltips;
                      hydraulik serve → /lueftung, POST /solve_air)
   results.py         SolutionResult: report(), to_dict(), to_csv(), result["name"],
                      Teilstrecken-Tabelle (ts-Gruppen als Ketten in Strömungsrichtung)
