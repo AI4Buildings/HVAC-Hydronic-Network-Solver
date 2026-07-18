@@ -234,8 +234,18 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (muss grün sein).
-2. docs/architektur.md (Struktur) und docs/numerik.md (Solver-Herleitung) lesen.
-3. Für neue Komponenten: docs/erweitern.md.
-4. Plandatei der ursprünglichen Entwicklung:
+1. `pip install -e ".[dev]" && pytest` (147 Tests, müssen grün sein);
+   `editor server` startet beide GUIs (http://127.0.0.1:8091/).
+2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
+   dieser Datei lesen — dort steht, was zuletzt gebaut wurde.
+3. docs/architektur.md (Struktur) und docs/numerik.md (Solver-Herleitung);
+   für neue Komponenten docs/erweitern.md.
+4. Luftseite: src/hydraulik/air/ (components/loader/adapter + vka/-Kern);
+   Editor-Verhalten in air_editor_template.html (PARAM_MODES, Vorlagen,
+   isTapPort/Messleitungen, Stationen-Tooltips).
+5. Lokale, bewusst NICHT committete Referenzunterlagen (Copyright; liegen
+   nur im Arbeitsverzeichnis): Übungs-PDFs, Idelchik-Buchscans
+   (Trennung_/Vereinigung_Teil*.png), Dokumentations_Vollklimaanlage.pdf
+   (GEA-Datenblatt zur Vorlage „GEA Vollklima Energetikum").
+6. Plandatei der ursprünglichen Entwicklung:
    `~/.claude/plans/ich-w-rde-gerne-eine-idempotent-tome.md`

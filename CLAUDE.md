@@ -79,7 +79,7 @@ src/hydraulik/
                      automatisch mitwachsende Zeichenfläche (updateCanvasSize);
                      conduit-Rohrmodell als Abschnittsliste (pipesForm)
   server.py          hydraulik serve: Editor + POST /solve (nur 127.0.0.1)
-  air/               Luftseite (Lüftungsanlage, in Arbeit — Phase 1 fertig):
+  air/               Luftseite (Lüftungsanlage; Kern + GUI fertig, v0.6.0):
     vka/             integrierter VKA-Rechenkern EN 16798-5-1 (aus Skill
                      vka-effizienz-en16798 übernommen; simulate/simulate_room,
                      energieoptimale Rotorregelung, 1:1 MATLAB-verifiziert;
@@ -90,8 +90,13 @@ src/hydraulik/
                      aussenluft/abluft_raum/zuluft (regelung fest|band|raum)/
                      fortluft, wrg (5 Bauarten), frostschutz, vor-/nachheizer,
                      kuehler, befeuchter, ventilator_luft, umluft + deklarative
-                     (filter, schalldaempfer, Luft-Sensoren)
-    loader.py        YAML-Loader (Ketten-Semantik: 2 Stränge, Ports 1× verbunden)
+                     (filter, schalldaempfer; 8 Luft-Sensoren als ANZAPFUNGEN:
+                     ein Messanschluss 'port', Δp plus/minus, AIR_SENSOR_TYPES);
+                     Abluft-V̇ an abluft_raum (fortluft.v Altbestand), wrg mit
+                     rwz_n (KVS+Platte) und v_m_kvs (KVS-Solekreis)
+    loader.py        YAML-Loader (Ketten-Semantik: 2 Stränge, Kanalports 1×
+                     verbunden; Sensor-Messleitungen separat in
+                     AirPlant.measurements, Sensorport selbst 1×)
     adapter.py       solve_air(): Stränge ablaufen → plant-Config inkl. order
                      in Zeichenreihenfolge (Ventilator wird an den Stranganfang
                      normiert — validierter Kern-Pfad; Hinweis im Ergebnis) →
