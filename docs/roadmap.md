@@ -1,5 +1,38 @@
 # Status & Roadmap
 
+## Stand v0.6.0 (2026-07-18)
+
+147 Tests, alle grün. Seit v0.5.0 ergänzt (Schwerpunkt Luftseite):
+
+- **Lüftungsschema-Editor** (`editor server` → /lueftung): Lüftungsanlagen
+  als zwei Ketten (Zuluft unten, Abluft oben, WRG verbindet), integrierter
+  VKA-Rechenkern nach EN 16798-5-1 (aus Skill vka-effizienz-en16798,
+  energieoptimale Rotorregelung); Regelungsarten fest/Sollband/raumgekoppelt;
+  Ergebnispanel + Tooltips; Server mit Startseite / → /hydraulik + /lueftung.
+- **Luft-Sensoren als Anzapfungen**: ein Messanschluss (Δp: plus/minus),
+  Messleitung an beliebige — auch belegte — Kanal-Anschlüsse; Loader trennt
+  Messleitungen von Kanalverbindungen, Ergebnis bleibt unverändert.
+- **Stationszustände**: Kern exponiert chain_T/chain_x; Adapter baut
+  payload['stationen'] (ϑ, x, φ, V̇ je Kanalabschnitt, Fortluft über
+  WRG-Bilanz); Editor-Tooltips auf Leitungen und Fühlern.
+- **Skill-Parität**: Editor-Export enthält alle Eingaben der dokumentierten
+  Skill-Schnittstelle; Lücken geschlossen (rwz_n auch bei Plattentauscher,
+  neuer WRG-Parameter v_m_kvs für den KVS-Solekreis).
+- **Physik-Fix**: Rotor-Übertragungsgrade auf ε ≤ 1 begrenzt (f_q-Unbalance-
+  Korrektur trieb ε über 1 → Zuluft wärmer als Abluftquelle); Hinweis bei
+  V̇-Verhältnis außerhalb ±30 %; Skill-Kopie identisch gepatcht.
+- **Eingabe-Konventionen**: Abluft-Volumenstrom an abluft_raum (fortluft.v
+  als Altbestand toleriert); neues Konsolenskript `editor server`
+  (hydraulik serve bleibt Alias).
+- **Vorlage „GEA Vollklima Energetikum (Winterfall)"**: reale Anlage
+  CAIRplus SX 096.064 IVBV aus der Gerätedokumentation, Winterfall
+  (−15 °C/90 %, 22 °C/45 %, 4500/4500 m³/h, Zuluft fest 24,6 °C/53,6 %),
+  Regressionstest gegen Datenblattwerte (Rotor-Austritt, Befeuchter ≤ 23
+  kg/h, VHR ≤ 16,5 kW).
+- Editor-Robustheit: Import ent-escaped Anführungszeichen (BEMS-IDs mit
+  Sonderzeichen roundtrip-fest); 'Neu' löscht den richtigen Autosave-Key;
+  Gesamtprüfung Eingabe-Abdeckung/Speichern/Öffnen beider Editoren (E2E).
+
 ## Stand v0.5.0 (2026-07-14)
 
 135 Tests, alle grün. Seit v0.4.0 ergänzt:

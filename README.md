@@ -3,9 +3,9 @@
 Stationäre hydraulisch-thermische Berechnung von HVAC-Hydraulikschaltungen
 (Heizung/Kühlung) als generisches 1D-Netzwerk. Inkompressibles Fluid mit
 konstanten Stoffwerten (ρ, μ, cp); SIMPLE-artiger Druckkorrektur-Solver plus
-sequentiell gelöste Energiegleichung — mit grafischem Schaltbild-Editor
-inklusive integriertem Solver (Rechnen direkt im GUI, Ergebnisse per
-Mouse-Over in der Zeichnung):
+sequentiell gelöste Energiegleichung — mit **zwei grafischen Schema-Editoren**
+(Hydraulik und Lüftung/VKA) inklusive integriertem Solver: Rechnen direkt im
+GUI, Ergebnisse per Mouse-Over in der Zeichnung.
 
 ![Schaltbild-Editor mit integriertem Solver](docs/img/schaltbild_editor.png)
 
@@ -27,10 +27,21 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 135 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 147 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
-Danach steht das CLI `hydraulik` zur Verfügung (`run`, `editor`, `serve`).
+## Tool starten
+
+```bash
+editor server        # startet beide Editoren: http://127.0.0.1:8091/
+```
+
+Die Startseite verlinkt den **Hydraulikschema-Editor** (`/hydraulik`) und den
+**Lüftungsschema-Editor** (`/lueftung`); gerechnet wird direkt im GUI
+(lokaler Endpunkt, nur 127.0.0.1). `editor serve`, kurz `editor` oder das
+ältere `hydraulik serve` tun dasselbe; `--port`/`--no-open` optional.
+Daneben gibt es das CLI `hydraulik` (`run` = YAML rechnen, `editor` =
+statische HTML-Datei erzeugen, `serve`).
 
 ## Schnellstart
 
@@ -92,7 +103,7 @@ export-/importierbar zum Teilen), **Mehrfachauswahl**
 **Kopieren/Einfügen ganzer Teilschaltungen** (Strg+C/V/D — interne Leitungen
 werden mitkopiert, Namen automatisch hochgezählt), **Undo/Redo**
 (Strg+Z / Strg+Shift+Z oder ↶/↷), **Zoom** (Strg+Mausrad an der
-Cursorposition oder −/+/1:1-Buttons, 25–300 %, Zeichenfläche 4000×2600),
+Cursorposition oder −/+/1:1-Buttons, 25–300 %, Zeichenfläche wächst automatisch mit),
 **Drehen in 90°-Schritten** (Taste `r` —
 Ports rotieren mit), Parameter im Inspector (mit Einheitenwahl und
 Bereichsanzeige), Leitungsfarben Heizung (VL rot / RL blau) und **Kälte
@@ -149,11 +160,19 @@ Nach dem Rechnen zeigen Mouseover-Tooltips auf jeder Kanalleitung den
 Luftzustand des Abschnitts (ϑ, φ, x, V̇); Fühler zeigen den Zustand an
 ihrer Messstelle. Regelungsart an der Zuluft wählbar:
 Zustand **fest** gepinnt, **Sollband** oder **raumgekoppelt** mit
-Feuchtelast (simulate_room). Ergebnisse (Heiz-/Kühl-/Befeuchterleistung,
-WRG-Kennwerte, Zuluftzustand, Ventilatorstrom) erscheinen im Ergebnispanel,
-als Tooltip und unter jeder Komponente; zwei Vorlagen (Vollklima mit
-Sorptionsrotor, KVS-Anlage) liegen bei. Die Ventilatorposition wird
-rechnerisch am Stranganfang bilanziert (validierte Modellkonvention).
+Feuchtelast (simulate_room); der Abluft-Volumenstrom wird praxisgerecht an
+der Abluft angegeben (leer = balancierte Anlage). Ergebnisse (Heiz-/Kühl-/
+Befeuchterleistung, WRG-Kennwerte, Zuluftzustand, Ventilatorstrom) erscheinen
+im Ergebnispanel, als Tooltip und unter jeder Komponente. Drei Vorlagen
+liegen bei: Vollklima mit Sorptionsrotor, KVS-Anlage sowie die **reale
+Anlage „GEA Vollklima Energetikum"** (CAIRplus SX 096.064 IVBV) — fertig
+parametriert mit dem Winter-Auslegungsfall aus der Gerätedokumentation und
+per Regressionstest gegen die Datenblattwerte abgesichert. Die
+Ventilatorposition wird rechnerisch am Stranganfang bilanziert (validierte
+Modellkonvention); Rotor-Übertragungsgrade sind physikalisch auf ε ≤ 1
+begrenzt (Hinweis bei stark unbalancierten Volumenströmen).
+
+![Lüftungsschema-Editor mit integriertem VKA-Solver](docs/img/lueftung_editor.png)
 
 ## Sensoren & BEMS-Integration (Betriebsdatenanalyse)
 
@@ -225,8 +244,9 @@ bereit:
 | `cap` | port | dichtes Endstück (Blindstopfen): V̇ = 0 — zum Verschließen von Anschlüssen bei Teilbereichstests; keine Parameter |
 
 Alle wärmeübertragenden Komponenten akzeptieren `q_prescribed_kW`
-(feste Leistung statt physikalischem Modell). Kühlregister v1: nur
-trockener Betrieb (sensibel, ohne Entfeuchtung).
+(feste Leistung statt physikalischem Modell; Default im Editor). Das
+Kühlregister rechnet wahlweise trocken (ε-NTU) oder als Greybox mit
+Kondensation (`ua_star_wet_kg_s` + Eintrittsfeuchte).
 
 **Teilstrecken-Gruppierung:** Jede Komponente kann ein Label `ts: <nummer>`
 tragen (YAML wie Python-API). Der Bericht enthält dann eine Teilstrecken-

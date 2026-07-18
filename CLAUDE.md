@@ -5,7 +5,7 @@ HVAC-Hydraulikschaltungen (1D-Netzwerk, SIMPLE-artiger Druckkorrektur-Solver)
 mit grafischem Hydraulikschema-Editor (Rechnen im GUI, Human in the Loop).
 Doppelzweck: Rechenmodell UND maschinenlesbare semantische Karte für die
 BEMS-Betriebsdatenanalyse (Aedifion-Datenpunkt-IDs an jeder Komponente).
-Stand: v0.5.0 (Juli 2026); validiert gegen zwei unabhängige
+Stand: v0.6.0 (Juli 2026); validiert gegen zwei unabhängige
 FH-Burgenland-Referenzlösungen (Verteiler-Übung, TWE-Übung Bsp 6) sowie
 gegen die Skill-Referenz cooling-coil-greybox (FläktGroup-Register).
 GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
@@ -15,7 +15,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (141 Tests)
+pytest                                   # Testsuite (147 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
