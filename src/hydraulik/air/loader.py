@@ -16,15 +16,20 @@ import yaml
 
 from ..exceptions import ComponentParamError, NetworkValidationError
 from ..yaml_loader import _UniqueKeyLoader
-from .components import AIR_REGISTRY
+from .components import AIR_REGISTRY, AIR_SENSOR_TYPES
 
 
 class AirPlant:
-    """Geladenes Luftschema: Komponenten + Portverbindungen."""
+    """Geladenes Luftschema: Komponenten + Portverbindungen.
 
-    def __init__(self, components: dict, connections: list[tuple[str, str]]):
+    connections = Kanalverbindungen der Stränge; measurements = Messleitungen
+    der Anzapf-Sensoren (Sensorport ↔ beliebiger Kanal-Anschluss)."""
+
+    def __init__(self, components: dict, connections: list[tuple[str, str]],
+                 measurements: list[tuple[str, str]] | None = None):
         self.components = components
         self.connections = connections
+        self.measurements = measurements or []
 
 
 def load_air(source) -> AirPlant:
@@ -69,7 +74,14 @@ def load_air(source) -> AirPlant:
             errors += [f"Komponente '{name}': {m}" for m in exc.messages]
 
     conns: list[tuple[str, str]] = []
+    meas: list[tuple[str, str]] = []
     used: dict[str, int] = {}
+    sensor_used: dict[str, int] = {}
+
+    def is_tap(ref: str) -> bool:
+        cname = ref.partition(".")[0]
+        c = comps.get(cname)
+        return c is not None and c.type_name in AIR_SENSOR_TYPES
     raw_c = doc.get("connections")
     if not isinstance(raw_c, list) or not raw_c:
         errors.append("'connections' fehlt oder ist leer.")
@@ -87,16 +99,29 @@ def load_air(source) -> AirPlant:
                               f"(gültig: {', '.join(comps[cname].port_names())}).")
             elif cname not in comps and cname not in raw:
                 errors.append(f"Verbindung Nr. {k + 1}: unbekannte Komponente '{cname}'.")
-            used[ref] = used.get(ref, 0) + 1
-        conns.append(pair)
+        if is_tap(pair[0]) or is_tap(pair[1]):
+            # Messleitung: zapft einen (auch bereits verbundenen) Kanal-
+            # Anschluss an; nur der SENSORPORT selbst ist auf 1× begrenzt
+            for ref in pair:
+                if is_tap(ref):
+                    sensor_used[ref] = sensor_used.get(ref, 0) + 1
+            meas.append(pair)
+        else:
+            for ref in pair:
+                used[ref] = used.get(ref, 0) + 1
+            conns.append(pair)
     for ref, n in used.items():
         if n > 1:
             errors.append(f"Port '{ref}' ist {n}-fach verbunden — in Luftsträngen "
                           f"ist jeder Port genau einmal verbunden (keine Verzweigung).")
+    for ref, n in sensor_used.items():
+        if n > 1:
+            errors.append(f"Sensoranschluss '{ref}' ist {n}-fach verbunden — "
+                          f"je Messanschluss genau eine Messleitung.")
 
     if errors:
         raise NetworkValidationError(errors)
-    return AirPlant(comps, conns)
+    return AirPlant(comps, conns, meas)
 
 
 def _is_path(source) -> bool:

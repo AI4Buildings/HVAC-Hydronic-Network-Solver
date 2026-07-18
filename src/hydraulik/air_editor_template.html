@@ -313,6 +313,7 @@ const META = {
   schalldaempfer:{de:"Schalldämpfer",grp:"Einbauten",pre:"sd"},
   kombisensor_luft:{de:"Kombifühler T + rF",grp:"Sensoren",pre:"tf"},
   temperatursensor_luft:{de:"Temperatursensor",grp:"Sensoren",pre:"ts"},
+  feuchtesensor_luft:{de:"Feuchtesensor",grp:"Sensoren",pre:"fs"},
   differenzdrucksensor_luft:{de:"Differenzdrucksensor",grp:"Sensoren",pre:"pd"},
   drucksensor_luft:{de:"Drucksensor",grp:"Sensoren",pre:"ps"},
   volumenstromsensor_luft:{de:"Volumenstromsensor",grp:"Sensoren",pre:"vf"},
@@ -505,6 +506,10 @@ function portPosRaw(comp) {
   if (t === "fortluft") return {in:{dx:20,dy:0}};
   if (t === "wrg") return {abl_in:{dx:24,dy:-80}, abl_out:{dx:-24,dy:-80},
                            zul_in:{dx:-24,dy:80}, zul_out:{dx:24,dy:80}};
+  if (AIR_SENSORS.has(t))
+    return t === "differenzdrucksensor_luft"
+      ? {plus:{dx:-16,dy:20}, minus:{dx:16,dy:20}}
+      : {port:{dx:0,dy:20}};
   return {in:{dx:-30,dy:0}, out:{dx:30,dy:0}};   // Zweitor-Standard (Kanal)
 }
 function compWidth(comp) {
@@ -528,8 +533,15 @@ function symbol(comp) {
     `<rect class="sym" x="-26" y="-14" width="52" height="28" rx="6"/>
      <text x="0" y="4" text-anchor="middle" class="comp-label">${txt}</text>`;
   const sens = txt =>
-    duct + `<circle class="sym" r="13"/>
-    <text x="0" y="4" text-anchor="middle" class="comp-label" font-size="10">${txt}</text>`;
+    `<line class="sym" x1="0" y1="13" x2="0" y2="20"/>
+     <circle class="sym" r="13"/>
+     <text x="0" y="4" text-anchor="middle" class="comp-label" font-size="10">${txt}</text>`;
+  const sens2 = txt =>
+    `<line class="sym" x1="-16" y1="20" x2="-9" y2="9"/>
+     <line class="sym" x1="16" y1="20" x2="9" y2="9"/>
+     <circle class="sym" r="13"/>
+     <text x="0" y="4" text-anchor="middle" class="comp-label" font-size="10">${txt}</text>
+     <text x="-22" y="16" class="comp-label">+</text>`;
   switch (t) {
     case "aussenluft":
       return `<line class="sym" x1="14" y1="0" x2="20" y2="0"/>` + box(0, "AUL") +
@@ -578,7 +590,8 @@ function symbol(comp) {
         <line class="sym" x1="-16" y1="6" x2="16" y2="6"/>`;
     case "kombisensor_luft": return sens("Tφ");
     case "temperatursensor_luft": return sens("T");
-    case "differenzdrucksensor_luft": return sens("Δp");
+    case "feuchtesensor_luft": return sens("φ");
+    case "differenzdrucksensor_luft": return sens2("Δp");
     case "drucksensor_luft": return sens("p");
     case "volumenstromsensor_luft": return sens("V̇");
     case "energiezaehler_luft": return sens("WMZ");
@@ -924,7 +937,13 @@ function addComp(type, x, y) {
 const snap = v => Math.round(v / 8) * 8;
 
 /* ---------- Canvas-Interaktion ------------------------------------------- */
-function isTapPort(compId, port) { return false; }
+const AIR_SENSORS = new Set(["kombisensor_luft", "temperatursensor_luft",
+  "feuchtesensor_luft", "differenzdrucksensor_luft", "drucksensor_luft",
+  "volumenstromsensor_luft", "energiezaehler_luft", "stromzaehler"]);
+function isTapPort(compId, port) {
+  const c = compById(compId);
+  return !!c && AIR_SENSORS.has(c.type);
+}
 function portUsed(ref) {
   return state.wires.some(w =>
     (w.a.comp === ref.comp && w.a.port === ref.port) ||
@@ -932,7 +951,16 @@ function portUsed(ref) {
 }
 function addWire(a, b) {
   if (a.comp === b.comp && a.port === b.port) return;
-  if (portUsed(a) || portUsed(b)) {
+  const tap = isTapPort(a.comp, a.port) || isTapPort(b.comp, b.port);
+  if (tap) {
+    // Messleitung: darf einen bereits verbundenen Kanal-Anschluss anzapfen;
+    // nur der Sensoranschluss selbst ist auf eine Messleitung begrenzt
+    const sensorEnd = isTapPort(a.comp, a.port) ? a : b;
+    if (portUsed(sensorEnd)) {
+      setStatus("Sensoranschluss bereits belegt — je Messanschluss eine Messleitung.");
+      return;
+    }
+  } else if (portUsed(a) || portUsed(b)) {
     setStatus("Port bereits verbunden — Luftstränge sind Ketten (keine Verzweigung). " +
               "Bestehende Leitung zuerst löschen.");
     return;

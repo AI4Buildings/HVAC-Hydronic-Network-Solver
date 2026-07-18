@@ -218,21 +218,39 @@ class Umluft(AirComponent):
 
 # ------------------------------------------------ deklarative Elemente/Sensoren
 
-def _declarative(type_name: str, doc: str):
+def _declarative(type_name: str, doc: str, ports: tuple = ("in", "out")):
     @register_air(type_name)
     class _D(AirComponent):
         PARAMS = ()
+
+        def port_names(self):
+            return ports
     _D.__doc__ = doc
     _D.__name__ = type_name.title().replace("_", "")
     return _D
 
 
-Filter = _declarative("filter_luft", "Filter (deklarativ: Position + BEMS, z.B. Δp-Überwachung).")
-Schalldaempfer = _declarative("schalldaempfer", "Schalldämpfer (deklarativ).")
-Kombisensor = _declarative("kombisensor_luft", "Kombifühler Temperatur + Feuchte (Messstelle im Kanal).")
-TempSensorLuft = _declarative("temperatursensor_luft", "Temperaturfühler im Kanal.")
-DpSensorLuft = _declarative("differenzdrucksensor_luft", "Differenzdrucksensor (z.B. Filterüberwachung).")
-DruckSensorLuft = _declarative("drucksensor_luft", "Statischer Drucksensor im Kanal.")
-VdotSensorLuft = _declarative("volumenstromsensor_luft", "Volumenstromsensor im Kanal.")
-EnergiezaehlerLuft = _declarative("energiezaehler_luft", "Energiezähler (luftseitig, deklarativ).")
-Stromzaehler = _declarative("stromzaehler", "Elektrischer Stromzähler (z.B. Ventilator).")
+Filter = _declarative("filter_luft", "Filter (im Strang; BEMS z.B. Δp-Überwachung).")
+Schalldaempfer = _declarative("schalldaempfer", "Schalldämpfer (im Strang).")
+
+#: Sensortypen sind ANZAPFUNGEN: ein Messanschluss (Δp: zwei), verbunden über
+#: eine Messleitung mit einem beliebigen Kanal-Anschluss — sie liegen NICHT im
+#: Strang und beeinflussen die Kette nicht (Adapter/Loader behandeln
+#: Messleitungen separat).
+Kombisensor = _declarative("kombisensor_luft",
+                           "Kombifühler Temperatur + Feuchte (Messstelle im Kanal).", ("port",))
+TempSensorLuft = _declarative("temperatursensor_luft", "Temperaturfühler im Kanal.", ("port",))
+FeuchteSensorLuft = _declarative("feuchtesensor_luft", "Feuchtefühler im Kanal.", ("port",))
+DpSensorLuft = _declarative("differenzdrucksensor_luft",
+                            "Differenzdrucksensor (z.B. über Filter/Ventilator).",
+                            ("plus", "minus"))
+DruckSensorLuft = _declarative("drucksensor_luft", "Statischer Drucksensor im Kanal.", ("port",))
+VdotSensorLuft = _declarative("volumenstromsensor_luft", "Volumenstromsensor im Kanal.", ("port",))
+EnergiezaehlerLuft = _declarative("energiezaehler_luft", "Energiezähler (luftseitig).", ("port",))
+Stromzaehler = _declarative("stromzaehler", "Elektrischer Stromzähler (z.B. Ventilator).", ("port",))
+
+#: Namen der Anzapf-Sensortypen (Messleitungs-Semantik)
+AIR_SENSOR_TYPES = frozenset({
+    "kombisensor_luft", "temperatursensor_luft", "feuchtesensor_luft",
+    "differenzdrucksensor_luft", "drucksensor_luft", "volumenstromsensor_luft",
+    "energiezaehler_luft", "stromzaehler"})

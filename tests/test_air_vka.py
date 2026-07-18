@@ -130,3 +130,27 @@ def test_wrg_läuft_energieoptimal_im_winter():
     assert r["komponenten"]["wrg1"]["q_wrg_kW"] > 30.0
     assert r["komponenten"]["wrg1"]["n_rot"] > 1.0
     assert r["leistungen"]["heizen_gesamt_kW"] < 10.0
+
+
+def test_luft_sensoren_als_anzapfung():
+    """Fühler (T, Tφ, φ, p, Δp, V̇, WMZ, kWh) sind Anzapfungen mit Messleitung:
+    sie liegen NICHT im Strang, dürfen bereits verbundene Kanal-Anschlüsse
+    anzapfen und ändern das Rechenergebnis nicht."""
+    ref = solve_air(_doc())
+    doc = _doc()
+    doc["components"]["tf1"] = {"type": "kombisensor_luft",
+                                "bems": [{"key": "TZ_T_ZUL", "id": "x'AI1"}]}
+    doc["components"]["pd1"] = {"type": "differenzdrucksensor_luft"}
+    doc["connections"] += [
+        ["tf1.port", "nhr.out"],          # zapft bereits verbundenen Port an
+        ["pd1.plus", "fil1.in"],
+        ["pd1.minus", "fil1.out"],
+    ]
+    r = solve_air(doc)
+    assert r["leistungen"]["kuehlen_kW"] == ref["leistungen"]["kuehlen_kW"]
+    assert r["zuluft"] == ref["zuluft"]
+    # doppelte Messleitung am selben Sensoranschluss → klare Meldung
+    doc["connections"].append(["tf1.port", "kr.out"])
+    with pytest.raises(h.NetworkValidationError) as exc:
+        solve_air(doc)
+    assert "Messanschluss" in str(exc.value) or "Sensoranschluss" in str(exc.value)
