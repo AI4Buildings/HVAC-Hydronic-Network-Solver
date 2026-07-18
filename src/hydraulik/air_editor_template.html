@@ -159,19 +159,19 @@ const _VKA_BASE = {
 const BUILTIN_TEMPLATES = {
   "Vollklima (Sorptionsrotor)": {
     comps: [
-      {type:"aussenluft", name:"aul1", rot:0, dx:-620, dy:-80, params:_VKA_BASE.aul.params},
-      {type:"filter_luft", name:"fil1", rot:0, dx:-500, dy:-80, params:{}},
+      {type:"aussenluft", name:"aul1", rot:0, dx:-620, dy:80, params:_VKA_BASE.aul.params},
+      {type:"filter_luft", name:"fil1", rot:0, dx:-500, dy:80, params:{}},
       {type:"wrg", name:"wrg1", rot:0, dx:-370, dy:0,
        params:{typ:"ROT_SORP", eta_hr_n:0.778, eta_xr_n:0.807}},
-      {type:"vorheizer", name:"vhr1", rot:0, dx:-230, dy:-80, params:{}},
-      {type:"befeuchter", name:"bef1", rot:0, dx:-120, dy:-80, params:{typ:"steam"}},
-      {type:"kuehler", name:"kr1", rot:0, dx:-10, dy:-80, params:{}},
-      {type:"nachheizer", name:"nhr1", rot:0, dx:100, dy:-80, params:{}},
-      {type:"ventilator_luft", name:"ven_zul1", rot:0, dx:220, dy:-80, params:{sfp:1715}},
-      {type:"zuluft", name:"zul1", rot:0, dx:340, dy:-80, params:_VKA_BASE.zul.params},
-      {type:"abluft_raum", name:"abl1", rot:0, dx:340, dy:80, params:_VKA_BASE.abl.params},
-      {type:"ventilator_luft", name:"ven_abl1", rot:180, dx:220, dy:80, params:{sfp:1715}},
-      {type:"fortluft", name:"fol1", rot:0, dx:-620, dy:80, params:{}},
+      {type:"vorheizer", name:"vhr1", rot:0, dx:-230, dy:80, params:{}},
+      {type:"befeuchter", name:"bef1", rot:0, dx:-120, dy:80, params:{typ:"steam"}},
+      {type:"kuehler", name:"kr1", rot:0, dx:-10, dy:80, params:{}},
+      {type:"nachheizer", name:"nhr1", rot:0, dx:100, dy:80, params:{}},
+      {type:"ventilator_luft", name:"ven_zul1", rot:0, dx:220, dy:80, params:{sfp:1715}},
+      {type:"zuluft", name:"zul1", rot:0, dx:340, dy:80, params:_VKA_BASE.zul.params},
+      {type:"abluft_raum", name:"abl1", rot:0, dx:340, dy:-80, params:_VKA_BASE.abl.params},
+      {type:"ventilator_luft", name:"ven_abl1", rot:180, dx:220, dy:-80, params:{sfp:1715}},
+      {type:"fortluft", name:"fol1", rot:0, dx:-620, dy:-80, params:{}},
     ],
     wires: [
       {a:[0,"out"], b:[1,"in"], color:"aul"},
@@ -189,17 +189,17 @@ const BUILTIN_TEMPLATES = {
   },
   "KVS-Anlage (ohne Befeuchtung)": {
     comps: [
-      {type:"aussenluft", name:"aul1", rot:0, dx:-540, dy:-80, params:_VKA_BASE.aul.params},
-      {type:"filter_luft", name:"fil1", rot:0, dx:-420, dy:-80, params:{}},
+      {type:"aussenluft", name:"aul1", rot:0, dx:-540, dy:80, params:_VKA_BASE.aul.params},
+      {type:"filter_luft", name:"fil1", rot:0, dx:-420, dy:80, params:{}},
       {type:"wrg", name:"wrg1", rot:0, dx:-290, dy:0, params:{typ:"KVS"}},
-      {type:"vorheizer", name:"vhr1", rot:0, dx:-150, dy:-80, params:{}},
-      {type:"kuehler", name:"kr1", rot:0, dx:-40, dy:-80, params:{}},
-      {type:"nachheizer", name:"nhr1", rot:0, dx:70, dy:-80, params:{}},
-      {type:"ventilator_luft", name:"ven_zul1", rot:0, dx:190, dy:-80, params:{sfp:1250}},
-      {type:"zuluft", name:"zul1", rot:0, dx:310, dy:-80, params:_VKA_BASE.zul.params},
-      {type:"abluft_raum", name:"abl1", rot:0, dx:310, dy:80, params:_VKA_BASE.abl.params},
-      {type:"ventilator_luft", name:"ven_abl1", rot:180, dx:190, dy:80, params:{sfp:1250}},
-      {type:"fortluft", name:"fol1", rot:0, dx:-540, dy:80, params:{}},
+      {type:"vorheizer", name:"vhr1", rot:0, dx:-150, dy:80, params:{}},
+      {type:"kuehler", name:"kr1", rot:0, dx:-40, dy:80, params:{}},
+      {type:"nachheizer", name:"nhr1", rot:0, dx:70, dy:80, params:{}},
+      {type:"ventilator_luft", name:"ven_zul1", rot:0, dx:190, dy:80, params:{sfp:1250}},
+      {type:"zuluft", name:"zul1", rot:0, dx:310, dy:80, params:_VKA_BASE.zul.params},
+      {type:"abluft_raum", name:"abl1", rot:0, dx:310, dy:-80, params:_VKA_BASE.abl.params},
+      {type:"ventilator_luft", name:"ven_abl1", rot:180, dx:190, dy:-80, params:{sfp:1250}},
+      {type:"fortluft", name:"fol1", rot:0, dx:-540, dy:-80, params:{}},
     ],
     wires: [
       {a:[0,"out"], b:[1,"in"], color:"aul"},
@@ -503,8 +503,8 @@ function portPosRaw(comp) {
   if (t === "zuluft") return {in:{dx:-20,dy:0}};
   if (t === "abluft_raum") return {out:{dx:-20,dy:0}};
   if (t === "fortluft") return {in:{dx:20,dy:0}};
-  if (t === "wrg") return {zul_in:{dx:-24,dy:-80}, zul_out:{dx:24,dy:-80},
-                           abl_in:{dx:24,dy:80}, abl_out:{dx:-24,dy:80}};
+  if (t === "wrg") return {abl_in:{dx:24,dy:80}, abl_out:{dx:-24,dy:80},
+                           zul_in:{dx:-24,dy:-80}, zul_out:{dx:24,dy:-80}};
   return {in:{dx:-30,dy:0}, out:{dx:30,dy:0}};   // Zweitor-Standard (Kanal)
 }
 function compWidth(comp) {
@@ -1000,13 +1000,16 @@ svg.addEventListener("mousedown", ev => {
       if (w.pts && selIds.has(w.a.comp) && selIds.has(w.b.comp))
         for (const p of w.pts) wpts.push({p, ox: pt.x - p.x, oy: pt.y - p.y});
     drag = {items: selectedComps().map(sc => ({c: sc, ox: pt.x - sc.x, oy: pt.y - sc.y})),
-            wpts, moved: false};
+            wpts, moved: false, pressed: c};
     render(); return;
   }
   if (placingTemplate) {
     const tpl = getTemplate(placingTemplate);
     if (tpl) insertTemplate(deepClone(tpl), pt.x, pt.y);
-    return;
+    placingTemplate = null;               // Einmal-Einfügen: Modus sofort beenden,
+    document.querySelectorAll(".pal-item").forEach(x => x.classList.remove("active"));
+    setStatus("Vorlage eingefügt – Komponenten anklicken zum Bearbeiten.");
+    return;                               // damit Folgeklicks Komponenten auswählen
   }
   if (placing) { addComp(placing, pt.x, pt.y); return; }
   boxSel = {x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y, active: false};   // Rechteck oder Klick
@@ -1046,7 +1049,15 @@ svg.addEventListener("mousemove", ev => {
 });
 window.addEventListener("mouseup", () => {
   if (wpDrag) { if (wpDrag.moved) commit(); wpDrag = null; }
-  if (drag) { if (drag.moved) commit(); drag = null; }
+  if (drag) {
+    if (drag.moved) commit();
+    else if (drag.pressed && selection && selection.kind === "multi") {
+      // Klick ohne Bewegung in einer Mehrfachauswahl → Einzelauswahl
+      selection = {kind: "comp", ref: drag.pressed};
+      render();
+    }
+    drag = null;
+  }
   if (boxSel) {
     const bs = boxSel; boxSel = null;
     if (bs.active) {                              // Rechteck: alle Komponenten darin

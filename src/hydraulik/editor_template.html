@@ -1269,13 +1269,16 @@ svg.addEventListener("mousedown", ev => {
       if (w.pts && selIds.has(w.a.comp) && selIds.has(w.b.comp))
         for (const p of w.pts) wpts.push({p, ox: pt.x - p.x, oy: pt.y - p.y});
     drag = {items: selectedComps().map(sc => ({c: sc, ox: pt.x - sc.x, oy: pt.y - sc.y})),
-            wpts, moved: false};
+            wpts, moved: false, pressed: c};
     render(); return;
   }
   if (placingTemplate) {
     const tpl = getTemplate(placingTemplate);
     if (tpl) insertTemplate(deepClone(tpl), pt.x, pt.y);
-    return;
+    placingTemplate = null;               // Einmal-Einfügen: Modus sofort beenden,
+    document.querySelectorAll(".pal-item").forEach(x => x.classList.remove("active"));
+    setStatus("Vorlage eingefügt – Komponenten anklicken zum Bearbeiten.");
+    return;                               // damit Folgeklicks Komponenten auswählen
   }
   if (placing) { addComp(placing, pt.x, pt.y); return; }
   boxSel = {x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y, active: false};   // Rechteck oder Klick
@@ -1315,7 +1318,15 @@ svg.addEventListener("mousemove", ev => {
 });
 window.addEventListener("mouseup", () => {
   if (wpDrag) { if (wpDrag.moved) commit(); wpDrag = null; }
-  if (drag) { if (drag.moved) commit(); drag = null; }
+  if (drag) {
+    if (drag.moved) commit();
+    else if (drag.pressed && selection && selection.kind === "multi") {
+      // Klick ohne Bewegung in einer Mehrfachauswahl → Einzelauswahl
+      selection = {kind: "comp", ref: drag.pressed};
+      render();
+    }
+    drag = null;
+  }
   if (boxSel) {
     const bs = boxSel; boxSel = null;
     if (bs.active) {                              // Rechteck: alle Komponenten darin
