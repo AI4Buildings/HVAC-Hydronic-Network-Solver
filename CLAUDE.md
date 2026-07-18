@@ -15,7 +15,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (135 Tests)
+pytest                                   # Testsuite (140 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
@@ -77,13 +77,26 @@ src/hydraulik/
                      automatisch mitwachsende Zeichenfläche (updateCanvasSize);
                      conduit-Rohrmodell als Abschnittsliste (pipesForm)
   server.py          hydraulik serve: Editor + POST /solve (nur 127.0.0.1)
+  air/               Luftseite (Lüftungsanlage, in Arbeit — Phase 1 fertig):
+    vka/             integrierter VKA-Rechenkern EN 16798-5-1 (aus Skill
+                     vka-effizienz-en16798 übernommen; simulate/simulate_room,
+                     energieoptimale Rotorregelung, 1:1 MATLAB-verifiziert)
+    components.py    Luft-Registry (AIR_REGISTRY, gleiche Param-/BEMS-Mechanik):
+                     aussenluft/abluft_raum/zuluft (regelung fest|band|raum)/
+                     fortluft, wrg (5 Bauarten), frostschutz, vor-/nachheizer,
+                     kuehler, befeuchter, ventilator_luft, umluft + deklarative
+                     (filter, schalldaempfer, Luft-Sensoren)
+    loader.py        YAML-Loader (Ketten-Semantik: 2 Stränge, Ports 1× verbunden)
+    adapter.py       solve_air(): Stränge ablaufen → plant-Config inkl. order
+                     in Zeichenreihenfolge → simulate/simulate_room → Ergebnisse
+                     je Komponente. GUI-Editor folgt (Phase 2)
   results.py         SolutionResult: report(), to_dict(), to_csv(), result["name"],
                      Teilstrecken-Tabelle (ts-Gruppen als Ketten in Strömungsrichtung)
   cli.py             Konsolenskript `hydraulik`
 docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               135 Tests: analytische Referenzen + Validierung gegen Musterlösungen
+tests/               140 Tests: analytische Referenzen + Validierung gegen Musterlösungen
 ```
 
 ## Konventionen
