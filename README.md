@@ -59,7 +59,7 @@ print(result["hk1"].q_dot_kW)      # Wärmestrom ins Wasser [kW]
 ## Schaltbild-Editor (grafische Eingabe, Human in the Loop)
 
 ```bash
-hydraulik serve                                # Editor MIT Rechen-Endpunkt (empfohlen)
+editor server                                # Editor MIT Rechen-Endpunkt (empfohlen)
 hydraulik editor --out hydraulik_editor.html   # nur Zeichnen (statische Datei)
 ```
 
@@ -135,7 +135,7 @@ Regeln:
 
 ## Lüftungsschema-Editor (VKA nach EN 16798-5-1)
 
-Zweites GUI unter `hydraulik serve` → **http://127.0.0.1:8091/lueftung** (Hydraulik: `/hydraulik`; die Startseite `/` verlinkt beide):
+Zweites GUI unter `editor server` → **http://127.0.0.1:8091/lueftung** (Hydraulik: `/hydraulik`; die Startseite `/` verlinkt beide):
 Lüftungsanlagen als zwei Ketten zeichnen (Zuluft: AUL → … → ZUL oben,
 Abluft: ABL → … → FOL unten; die WRG verbindet beide Stränge) und mit dem
 integrierten VKA-Rechenkern (energieoptimale Regelung, aus dem Skill

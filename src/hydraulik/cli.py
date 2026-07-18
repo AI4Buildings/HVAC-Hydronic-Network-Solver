@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.luft and args.out == "hydraulik_editor.html":
             args.out = "lueftung_editor.html"
         path = build_air_editor(args.out) if args.luft else build_editor(args.out)
-        print(f"Editor erzeugt: {path}  (im Browser öffnen; Rechnen im GUI: 'hydraulik serve')")
+        print(f"Editor erzeugt: {path}  (im Browser öffnen; Rechnen im GUI: 'editor server')")
         return 0
     if args.cmd == "serve":
         from .server import serve
@@ -52,6 +52,25 @@ def main(argv: list[str] | None = None) -> int:
     if args.csv:
         result.to_csv(args.csv)
         print(f"CSV gespeichert: {args.csv}", file=sys.stderr)
+    return 0
+
+
+def editor_main(argv: list[str] | None = None) -> int:
+    """Konsolenskript `editor`: startet beide Schema-Editoren im Browser.
+
+    `editor server` (auch `editor serve` oder einfach `editor`) — Startseite
+    unter http://127.0.0.1:<port>/ mit /hydraulik und /lueftung."""
+    parser = argparse.ArgumentParser(
+        prog="editor",
+        description="HVAC-Schema-Editoren starten (Hydraulik + Lüftung, Rechnen im GUI)")
+    parser.add_argument("cmd", nargs="?", default="server", choices=("server", "serve"),
+                        help="Server starten (Default)")
+    parser.add_argument("--port", type=int, default=8091)
+    parser.add_argument("--no-open", action="store_true",
+                        help="Browser nicht automatisch öffnen")
+    args = parser.parse_args(argv)
+    from .server import serve
+    serve(port=args.port, open_browser=not args.no_open)
     return 0
 
 
