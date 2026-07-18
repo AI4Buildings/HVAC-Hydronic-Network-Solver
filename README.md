@@ -144,7 +144,10 @@ Kondensationsrotor, KVS, Platte), Frostschutz, Vor-/Nachheizer, Kühler,
 Befeuchter (Dampf/Sprüh), Ventilatoren (SFP), Umluft, Filter, Schalldämpfer
 und Luft-Sensoren (Kombifühler T+rF, T, rF, Δp, p, V̇, Energiezähler,
 Stromzähler — als Anzapfungen mit dünner Messleitung an beliebige
-Kanal-Anschlüsse, ohne die Stränge zu berühren; alle mit BEMS-Messpunktlisten). Regelungsart an der Zuluft wählbar:
+Kanal-Anschlüsse, ohne die Stränge zu berühren; alle mit BEMS-Messpunktlisten).
+Nach dem Rechnen zeigen Mouseover-Tooltips auf jeder Kanalleitung den
+Luftzustand des Abschnitts (ϑ, φ, x, V̇); Fühler zeigen den Zustand an
+ihrer Messstelle. Regelungsart an der Zuluft wählbar:
 Zustand **fest** gepinnt, **Sollband** oder **raumgekoppelt** mit
 Feuchtelast (simulate_room). Ergebnisse (Heiz-/Kühl-/Befeuchterleistung,
 WRG-Kennwerte, Zuluftzustand, Ventilatorstrom) erscheinen im Ergebnispanel,

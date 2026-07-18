@@ -154,3 +154,30 @@ def test_luft_sensoren_als_anzapfung():
     with pytest.raises(h.NetworkValidationError) as exc:
         solve_air(doc)
     assert "Messanschluss" in str(exc.value) or "Sensoranschluss" in str(exc.value)
+
+
+def test_stationszustaende_je_kanalabschnitt():
+    """Leitungs-Tooltips: payload['stationen'] liefert ϑ/x/φ/V̇ je Kanal-
+    Anschluss; Fortluft folgt aus der WRG-Bilanz (Wärme + Feuchte)."""
+    r = solve_air(_doc())
+    st = r["stationen"]
+    assert st["aul.out"]["t_C"] == pytest.approx(30.0)
+    assert st["fil1.in"] == st["aul.out"]              # beide Enden eines Abschnitts
+    assert st["zul.in"]["t_C"] == pytest.approx(r["zuluft"]["t_C"], abs=1e-3)
+    assert st["zul.in"]["v_m3h"] == pytest.approx(1359.0)
+    # WRG-Bilanz: Feuchteabgabe der Zuluft landet in der Fortluft
+    dx_zul = st["aul.out"]["x_gkg"] - st["wrg1.zul_out"]["x_gkg"]
+    dx_fol = st["fol.in"]["x_gkg"] - st["wrg1.abl_in"]["x_gkg"]
+    assert dx_fol == pytest.approx(dx_zul, abs=2e-3)   # gleiche Massenströme
+    # Winter: Fortluft deutlich abgekühlt (Rückwärmung), aber über Außenluft
+    doc = _doc()
+    doc["components"]["aul"].update({"t_C": -5.0, "rh": 80.0})
+    doc["components"]["abl"].update({"t_C": 22.0, "rh": 40.0})
+    doc["components"]["zul"].update({"t_min_C": 20, "t_max_C": 22})
+    rw = solve_air(doc)
+    assert -5.0 < rw["stationen"]["fol.in"]["t_C"] < 10.0
+    # raumgekoppelt: Stationskarte über gepinnten Nachlauf ebenfalls vorhanden
+    rr = solve_air(_doc(regelung="raum", t_min_C=20, t_max_C=23,
+                        raum_rh_min=40, raum_rh_max=55, feuchtelast=720.0))
+    assert rr["stationen"]["zul.in"]["t_C"] == pytest.approx(
+        rr["zuluft"]["t_C"], abs=1e-3)

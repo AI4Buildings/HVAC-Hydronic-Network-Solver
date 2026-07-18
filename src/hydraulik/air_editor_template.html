@@ -775,13 +775,43 @@ const RESULT_LABELS = {
   n_rot: ["n_Rotor", "1/min"], p_el_kW: ["P_el", "kW"],
   t_C: ["ϑ", "°C"], x_gkg: ["x", "g/kg"], phi_pct: ["φ", "%"], v_m3h: ["V̇", "m³/h"],
 };
+function refStr(end) {
+  const c = compById(end.comp);
+  return c ? `${c.name}.${end.port}` : "";
+}
+function stationText(ref) {
+  const st = (lastResult.stationen || {})[ref];
+  if (!st) return null;
+  return `ϑ = ${fmt(st.t_C, 3)} °C   φ = ${fmt(st.phi_pct, 3)} %   ` +
+         `x = ${fmt(st.x_gkg, 3)} g/kg   V̇ = ${fmt(st.v_m3h, 4)} m³/h`;
+}
 function tooltipText(target) {
   if (!lastResult) return null;
+  const wireEl = target.closest(".wire-hit");
+  if (wireEl) {
+    const w = state.wires[Number(wireEl.dataset.wire)];
+    if (!w) return null;
+    // Kanalabschnitt: Zustand des Abschnitts; Messleitung: Zustand am
+    // angezapften Kanal-Anschluss (der Sensorport selbst hat keinen Eintrag)
+    return stationText(refStr(w.a)) || stationText(refStr(w.b));
+  }
   const compEl = target.closest("g.comp");
   if (!compEl) return null;
   const c = compById(Number(compEl.dataset.comp));
   const res = (lastResult.komponenten || {})[c.name];
-  if (!res) return null;
+  if (!res) {
+    if (!AIR_SENSORS.has(c.type)) return null;
+    // Fühler: Zustand am angezapften Kanal-Anschluss über die Messleitung(en)
+    const seen = [];
+    for (const w of state.wires) {
+      const other = (w.a.comp === c.id) ? w.b : (w.b.comp === c.id) ? w.a : null;
+      if (!other) continue;
+      const txt = stationText(refStr(other));
+      if (txt) seen.push((c.type === "differenzdrucksensor_luft"
+                          ? `${refStr(other)}:  ` : "") + txt);
+    }
+    return seen.length ? `${c.name} (Messstelle):  ` + seen.join("\n") : null;
+  }
   const parts = Object.entries(res)
     .filter(([, v]) => v !== null && v !== undefined)
     .map(([k, v]) => {
@@ -794,6 +824,7 @@ document.getElementById("cv").addEventListener("mousemove", ev => {
   const txt = tooltipText(ev.target);
   if (txt) {
     tip.textContent = txt;
+    tip.style.whiteSpace = "pre-line";
     tip.style.display = "block";
     tip.style.left = Math.min(ev.clientX + 14, window.innerWidth - 400) + "px";
     tip.style.top = (ev.clientY + 14) + "px";

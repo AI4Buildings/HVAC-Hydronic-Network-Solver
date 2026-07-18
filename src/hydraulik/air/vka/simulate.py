@@ -301,6 +301,12 @@ def simulate(plant, T_AUL, hum_AUL, T_ABL, hum_ABL,
         eta_hr=col(lambda r: r["eta_hr"]), eta_xr=col(lambda r: r["eta_xr"]),
         n_rot=col(lambda r: r["n_rot"]),
         RWZ_KVS=col(lambda r: r["RWZ_KVS_ges"]))
+    # Stationszustände (Zustand NACH jedem order-Token) für Schema-Anzeigen;
+    # Zusatzausgabe ohne Einfluss auf die validierten Größen oben.
+    out["chain"] = [{"T": r.get("chain_T"), "x_gkg": r.get("chain_x_gkg")}
+                    for r in res]
+    out["T_eta_wheel_C"] = col(lambda r: r.get("T_eta_wheel", np.nan))
+    out["x_eta_wheel_gkg"] = col(lambda r: r.get("x_eta_wheel", np.nan) * 1000.0)
     out["totals"] = dict(
         heating_kWh=float(np.nansum(out["Q_heat_total_kW"]) * dt_h),
         cooling_kWh=float(np.nansum(out["Q_cool_KR_kW"]) * dt_h),

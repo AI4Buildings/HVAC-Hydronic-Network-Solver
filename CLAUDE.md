@@ -91,7 +91,10 @@ src/hydraulik/
     adapter.py       solve_air(): Stränge ablaufen → plant-Config inkl. order
                      in Zeichenreihenfolge (Ventilator wird an den Stranganfang
                      normiert — validierter Kern-Pfad; Hinweis im Ergebnis) →
-                     simulate/simulate_room → Ergebnisse je Komponente
+                     simulate/simulate_room → Ergebnisse je Komponente +
+                     stationen (ϑ/x/φ/V̇ je Kanalabschnitt aus den Ketten-
+                     zuständen des Kerns; Fortluft über WRG-Bilanz) für
+                     Leitungs-/Sensor-Tooltips
   air_editor_template.html  Lüftungsschema-Editor (Fork des Hydraulik-Editors,
                      Ketten-Semantik: Ports 1× verbunden, keine conduits;
                      2 Vorlagen Vollklima/KVS; Ergebnispanel + Tooltips;
