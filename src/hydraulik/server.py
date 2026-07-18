@@ -55,8 +55,26 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(html)
 
+    _INDEX = """<!DOCTYPE html><html lang="de"><head><meta charset="utf-8">
+<title>hydraulik – Editoren</title><style>
+ body { font: 16px system-ui; max-width: 40em; margin: 4em auto; color: #222; }
+ a { display: block; padding: 1em 1.2em; margin: 1em 0; border: 1px solid #ccc;
+     border-radius: 10px; text-decoration: none; color: #0b3d91; }
+ a:hover { background: #f4f3ee; } small { color: #666; }
+</style></head><body>
+<h1>HVAC-Schema-Editoren</h1>
+<a href="/hydraulik"><b>Hydraulikschema-Editor</b><br>
+ <small>1D-Netzwerk-Solver (SIMPLE-Druckkorrektur), Heiz-/Kühlkreise,
+ Sensoren + BEMS</small></a>
+<a href="/lueftung"><b>Lüftungsschema-Editor</b><br>
+ <small>Vollklimaanlagen (VKA) nach EN 16798-5-1, energieoptimale
+ WRG-Regelung, Sensoren + BEMS</small></a>
+</body></html>"""
+
     def do_GET(self):
         if self.path in ("/", "/index.html"):
+            self._send_html(self._INDEX.encode("utf-8"))
+        elif self.path in ("/hydraulik", "/hydraulik/"):
             self._send_html(self.editor_html)
         elif self.path in ("/lueftung", "/lueftung/"):
             self._send_html(self.air_html)
@@ -65,14 +83,15 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def do_POST(self):
-        if self.path not in ("/solve", "/solve_air", "/lueftung/solve_air"):
+        if self.path not in ("/solve", "/hydraulik/solve",
+                             "/solve_air", "/lueftung/solve_air"):
             self.send_response(404)
             self.end_headers()
             return
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         try:
-            if self.path == "/solve":
+            if self.path.endswith("/solve") or self.path == "/solve":
                 payload = solve_payload(body)
             else:
                 from .air import solve_air
@@ -102,7 +121,7 @@ def make_server(port: int = 8091) -> ThreadingHTTPServer:
 def serve(port: int = 8091, open_browser: bool = True) -> None:
     httpd = make_server(port)
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
-    print(f"hydraulik-Editor läuft: {url}   (Lüftung: {url}lueftung; Beenden mit Strg+C)")
+    print(f"HVAC-Editoren laufen: {url}   ({url}hydraulik · {url}lueftung; Beenden mit Strg+C)")
     if open_browser:
         webbrowser.open(url)
     try:

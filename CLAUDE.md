@@ -19,7 +19,7 @@ pytest                                   # Testsuite (141 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
-hydraulik serve [--port 8091]                  # Editor + Rechen-Endpunkte (/ Hydraulik, /lueftung Luft)
+hydraulik serve [--port 8091]                  # Startseite / → /hydraulik + /lueftung (Rechnen im GUI)
 hydraulik editor --luft --out lueftung_editor.html   # Lüftungsschema-Editor (statisch)
 python3 examples/run_examples.py         # alle YAML-Beispiele mit Bericht
 python3 examples/07_twe_heizkreisverteiler.py    # Auslegung + Verifikation + Abschaltfall

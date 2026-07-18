@@ -39,8 +39,14 @@ def _post(url, body: str) -> dict:
 
 def test_get_serves_editor(server_url):
     with urllib.request.urlopen(server_url + "/", timeout=10) as resp:
+        index = resp.read().decode("utf-8")
+    assert "/hydraulik" in index and "/lueftung" in index      # Startseite
+    with urllib.request.urlopen(server_url + "/hydraulik", timeout=10) as resp:
         html = resp.read().decode("utf-8")
     assert "Hydraulikschema-Editor" in html and "btn-solve" in html
+    with urllib.request.urlopen(server_url + "/lueftung", timeout=10) as resp:
+        luft = resp.read().decode("utf-8")
+    assert "Lüftungsschema-Editor" in luft and "btn-solve" in luft
 
 
 def test_solve_endpoint_ok(server_url):

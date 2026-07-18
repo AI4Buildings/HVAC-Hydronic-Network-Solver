@@ -135,7 +135,7 @@ Regeln:
 
 ## Lüftungsschema-Editor (VKA nach EN 16798-5-1)
 
-Zweites GUI unter `hydraulik serve` → **http://127.0.0.1:8091/lueftung**:
+Zweites GUI unter `hydraulik serve` → **http://127.0.0.1:8091/lueftung** (Hydraulik: `/hydraulik`; die Startseite `/` verlinkt beide):
 Lüftungsanlagen als zwei Ketten zeichnen (Zuluft: AUL → … → ZUL oben,
 Abluft: ABL → … → FOL unten; die WRG verbindet beide Stränge) und mit dem
 integrierten VKA-Rechenkern (energieoptimale Regelung, aus dem Skill
