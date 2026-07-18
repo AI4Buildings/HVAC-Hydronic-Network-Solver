@@ -1700,9 +1700,13 @@ function exportYAML() {
 
 /* ---------- YAML Import (Subset-Parser für das Editor-/Beispielformat) ---- */
 function splitTop(s, sep) {                       // Kommasplit auf oberster Ebene
-  const out = []; let depth = 0, cur = "", q = null;
+  const out = []; let depth = 0, cur = "", q = null, esc = false;
   for (const ch of s) {
-    if (q) { cur += ch; if (ch === q) q = null; continue; }
+    if (q) { cur += ch;
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === q) q = null;
+      continue; }
     if (ch === '"' || ch === "'") { q = ch; cur += ch; continue; }
     if (ch === "{" || ch === "[") depth++;
     if (ch === "}" || ch === "]") depth--;
@@ -1715,7 +1719,8 @@ function parseValue(s) {
   s = s.trim();
   if (s.startsWith("{")) return parseInlineMap(s);
   if (s.startsWith("[")) return splitTop(s.slice(1, -1), ",").map(parseValue);
-  if (/^".*"$/.test(s) || /^'.*'$/.test(s)) return s.slice(1, -1);
+  if (/^".*"$/.test(s)) { try { return JSON.parse(s); } catch (e) { return s.slice(1, -1); } }
+  if (/^'.*'$/.test(s)) return s.slice(1, -1);
   if (s === "true") return true;
   if (s === "false") return false;
   if (s !== "" && !isNaN(Number(s))) return Number(s);
@@ -1896,7 +1901,7 @@ document.getElementById("dlg-fileinput").onchange = ev => {
   ev.target.value = "";
 };
 document.getElementById("btn-new").onclick = () => {
-  if (confirm("Zeichnung verwerfen?")) { localStorage.removeItem("hydraulik_editor");
+  if (confirm("Zeichnung verwerfen?")) { localStorage.removeItem("hydraulik_luft_editor");
     state = {fluid:{mode:"preset",t_C:50,rho:998,mu:0.001,cp:4180}, comps:[], wires:[]};
     idSeq = 1; selection = null; lastResult = null; commit(); render(); }
 };
