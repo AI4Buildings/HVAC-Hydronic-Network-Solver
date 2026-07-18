@@ -133,6 +133,24 @@ Regeln:
   (mit Korrekturvorschlägen), sodass eine Datei in einem Durchgang korrigierbar ist.
 
 
+## Lüftungsschema-Editor (VKA nach EN 16798-5-1)
+
+Zweites GUI unter `hydraulik serve` → **http://127.0.0.1:8091/lueftung**:
+Lüftungsanlagen als zwei Ketten zeichnen (Zuluft: AUL → … → ZUL oben,
+Abluft: ABL → … → FOL unten; die WRG verbindet beide Stränge) und mit dem
+integrierten VKA-Rechenkern (energieoptimale Regelung, aus dem Skill
+vka-effizienz-en16798) rechnen. Komponenten: WRG (Sorptions-/Enthalpie-/
+Kondensationsrotor, KVS, Platte), Frostschutz, Vor-/Nachheizer, Kühler,
+Befeuchter (Dampf/Sprüh), Ventilatoren (SFP), Umluft, Filter, Schalldämpfer
+und Luft-Sensoren (Kombifühler T+rF, Δp, p, V̇, Energiezähler, Stromzähler —
+alle mit BEMS-Messpunktlisten). Regelungsart an der Zuluft wählbar:
+Zustand **fest** gepinnt, **Sollband** oder **raumgekoppelt** mit
+Feuchtelast (simulate_room). Ergebnisse (Heiz-/Kühl-/Befeuchterleistung,
+WRG-Kennwerte, Zuluftzustand, Ventilatorstrom) erscheinen im Ergebnispanel,
+als Tooltip und unter jeder Komponente; zwei Vorlagen (Vollklima mit
+Sorptionsrotor, KVS-Anlage) liegen bei. Die Ventilatorposition wird
+rechnerisch am Stranganfang bilanziert (validierte Modellkonvention).
+
 ## Sensoren & BEMS-Integration (Betriebsdatenanalyse)
 
 Das maschinenlesbare Strangschema ist nicht nur Rechenmodell, sondern auch

@@ -33,11 +33,11 @@ def _port_spec(type_name: str, cls) -> dict:
     return {"base": list(obj.port_names()), "template": None, "count_param": None}
 
 
-def component_catalog() -> dict:
-    """Maschinenlesbarer Katalog aller registrierten Komponenten."""
+def _catalog_from(registry: dict) -> dict:
+    """Maschinenlesbarer Katalog eines Komponentenregisters."""
     types = []
-    for type_name in sorted(COMPONENT_REGISTRY):
-        cls = COMPONENT_REGISTRY[type_name]
+    for type_name in sorted(registry):
+        cls = registry[type_name]
         params = []
         for p in cls.PARAMS:
             params.append({
@@ -62,6 +62,17 @@ def component_catalog() -> dict:
     return {"types": types, "units": units}
 
 
+def component_catalog() -> dict:
+    """Katalog der Hydraulik-Komponenten."""
+    return _catalog_from(COMPONENT_REGISTRY)
+
+
+def air_catalog() -> dict:
+    """Katalog der Luft-Komponenten (Lüftungsanlage)."""
+    from .air.components import AIR_REGISTRY
+    return _catalog_from(AIR_REGISTRY)
+
+
 def render_editor() -> str:
     """Editor-HTML mit injiziertem Komponentenkatalog."""
     template = resources.files("hydraulik").joinpath("editor_template.html").read_text(
@@ -78,4 +89,21 @@ def build_editor(path: str | Path = "hydraulik_editor.html") -> Path:
     für Rechnen im GUI: `hydraulik serve`)."""
     out = Path(path)
     out.write_text(render_editor(), encoding="utf-8")
+    return out
+
+
+def render_air_editor() -> str:
+    """Lüftungsschema-Editor-HTML mit injiziertem Luft-Katalog."""
+    template = resources.files("hydraulik").joinpath(
+        "air_editor_template.html").read_text(encoding="utf-8")
+    html = template.replace("__CATALOG_JSON__",
+                            json.dumps(air_catalog(), ensure_ascii=False))
+    if "__CATALOG_JSON__" in html:
+        raise RuntimeError("Platzhalter im Luft-Editor-Template nicht ersetzt.")
+    return html
+
+
+def build_air_editor(path: str | Path = "lueftung_editor.html") -> Path:
+    out = Path(path)
+    out.write_text(render_air_editor(), encoding="utf-8")
     return out

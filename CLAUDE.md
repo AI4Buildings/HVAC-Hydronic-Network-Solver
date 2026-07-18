@@ -15,11 +15,12 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (140 Tests)
+pytest                                   # Testsuite (141 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
-hydraulik serve [--port 8091]                  # Editor + Rechen-Endpunkt (Rechnen im GUI)
+hydraulik serve [--port 8091]                  # Editor + Rechen-Endpunkte (/ Hydraulik, /lueftung Luft)
+hydraulik editor --luft --out lueftung_editor.html   # Lüftungsschema-Editor (statisch)
 python3 examples/run_examples.py         # alle YAML-Beispiele mit Bericht
 python3 examples/07_twe_heizkreisverteiler.py    # Auslegung + Verifikation + Abschaltfall
 python3 examples/validation_fh_verteiler.py      # Validierungs-Kennlinienplots
@@ -88,15 +89,20 @@ src/hydraulik/
                      (filter, schalldaempfer, Luft-Sensoren)
     loader.py        YAML-Loader (Ketten-Semantik: 2 Stränge, Ports 1× verbunden)
     adapter.py       solve_air(): Stränge ablaufen → plant-Config inkl. order
-                     in Zeichenreihenfolge → simulate/simulate_room → Ergebnisse
-                     je Komponente. GUI-Editor folgt (Phase 2)
+                     in Zeichenreihenfolge (Ventilator wird an den Stranganfang
+                     normiert — validierter Kern-Pfad; Hinweis im Ergebnis) →
+                     simulate/simulate_room → Ergebnisse je Komponente
+  air_editor_template.html  Lüftungsschema-Editor (Fork des Hydraulik-Editors,
+                     Ketten-Semantik: Ports 1× verbunden, keine conduits;
+                     2 Vorlagen Vollklima/KVS; Ergebnispanel + Tooltips;
+                     hydraulik serve → /lueftung, POST /solve_air)
   results.py         SolutionResult: report(), to_dict(), to_csv(), result["name"],
                      Teilstrecken-Tabelle (ts-Gruppen als Ketten in Strömungsrichtung)
   cli.py             Konsolenskript `hydraulik`
 docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               140 Tests: analytische Referenzen + Validierung gegen Musterlösungen
+tests/               141 Tests: analytische Referenzen + Validierung gegen Musterlösungen
 ```
 
 ## Konventionen

@@ -78,8 +78,16 @@ def solve_air(source) -> dict:
         raise NetworkValidationError(
             ["Die WRG muss in BEIDEN Strängen liegen (zul_in/zul_out und abl_in/abl_out)."])
 
-    # Anlagenkonfiguration aus dem Zuluftstrang (Reihenfolge = Zeichnung)
-    order = [TOKEN[c.type_name] for c in zul_chain if c.type_name in TOKEN]
+    # Anlagenkonfiguration aus dem Zuluftstrang (Reihenfolge = Zeichnung).
+    # WICHTIG: Der Rechenkern ist für die Ventilatorposition am STRANGANFANG
+    # validiert (Energy-Rotorregelung findet sonst u.U. keine zulässige
+    # Drehzahl und fällt auf n_rot = 0 zurück). Die Ventilatorwärme wird
+    # daher immer am Stranganfang bilanziert; die gezeichnete Reihenfolge
+    # der Konditionierungskomponenten bleibt erhalten.
+    tokens = [TOKEN[c.type_name] for c in zul_chain if c.type_name in TOKEN]
+    order = ((["Vent_ZUL"] if "Vent_ZUL" in tokens else [])
+             + [t for t in tokens if t != "Vent_ZUL"])
+    fan_moved = "Vent_ZUL" in tokens and tokens[0] != "Vent_ZUL"
     frost = _one(plant, "frostschutz")
     bef = _one(plant, "befeuchter")
     uml = _one(plant, "umluft")
@@ -113,6 +121,10 @@ def solve_air(source) -> dict:
     v_exh = fol.v * 3600.0 if fol.v is not None else None
 
     hinweise: list[str] = []
+    if fan_moved:
+        hinweise.append("Ventilatorwärme wird am Stranganfang bilanziert "
+                        "(Modellkonvention des Rechenkerns); die gezeichnete "
+                        "Ventilatorposition ist dokumentarisch.")
     if zul.regelung == "raum":
         out = simulate_room(cfg, aul.t, aul.rh, T_room=abl.t,
                             room_rh_min=zul.raum_rh_min, room_rh_max=zul.raum_rh_max,

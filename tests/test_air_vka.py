@@ -47,11 +47,14 @@ def _doc(regelung="band", **zul_extra):
 def test_adapter_deckt_sich_mit_direktem_kernaufruf():
     r = solve_air(_doc())
     assert r["ok"] and r["regelung"] == "band"
-    assert r["plant"]["order"] == ["WRG", "VHR", "Bef", "KR", "NHR", "Vent_ZUL"]
+    # Ventilatorposition wird an den Stranganfang normiert (validierter Pfad
+    # des Kerns); die Konditionierungsreihenfolge folgt der Zeichnung.
+    assert r["plant"]["order"] == ["Vent_ZUL", "WRG", "VHR", "Bef", "KR", "NHR"]
+    assert any("Stranganfang" in h for h in r["hinweise"])
     ref = simulate({"wrg": "ROT_SORP", "components": ["VHR", "KR", "NHR"],
                     "humidifier": "steam", "eta_hr_N": 0.778, "eta_xr_N": 0.807,
                     "SFP": 3430, "V_nom_m3h": 4500.0,
-                    "order": ["WRG", "VHR", "Bef", "KR", "NHR", "Vent_ZUL"]},
+                    "order": ["Vent_ZUL", "WRG", "VHR", "Bef", "KR", "NHR"]},
                    30.0, 50.0, 24.0, 53.0, 18, 22, 40, 55, V_sup_m3h=1359)
     assert r["leistungen"]["kuehlen_kW"] == pytest.approx(float(ref["Q_cool_KR_kW"][0]), abs=1e-5)
     assert r["zuluft"]["t_C"] == pytest.approx(float(ref["T_sup_C"][0]), abs=1e-6)
@@ -113,3 +116,17 @@ def test_zuluft_modusvalidierung():
                                          "regelung": "fest"}},
                   "connections": [["zul.in", "zul.in"]]})
     assert "'t' fehlt" in str(exc.value)
+
+
+def test_wrg_läuft_energieoptimal_im_winter():
+    """Regression: Rotor muss im Winterfall laufen (die unnormierte Reihenfolge
+    mit Ventilator am Ende ließ die Energy-Regelung auf n_rot = 0 zurückfallen)."""
+    doc = _doc()
+    doc["components"]["aul"].update({"t_C": -5.0, "rh": 80.0})
+    doc["components"]["abl"].update({"t_C": 22.0, "rh": 40.0})
+    doc["components"]["zul"].update({"t_min_C": 20, "t_max_C": 22})
+    doc["components"]["zul"]["v_m3h"] = 4500
+    r = solve_air(doc)
+    assert r["komponenten"]["wrg1"]["q_wrg_kW"] > 30.0
+    assert r["komponenten"]["wrg1"]["n_rot"] > 1.0
+    assert r["leistungen"]["heizen_gesamt_kW"] < 10.0

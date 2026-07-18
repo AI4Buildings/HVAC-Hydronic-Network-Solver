@@ -26,7 +26,7 @@ hydraulik = "hydraulik.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-hydraulik = ["editor_template.html"]
+hydraulik = ["editor_template.html", "air_editor_template.html"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

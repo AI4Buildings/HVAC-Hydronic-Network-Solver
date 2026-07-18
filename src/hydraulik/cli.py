@@ -17,16 +17,20 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("file", help="YAML-Datei der Schaltung")
     run.add_argument("--csv", help="Komponententabelle als CSV speichern")
     run.add_argument("--json", action="store_true", help="Ergebnis als JSON ausgeben")
-    ed = sub.add_parser("editor", help="Schaltbild-Editor als HTML-Datei erzeugen")
+    ed = sub.add_parser("editor", help="Schema-Editor als HTML-Datei erzeugen")
     ed.add_argument("--out", default="hydraulik_editor.html", help="Zieldatei")
+    ed.add_argument("--luft", action="store_true",
+                    help="Lüftungsschema-Editor statt Hydraulik erzeugen")
     sv = sub.add_parser("serve", help="Editor mit Rechen-Endpunkt starten (Rechnen im GUI)")
     sv.add_argument("--port", type=int, default=8091)
     sv.add_argument("--no-open", action="store_true", help="Browser nicht automatisch öffnen")
 
     args = parser.parse_args(argv)
     if args.cmd == "editor":
-        from .editor import build_editor
-        path = build_editor(args.out)
+        from .editor import build_air_editor, build_editor
+        if args.luft and args.out == "hydraulik_editor.html":
+            args.out = "lueftung_editor.html"
+        path = build_air_editor(args.out) if args.luft else build_editor(args.out)
         print(f"Editor erzeugt: {path}  (im Browser öffnen; Rechnen im GUI: 'hydraulik serve')")
         return 0
     if args.cmd == "serve":

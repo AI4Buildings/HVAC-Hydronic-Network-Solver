@@ -46,28 +46,38 @@ def solve_payload(yaml_text: str) -> dict:
 
 class _Handler(BaseHTTPRequestHandler):
     editor_html: bytes = b""
+    air_html: bytes = b""
+
+    def _send_html(self, html: bytes) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(html)))
+        self.end_headers()
+        self.wfile.write(html)
 
     def do_GET(self):
         if self.path in ("/", "/index.html"):
-            self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(self.editor_html)))
-            self.end_headers()
-            self.wfile.write(self.editor_html)
+            self._send_html(self.editor_html)
+        elif self.path in ("/lueftung", "/lueftung/"):
+            self._send_html(self.air_html)
         else:
             self.send_response(404)
             self.end_headers()
 
     def do_POST(self):
-        if self.path != "/solve":
+        if self.path not in ("/solve", "/solve_air", "/lueftung/solve_air"):
             self.send_response(404)
             self.end_headers()
             return
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         try:
-            payload = solve_payload(body)
-        except HydraulikError as exc:
+            if self.path == "/solve":
+                payload = solve_payload(body)
+            else:
+                from .air import solve_air
+                payload = solve_air(body)
+        except (HydraulikError, ValueError) as exc:
             payload = {"ok": False, "error": str(exc)}
         except Exception as exc:                       # nie den Server reißen lassen
             payload = {"ok": False, "error": f"Interner Fehler: {exc!r}"}
@@ -83,14 +93,16 @@ class _Handler(BaseHTTPRequestHandler):
 
 
 def make_server(port: int = 8091) -> ThreadingHTTPServer:
+    from .editor import render_air_editor
     _Handler.editor_html = render_editor().encode("utf-8")
+    _Handler.air_html = render_air_editor().encode("utf-8")
     return ThreadingHTTPServer(("127.0.0.1", port), _Handler)
 
 
 def serve(port: int = 8091, open_browser: bool = True) -> None:
     httpd = make_server(port)
     url = f"http://127.0.0.1:{httpd.server_address[1]}/"
-    print(f"hydraulik-Editor läuft: {url}   (Beenden mit Strg+C)")
+    print(f"hydraulik-Editor läuft: {url}   (Lüftung: {url}lueftung; Beenden mit Strg+C)")
     if open_browser:
         webbrowser.open(url)
     try:

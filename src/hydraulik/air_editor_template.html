@@ -1,0 +1,1847 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Lüftungsschema-Editor</title>
+<style>
+  :root { --bg:#f4f4f2; --panel:#ffffff; --line:#d8d7d2; --ink:#1c1c1a; --muted:#6b6a65;
+          --vl:#c62828; --rl:#1565c0; --sel:#0b7a3e; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:13px/1.45 system-ui,-apple-system,'Segoe UI',sans-serif;
+         color:var(--ink); background:var(--bg); height:100vh; display:flex; flex-direction:column; }
+  header { display:flex; align-items:center; gap:8px; padding:8px 12px;
+           background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1 { font-size:15px; margin:0 12px 0 0; }
+  button { font:inherit; padding:5px 10px; border:1px solid var(--line); border-radius:6px;
+           background:#fff; cursor:pointer; }
+  button:hover { background:#f0efe9; }
+  button.primary { background:#1c1c1a; color:#fff; border-color:#1c1c1a; }
+  main { flex:1; display:flex; min-height:0; }
+  #palette { width:212px; overflow-y:auto; background:var(--panel);
+             border-right:1px solid var(--line); padding:8px; }
+  #palette h3 { font-size:11px; text-transform:uppercase; letter-spacing:.04em;
+                color:var(--muted); margin:10px 4px 4px; }
+  .pal-item { display:block; width:100%; text-align:left; margin:2px 0; padding:5px 8px; }
+  .pal-item.active { outline:2px solid var(--sel); }
+  .tpl-row { display:flex; align-items:center; gap:2px; }
+  .tpl-row .pal-item { flex:1; }
+  .tpl-del { border:none; background:none; color:var(--vl); font-size:14px;
+             cursor:pointer; padding:2px 6px; }
+  .tpl-io { border:none; background:none; cursor:pointer; font-size:12px;
+            color:var(--muted); padding:0 3px; }
+  #canvas-wrap { flex:1; overflow:auto; position:relative; }
+  svg#cv { display:block; background:#fff; }
+  #inspector { width:300px; overflow-y:auto; background:var(--panel);
+               border-left:1px solid var(--line); padding:10px; }
+  #inspector h3 { font-size:12px; margin:12px 0 6px; }
+  .field { margin:6px 0; }
+  .field label { display:block; font-size:11px; color:var(--muted); margin-bottom:2px; }
+  .field input[type=text], .field input[type=number], .field select {
+      width:100%; font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:5px; }
+  .field .unitrow { display:flex; gap:4px; }
+  .field .unitrow input { flex:1; }
+  .field .unitrow select { width:118px; }
+  .req { color:var(--vl); }
+  #issues { font-size:12px; }
+  #issues li { color:#8a5200; margin:2px 0; }
+  #issues li.err { color:var(--vl); }
+  #issues li[data-focus] { cursor:pointer; text-decoration:underline dotted; }
+  .hint { font-size:11px; color:var(--muted); margin:4px 0; }
+  dialog { width:640px; max-width:92vw; border:1px solid var(--line); border-radius:10px; }
+  dialog textarea { width:100%; height:340px; font:12px/1.4 ui-monospace,monospace; }
+  .comp-label { font:11px system-ui; fill:var(--ink); }
+  .ts-badge { font:10px system-ui; fill:#7a4bd6; }
+  .port { fill:#fff; stroke:#444; stroke-width:1.2; cursor:crosshair; }
+  .port-hit-ring { cursor:crosshair; }   /* unsichtbare, größere Trefferfläche */
+  .port:hover, .port.pending { fill:#ffd54d; }
+  .sym { stroke:#222; stroke-width:1.6; fill:#fff; }
+  .tabs { display:flex; gap:4px; margin:10px 0 8px; }
+  .tab { flex:1; padding:4px 6px; border:1px solid #ccc; border-radius:6px;
+         background:#f6f5f0; cursor:pointer; font-size:12px; }
+  .tab.active { background:#fff; border-color:#0b7a3e; color:#0b7a3e; font-weight:600; }
+  .bems-box { border:1px solid #ddd; border-radius:6px; padding:6px 8px; margin-bottom:8px; }
+  .bems-del { margin-top:2px; font-size:11px; }
+  .wire { fill:none; stroke-width:3.2; pointer-events:none; }
+  .wire.measure { stroke-width:1.4; stroke:#555; }   /* Messleitung eines Fühlers */
+  .wire-hit { fill:none; stroke:transparent; stroke-width:14; cursor:pointer; }
+  .wp { fill:#fff; stroke:#0b7a3e; stroke-width:1.6; cursor:move; }
+  .wire.aul { stroke:#2e7d32; }   /* Außenluft grün */
+  .wire.zul { stroke:#1565c0; }   /* Zuluft blau */
+  .wire.abl { stroke:#ef6c00; }   /* Abluft orange */
+  .wire.fol { stroke:#6d4c41; }   /* Fortluft braun */
+  .wire.n  { stroke:#777; }
+  .wire-arrow { pointer-events:none; stroke:none; }
+  .wire-arrow.aul { fill:#2e7d32; }
+  .wire-arrow.zul { fill:#1565c0; }
+  .wire-arrow.abl { fill:#ef6c00; }
+  .wire-arrow.fol { fill:#6d4c41; }
+  .wire-arrow.n { fill:#777; }
+  .wire.selected { stroke-width:5; }
+  g.comp { cursor:grab; }
+  g.comp.selected .sym { stroke:var(--sel); stroke-width:2.4; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Lüftungsschema-Editor</h1>
+  <button id="btn-new">Neu</button>
+  <button id="btn-undo" title="Rückgängig (Strg+Z)">↶</button>
+  <button id="btn-redo" title="Wiederholen (Strg+Shift+Z)">↷</button>
+  <button id="btn-zoom-out" title="Herauszoomen (Strg+Mausrad)">−</button>
+  <span class="hint" id="zoom-label" style="min-width:44px; text-align:center">100 %</span>
+  <button id="btn-zoom-in" title="Hineinzoomen (Strg+Mausrad)">+</button>
+  <button id="btn-zoom-reset" title="Zoom zurücksetzen">1:1</button>
+  <button id="btn-import">YAML importieren</button>
+  <button id="btn-export">YAML exportieren</button>
+  <button id="btn-solve" class="primary">▶ Rechnen</button>
+  <button id="btn-copy" title="Auswahl kopieren (Strg+C)">Kopieren</button>
+  <button id="btn-paste" title="Einfügen (Strg+V)">Einfügen</button>
+  <button id="btn-del">Auswahl löschen (Entf)</button>
+  <span class="hint" id="status">Komponenten aus der Palette platzieren; Verbindungsleitungen
+    von Port zu Port ziehen (Linie anklicken für Parameter/Farbe). ESC bricht ab.</span>
+</header>
+<div id="tip" style="display:none; position:fixed; z-index:50; background:#1c1c1a; color:#fff;
+     font:12px/1.5 system-ui; padding:6px 9px; border-radius:6px; pointer-events:none;
+     max-width:380px; white-space:pre;"></div>
+<main>
+  <nav id="palette"></nav>
+  <div id="canvas-wrap"><svg id="cv" width="4000" height="2600"></svg></div>
+  <aside id="inspector"></aside>
+</main>
+<dialog id="dlg">
+  <h3 id="dlg-title" style="margin-top:0"></h3>
+  <textarea id="dlg-text" spellcheck="false"></textarea>
+  <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+    <button id="dlg-file">Datei laden…</button>
+    <input type="file" id="dlg-fileinput" accept=".yaml,.yml,.txt" style="display:none">
+    <button id="dlg-save">Als Datei speichern</button>
+    <button id="dlg-copy">In Zwischenablage</button>
+    <button id="dlg-ok" class="primary">OK</button>
+    <button id="dlg-close">Schließen</button>
+  </div>
+</dialog>
+<script>
+"use strict";
+const CATALOG = __CATALOG_JSON__;
+
+/* ---------- Einheiten-Anzeige (YAML-Suffix → lesbare Einheit) ------------- */
+const UNIT_LABEL = {
+  Pa:"Pa", kPa:"kPa", bar:"bar", mbar:"mbar",
+  m3s:"m³/s", m3h:"m³/h", l_s:"l/s", l_min:"l/min",
+  kg_s:"kg/s", kg_h:"kg/h",
+  C:"°C", W:"W", kW:"kW",
+  m:"m", mm:"mm", cm:"cm", m2:"m²",
+  W_m2K:"W/(m²·K)", W_mK:"W/(m·K)", W_K:"W/K",
+  Pa_m3h2:"Pa/(m³/h)²", Pa_m3s2:"Pa/(m³/s)²",
+  Pa_m3h:"Pa/(m³/h)", Pa_m3s:"Pa/(m³/s)",
+};
+const GROUP_LABEL = {
+  pressure:"Druck (Überdruck)", flow:"Volumenstrom", massflow:"Massenstrom",
+  temperature:"Temperatur", power:"Leistung", length:"Länge", area:"Fläche",
+  kv:"Kv-Wert", u_area:"Wärmedurchgang", u_linear:"längenbez. Wärmeverlust",
+  diameter:"Durchmesser",
+  ua:"UA-Wert", quad_resistance:"Widerstand C", lin_resistance:"linearer Widerstand",
+};
+function unitLabel(sfx){ return UNIT_LABEL[sfx] || sfx; }
+
+/* ---------- Vorlagen (Standardschaltungen) -------------------------------- */
+/* Eine Vorlage = Komponenten + interne Leitungen mit relativen Koordinaten.
+   Mitgelieferte Vorlagen unten; eigene werden im Browser (localStorage)
+   gespeichert und können als JSON-Datei exportiert/importiert werden. */
+/* Vorlagen: komplette Anlagenketten (Zuluftstrang oben, Abluftstrang unten).
+   Offene Parameter (Zustände, Sollband) nach dem Einfügen anpassen. */
+const _VKA_BASE = {
+  aul: {type:"aussenluft", params:{t_C:-5, rh:80}},
+  abl: {type:"abluft_raum", params:{t_C:22, rh:40}},
+  zul: {type:"zuluft", params:{v_m3h:4500, regelung:"band", t_min_C:20, t_max_C:22,
+                               rh_min:40, rh_max:55}},
+};
+const BUILTIN_TEMPLATES = {
+  "Vollklima (Sorptionsrotor)": {
+    comps: [
+      {type:"aussenluft", name:"aul1", rot:0, dx:-620, dy:-80, params:_VKA_BASE.aul.params},
+      {type:"filter_luft", name:"fil1", rot:0, dx:-500, dy:-80, params:{}},
+      {type:"wrg", name:"wrg1", rot:0, dx:-370, dy:0,
+       params:{typ:"ROT_SORP", eta_hr_n:0.778, eta_xr_n:0.807}},
+      {type:"vorheizer", name:"vhr1", rot:0, dx:-230, dy:-80, params:{}},
+      {type:"befeuchter", name:"bef1", rot:0, dx:-120, dy:-80, params:{typ:"steam"}},
+      {type:"kuehler", name:"kr1", rot:0, dx:-10, dy:-80, params:{}},
+      {type:"nachheizer", name:"nhr1", rot:0, dx:100, dy:-80, params:{}},
+      {type:"ventilator_luft", name:"ven_zul1", rot:0, dx:220, dy:-80, params:{sfp:1715}},
+      {type:"zuluft", name:"zul1", rot:0, dx:340, dy:-80, params:_VKA_BASE.zul.params},
+      {type:"abluft_raum", name:"abl1", rot:0, dx:340, dy:80, params:_VKA_BASE.abl.params},
+      {type:"ventilator_luft", name:"ven_abl1", rot:180, dx:220, dy:80, params:{sfp:1715}},
+      {type:"fortluft", name:"fol1", rot:0, dx:-620, dy:80, params:{}},
+    ],
+    wires: [
+      {a:[0,"out"], b:[1,"in"], color:"aul"},
+      {a:[1,"out"], b:[2,"zul_in"], color:"aul"},
+      {a:[2,"zul_out"], b:[3,"in"], color:"zul"},
+      {a:[3,"out"], b:[4,"in"], color:"zul"},
+      {a:[4,"out"], b:[5,"in"], color:"zul"},
+      {a:[5,"out"], b:[6,"in"], color:"zul"},
+      {a:[6,"out"], b:[7,"in"], color:"zul"},
+      {a:[7,"out"], b:[8,"in"], color:"zul"},
+      {a:[9,"out"], b:[10,"in"], color:"abl"},
+      {a:[10,"out"], b:[2,"abl_in"], color:"abl"},
+      {a:[2,"abl_out"], b:[11,"in"], color:"fol"},
+    ],
+  },
+  "KVS-Anlage (ohne Befeuchtung)": {
+    comps: [
+      {type:"aussenluft", name:"aul1", rot:0, dx:-540, dy:-80, params:_VKA_BASE.aul.params},
+      {type:"filter_luft", name:"fil1", rot:0, dx:-420, dy:-80, params:{}},
+      {type:"wrg", name:"wrg1", rot:0, dx:-290, dy:0, params:{typ:"KVS"}},
+      {type:"vorheizer", name:"vhr1", rot:0, dx:-150, dy:-80, params:{}},
+      {type:"kuehler", name:"kr1", rot:0, dx:-40, dy:-80, params:{}},
+      {type:"nachheizer", name:"nhr1", rot:0, dx:70, dy:-80, params:{}},
+      {type:"ventilator_luft", name:"ven_zul1", rot:0, dx:190, dy:-80, params:{sfp:1250}},
+      {type:"zuluft", name:"zul1", rot:0, dx:310, dy:-80, params:_VKA_BASE.zul.params},
+      {type:"abluft_raum", name:"abl1", rot:0, dx:310, dy:80, params:_VKA_BASE.abl.params},
+      {type:"ventilator_luft", name:"ven_abl1", rot:180, dx:190, dy:80, params:{sfp:1250}},
+      {type:"fortluft", name:"fol1", rot:0, dx:-540, dy:80, params:{}},
+    ],
+    wires: [
+      {a:[0,"out"], b:[1,"in"], color:"aul"},
+      {a:[1,"out"], b:[2,"zul_in"], color:"aul"},
+      {a:[2,"zul_out"], b:[3,"in"], color:"zul"},
+      {a:[3,"out"], b:[4,"in"], color:"zul"},
+      {a:[4,"out"], b:[5,"in"], color:"zul"},
+      {a:[5,"out"], b:[6,"in"], color:"zul"},
+      {a:[6,"out"], b:[7,"in"], color:"zul"},
+      {a:[8,"out"], b:[9,"in"], color:"abl"},
+      {a:[9,"out"], b:[2,"abl_in"], color:"abl"},
+      {a:[2,"abl_out"], b:[10,"in"], color:"fol"},
+    ],
+  },
+};
+let userTemplates = {};
+try { userTemplates = JSON.parse(localStorage.getItem("hydraulik_luft_templates") || "{}"); }
+catch (e) { userTemplates = {}; }
+function persistTemplates() {
+  try { localStorage.setItem("hydraulik_luft_templates", JSON.stringify(userTemplates)); } catch (e) {}
+}
+function getTemplate(name) { return userTemplates[name] || BUILTIN_TEMPLATES[name] || null; }
+const deepClone = o => JSON.parse(JSON.stringify(o));
+
+function templateFromSelection() {
+  const comps = selectedComps();
+  if (!comps.length) return null;
+  const cx = snap(comps.reduce((a, c) => a + c.x, 0) / comps.length);
+  const cy = snap(comps.reduce((a, c) => a + c.y, 0) / comps.length);
+  const idx = new Map(comps.map((c, i) => [c.id, i]));
+  return {
+    comps: comps.map(c => ({type: c.type, name: c.name, ts: c.ts || "", rot: c.rot || 0,
+                            dx: c.x - cx, dy: c.y - cy, params: deepClone(c.params || {}),
+                            bems: c.bems ? deepClone(c.bems) : undefined})),
+    wires: state.wires
+      .filter(w => idx.has(w.a.comp) && idx.has(w.b.comp))
+      .map(w => {
+        const t = {a: [idx.get(w.a.comp), w.a.port], b: [idx.get(w.b.comp), w.b.port],
+                   color: w.color || "n"};
+        if (w.type === "conduit") { t.type = "conduit"; t.name = w.name;
+          t.ts = w.ts || ""; t.params = deepClone(w.params || {});
+          if (w.pipes) t.pipes = deepClone(w.pipes);
+          if (w.bems) t.bems = deepClone(w.bems); }
+        if (w.pts) t.pts = w.pts.map(pt => [pt.x - cx, pt.y - cy]);
+        return t;
+      }),
+  };
+}
+function insertTemplate(tpl, x, y) {
+  invalidate();
+  const newIds = [], ids = new Set();
+  for (const tc of tpl.comps) {
+    const c = {id: idSeq++, type: tc.type,
+               name: nameTaken(tc.name) ? uniqueName(tc.name) : tc.name,
+               ts: tc.ts || "", rot: tc.rot || 0,
+               x: snap(x + tc.dx), y: snap(y + tc.dy),
+               params: deepClone(tc.params || {})};
+    if (tc.bems && tc.bems.length) c.bems = deepClone(tc.bems);
+    state.comps.push(c); newIds.push(c.id); ids.add(c.id);
+  }
+  for (const tw of tpl.wires) {
+    const w = {a: {comp: newIds[tw.a[0]], port: tw.a[1]},
+               b: {comp: newIds[tw.b[0]], port: tw.b[1]}, color: tw.color || "n"};
+    if (tw.type === "conduit") {
+      w.type = "conduit";
+      const base = tw.name || "lt1";
+      w.name = nameTaken(base) ? uniqueName(base) : base;
+      w.ts = tw.ts || ""; w.params = deepClone(tw.params || {});
+      if (tw.pipes) w.pipes = deepClone(tw.pipes);
+      if (tw.bems) w.bems = deepClone(tw.bems);
+    }
+    if (tw.pts) w.pts = tw.pts.map(([dx, dy]) => ({x: snap(x + dx), y: snap(y + dy)}));
+    state.wires.push(w);
+  }
+  selection = {kind: "multi", ids};
+  commit(); render();
+}
+function saveSelectionAsTemplate() {
+  const tpl = templateFromSelection();
+  if (!tpl) { alert("Zuerst Komponenten auswählen (Rechteck oder Shift+Klick)."); return; }
+  const name = (prompt("Name der Vorlage:") || "").trim();
+  if (!name) return;
+  if (BUILTIN_TEMPLATES[name]) { alert("Name ist durch eine mitgelieferte Vorlage belegt."); return; }
+  if (userTemplates[name] && !confirm(`Vorlage '${name}' überschreiben?`)) return;
+  userTemplates[name] = tpl;
+  persistTemplates(); buildPalette();
+  setStatus(`Vorlage '${name}' gespeichert – in der Palette unter VORLAGEN.`);
+}
+function limitLabel(p, si) {        // Grenzwert in der Anzeige-Einheit des ersten Suffixes
+  if (p.choices || p.group === "int" || p.group === "none" || p.group === "bool")
+    return String(si);
+  const sfx = p.keys[0].slice(p.name.length + 1);
+  return `${round6(si / CATALOG.units[p.group][sfx])} ${unitLabel(sfx)}`;
+}
+
+/* ---------- Typ-Metadaten (Anzeige) ------------------------------------ */
+const META = {
+  aussenluft:{de:"Außenluft (AUL)",grp:"Randbedingungen",pre:"aul"},
+  zuluft:{de:"Zuluft (ZUL)",grp:"Randbedingungen",pre:"zul"},
+  abluft_raum:{de:"Abluft/Raum (ABL)",grp:"Randbedingungen",pre:"abl"},
+  fortluft:{de:"Fortluft (FOL)",grp:"Randbedingungen",pre:"fol"},
+  wrg:{de:"Wärmerückgewinnung (WRG)",grp:"Anlagenkomponenten",pre:"wrg"},
+  frostschutz:{de:"Frostschutz",grp:"Anlagenkomponenten",pre:"fs"},
+  vorheizer:{de:"Vorheizer (VHR)",grp:"Anlagenkomponenten",pre:"vhr"},
+  kuehler:{de:"Kühler (KR)",grp:"Anlagenkomponenten",pre:"kr"},
+  nachheizer:{de:"Nachheizer (NHR)",grp:"Anlagenkomponenten",pre:"nhr"},
+  befeuchter:{de:"Befeuchter",grp:"Anlagenkomponenten",pre:"bef"},
+  ventilator_luft:{de:"Ventilator",grp:"Anlagenkomponenten",pre:"ven"},
+  umluft:{de:"Umluft-Bypass",grp:"Anlagenkomponenten",pre:"uml"},
+  filter_luft:{de:"Filter",grp:"Einbauten",pre:"fil"},
+  schalldaempfer:{de:"Schalldämpfer",grp:"Einbauten",pre:"sd"},
+  kombisensor_luft:{de:"Kombifühler T + rF",grp:"Sensoren",pre:"tf"},
+  temperatursensor_luft:{de:"Temperatursensor",grp:"Sensoren",pre:"ts"},
+  differenzdrucksensor_luft:{de:"Differenzdrucksensor",grp:"Sensoren",pre:"pd"},
+  drucksensor_luft:{de:"Drucksensor",grp:"Sensoren",pre:"ps"},
+  volumenstromsensor_luft:{de:"Volumenstromsensor",grp:"Sensoren",pre:"vf"},
+  energiezaehler_luft:{de:"Energiezähler",grp:"Sensoren",pre:"wmz"},
+  stromzaehler:{de:"Stromzähler",grp:"Sensoren",pre:"sz"},
+};
+const GRP_ORDER = ["Randbedingungen","Anlagenkomponenten","Einbauten","Sensoren","Sonstige"];
+const TYPES = {};
+CATALOG.types.forEach(t => TYPES[t.type] = t);
+
+/* ---------- Zustand ----------------------------------------------------- */
+let state = { fluid:{mode:"preset", t_C:50, rho:998, mu:0.001, cp:4180},
+              comps:[], wires:[] };
+let placing = null;                 // Typname im Platzierungsmodus
+let placingTemplate = null;         // Vorlagenname im Platzierungsmodus
+let selection = null;               // {kind:'comp'|'wire', ref}
+let pendingPort = null;             // {comp, port}
+let drag = null;                    // {items:[{c,ox,oy}], moved} – auch Gruppen
+let idSeq = 1;
+let lastResult = null;              // letztes Solver-Ergebnis (POST /solve)
+let wireDrag = null;                // {from, sx, sy, mx, my, moved, hover} – Leitung ziehen
+let boxSel = null;                  // Auswahlrechteck {x0,y0,x1,y1,active}
+let clipboard = null;               // kopierte Komponenten + interne Leitungen
+let wpDrag = null;                  // Knickpunkt-Verschiebung {w, idx, moved}
+let dblTrack = {key: "", t: 0};     // eigene Doppelklick-Erkennung
+let inspectorHold = false;          // Formular bei reiner Wertänderung nicht neu aufbauen
+                                    // (native change-Events beim Fokuswechsel würden sonst
+                                    // das nächste angeklickte Feld ersetzen/verschlucken)
+let inspectorForce = false;         // Modus-Wechsel: Umbau erzwingen (schlägt den Guard)
+let inspectorTab = "fluid";         // Inspector-Register: "fluid" | "bems"
+
+function wireEnds(w) {
+  return [absPort(compById(w.a.comp), w.a.port), absPort(compById(w.b.comp), w.b.port)];
+}
+function wirePts(w) {               // Punktfolge: gerade / Auto-Winkel / Knickpunkte
+  const [a, b] = wireEnds(w);
+  const pts = w.pts || [];
+  if (!pts.length) {
+    if (Math.abs(a.y - b.y) < 1 || Math.abs(a.x - b.x) < 1) return [a, b];
+    const mx = (a.x + b.x) / 2;
+    return [a, {x: mx, y: a.y}, {x: mx, y: b.y}, b];
+  }
+  return [a, ...pts, b];
+}
+function wireD(w) {
+  const p = wirePts(w);
+  return `M${p[0].x},${p[0].y} ` + p.slice(1).map(q => `L${q.x},${q.y}`).join(" ");
+}
+function insertWaypoint(w, pt) {    // in das nächstgelegene Segment einfügen
+  const [a, b] = wireEnds(w);
+  const seq = [a, ...(w.pts || []), b];
+  let best = 0, bd = Infinity;
+  for (let i = 0; i < seq.length - 1; i++) {
+    const p = seq[i], q = seq[i + 1];
+    const l2 = (q.x - p.x) ** 2 + (q.y - p.y) ** 2 || 1;
+    const t = Math.max(0, Math.min(1, ((pt.x - p.x) * (q.x - p.x) + (pt.y - p.y) * (q.y - p.y)) / l2));
+    const d = Math.hypot(pt.x - (p.x + t * (q.x - p.x)), pt.y - (p.y + t * (q.y - p.y)));
+    if (d < bd) { bd = d; best = i; }
+  }
+  w.pts = w.pts || [];
+  w.pts.splice(best, 0, {x: snap(pt.x), y: snap(pt.y)});
+}
+
+function isSelectedComp(c) {
+  if (!selection) return false;
+  if (selection.kind === "comp") return selection.ref === c;
+  if (selection.kind === "multi") return selection.ids.has(c.id);
+  return false;
+}
+function selectedComps() {
+  if (!selection) return [];
+  if (selection.kind === "comp") return [selection.ref];
+  if (selection.kind === "multi") return state.comps.filter(c => selection.ids.has(c.id));
+  return [];
+}
+
+/* ---------- Kopieren / Einfügen ------------------------------------------- */
+function copySelection() {
+  const comps = selectedComps();
+  if (!comps.length) { setStatus("Nichts ausgewählt zum Kopieren."); return; }
+  const ids = new Set(comps.map(c => c.id));
+  clipboard = {
+    comps: comps.map(c => JSON.parse(JSON.stringify(c))),
+    wires: state.wires.filter(w => ids.has(w.a.comp) && ids.has(w.b.comp))
+                      .map(w => JSON.parse(JSON.stringify(w))),
+  };
+  setStatus(`${comps.length} Komponente(n) + ${clipboard.wires.length} Leitung(en) kopiert – Einfügen: Strg+V.`);
+}
+function uniqueName(base) {
+  const m = base.match(/^(.*?)(\d*)$/);
+  const stem = m[1] || "k";
+  let n = m[2] ? Number(m[2]) + 1 : 2;
+  while (nameTaken(stem + n)) n++;
+  return stem + n;
+}
+function pasteClipboard() {
+  if (!clipboard || !clipboard.comps.length) { setStatus("Zwischenablage leer."); return; }
+  invalidate();
+  const idMap = {}, ids = new Set();
+  for (const src of clipboard.comps) {
+    const c = JSON.parse(JSON.stringify(src));
+    c.id = idSeq++;
+    c.name = uniqueName(src.name);
+    c.x = snap(src.x + 48); c.y = snap(src.y + 48);
+    idMap[src.id] = c.id;
+    state.comps.push(c); ids.add(c.id);
+  }
+  for (const w of clipboard.wires) {
+    const nw = {a: {comp: idMap[w.a.comp], port: w.a.port},
+                b: {comp: idMap[w.b.comp], port: w.b.port}, color: w.color};
+    if (w.type === "conduit") {
+      nw.type = "conduit";
+      nw.name = uniqueName(w.name);
+      nw.ts = w.ts || "";
+      nw.params = JSON.parse(JSON.stringify(w.params || {}));
+    }
+    if (w.pts) nw.pts = w.pts.map(p => ({x: p.x + 48, y: p.y + 48}));
+    state.wires.push(nw);
+  }
+  for (const src of clipboard.comps) { src.x += 48; src.y += 48; }   // nächstes Einfügen weiter versetzt
+  for (const w of clipboard.wires)
+    if (w.pts) for (const p of w.pts) { p.x += 48; p.y += 48; }
+  selection = {kind: "multi", ids};
+  commit(); render();
+  setStatus("Eingefügt – Auswahl verschieben und Parameter anpassen.");
+}
+function invalidate(){ if (lastResult) { lastResult = null; setStatus("Zeichnung geändert – Ergebnisse verworfen. Neu rechnen."); } }
+
+/* ---------- Undo / Redo --------------------------------------------------- */
+let history = [], historyIndex = -1;
+function snapshot(){ return JSON.stringify({fluid: state.fluid, comps: state.comps,
+                                            wires: state.wires, idSeq}); }
+function commit(){
+  history = history.slice(0, historyIndex + 1);
+  history.push(snapshot());
+  if (history.length > 100) history.shift();
+  historyIndex = history.length - 1;
+}
+function restoreSnap(s){
+  const o = JSON.parse(s);
+  state = {fluid: o.fluid, comps: o.comps, wires: o.wires};
+  idSeq = o.idSeq;
+  selection = null; pendingPort = null; wireDrag = null; boxSel = null; lastResult = null;
+  render();
+}
+function undo(){ if (historyIndex > 0) { historyIndex--; restoreSnap(history[historyIndex]); } }
+function redo(){ if (historyIndex < history.length - 1) { historyIndex++; restoreSnap(history[historyIndex]); } }
+
+function portAt(x, y, exclude) {    // nächster Port im Fangradius
+  let best = null, bd = 16;
+  for (const c of state.comps) {
+    for (const [pn, p] of Object.entries(portPos(c))) {
+      if (exclude && exclude.comp === c.id && exclude.port === pn) continue;
+      const d = Math.hypot(c.x + p.dx - x, c.y + p.dy - y);
+      if (d < bd) { bd = d; best = {comp: c.id, port: pn, x: c.x + p.dx, y: c.y + p.dy}; }
+    }
+  }
+  return best;
+}
+
+/* ---------- Ports & Geometrie ------------------------------------------- */
+function portNames(comp) {
+  const spec = TYPES[comp.type].ports;
+  if (!spec.template) return spec.base.slice();
+  const p = TYPES[comp.type].params.find(x => x.name === spec.count_param);
+  let n = comp.params[spec.count_param];
+  if (n === undefined || n === null || n === "") n = (p && p.default != null) ? p.default : 2;
+  const out = spec.base.slice();
+  for (let i = 1; i <= Number(n); i++) out.push(spec.template.replace("{}", i));
+  return out;
+}
+function rotXY(dx, dy, rot) {
+  switch (((rot || 0) % 360 + 360) % 360) {
+    case 90:  return {dx: -dy, dy: dx};
+    case 180: return {dx: -dx, dy: -dy};
+    case 270: return {dx: dy,  dy: -dx};
+    default:  return {dx, dy};
+  }
+}
+function portPos(comp) {                       // → {portname:{dx,dy}} (inkl. Rotation)
+  const raw = portPosRaw(comp), pos = {};
+  for (const [k, p] of Object.entries(raw)) pos[k] = rotXY(p.dx, p.dy, comp.rot);
+  return pos;
+}
+function portPosRaw(comp) {
+  const t = comp.type;
+  if (t === "aussenluft") return {out:{dx:20,dy:0}};
+  if (t === "zuluft") return {in:{dx:-20,dy:0}};
+  if (t === "abluft_raum") return {out:{dx:-20,dy:0}};
+  if (t === "fortluft") return {in:{dx:20,dy:0}};
+  if (t === "wrg") return {zul_in:{dx:-24,dy:-80}, zul_out:{dx:24,dy:-80},
+                           abl_in:{dx:24,dy:80}, abl_out:{dx:-24,dy:80}};
+  return {in:{dx:-30,dy:0}, out:{dx:30,dy:0}};   // Zweitor-Standard (Kanal)
+}
+function compWidth(comp) {
+  return 60;
+}
+function absPort(comp, port) {
+  const p = portPos(comp)[port];
+  return p ? {x: comp.x + p.dx, y: comp.y + p.dy} : {x:comp.x, y:comp.y};
+}
+
+/* ---------- Symbole ------------------------------------------------------ */
+function symbol(comp) {
+  const t = comp.type;
+  const duct = `<line class="sym" x1="-30" y1="0" x2="-16" y2="0"/>
+                <line class="sym" x1="16" y1="0" x2="30" y2="0"/>`;
+  const reg = (label, dir) =>
+    duct + `<rect class="sym" x="-16" y="-16" width="32" height="32"/>
+    <line class="sym" x1="-16" y1="${16*dir}" x2="16" y2="${-16*dir}"/>
+    <text x="0" y="30" text-anchor="middle" class="comp-label">${label}</text>`;
+  const box = (label, txt) =>
+    `<rect class="sym" x="-26" y="-14" width="52" height="28" rx="6"/>
+     <text x="0" y="4" text-anchor="middle" class="comp-label">${txt}</text>`;
+  const sens = txt =>
+    duct + `<circle class="sym" r="13"/>
+    <text x="0" y="4" text-anchor="middle" class="comp-label" font-size="10">${txt}</text>`;
+  switch (t) {
+    case "aussenluft":
+      return `<line class="sym" x1="14" y1="0" x2="20" y2="0"/>` + box(0, "AUL") +
+             `<polygon class="sym" points="-38,-5 -38,5 -29,0"/>`;
+    case "zuluft":
+      return `<line class="sym" x1="-20" y1="0" x2="-14" y2="0"/>` + box(0, "ZUL") +
+             `<polygon class="sym" points="29,-5 29,5 38,0"/>`;
+    case "abluft_raum":
+      return `<line class="sym" x1="-20" y1="0" x2="-14" y2="0"/>` + box(0, "ABL") +
+             `<polygon class="sym" points="38,-5 38,5 29,0"/>`;
+    case "fortluft":
+      return `<line class="sym" x1="14" y1="0" x2="20" y2="0"/>` + box(0, "FOL") +
+             `<polygon class="sym" points="-29,-5 -29,5 -38,0"/>`;
+    case "wrg":
+      return `<line class="sym" x1="-24" y1="-80" x2="-18" y2="-80"/>
+              <line class="sym" x1="18" y1="-80" x2="24" y2="-80"/>
+              <line class="sym" x1="-24" y1="80" x2="-18" y2="80"/>
+              <line class="sym" x1="18" y1="80" x2="24" y2="80"/>
+              <rect class="sym" x="-18" y="-96" width="36" height="192" rx="6"/>
+              <circle class="sym" r="26"/>
+              <line class="sym" x1="0" y1="-26" x2="0" y2="26"/>
+              <text x="0" y="-104" text-anchor="middle" class="comp-label">WRG</text>`;
+    case "frostschutz": return reg("FS", 1);
+    case "vorheizer": return reg("VHR", 1);
+    case "nachheizer": return reg("NHR", 1);
+    case "kuehler": return reg("KR", -1);
+    case "befeuchter":
+      return duct + `<rect class="sym" x="-16" y="-16" width="32" height="32"/>
+        <path class="sym" d="M-8,-10 q4,6 0,12 q-4,6 0,12 M0,-10 q4,6 0,12 q-4,6 0,12 M8,-10 q4,6 0,12 q-4,6 0,12" fill="none"/>
+        <text x="0" y="30" text-anchor="middle" class="comp-label">B</text>`;
+    case "ventilator_luft":
+      return duct + `<circle class="sym" r="15"/>
+        <path class="sym" d="M0,0 Q10,-12 2,-14 M0,0 Q-10,12 -2,14" fill="none"/>
+        <circle class="sym" r="2.5" fill="#222"/>`;
+    case "umluft":
+      return duct + `<rect class="sym" x="-16" y="-14" width="32" height="28" rx="4"/>
+        <path class="sym" d="M-8,6 L-8,-4 L6,-4" fill="none"/>
+        <polygon class="sym" points="4,-8 4,0 10,-4"/>
+        <text x="0" y="28" text-anchor="middle" class="comp-label">UML</text>`;
+    case "filter_luft":
+      return duct + `<rect class="sym" x="-10" y="-18" width="20" height="36"/>
+        <path class="sym" d="M-4,-18 L4,-10 L-4,-2 L4,6 L-4,14 L2,18" fill="none"/>`;
+    case "schalldaempfer":
+      return duct + `<rect class="sym" x="-16" y="-14" width="32" height="28"/>
+        <line class="sym" x1="-16" y1="-6" x2="16" y2="-6"/>
+        <line class="sym" x1="-16" y1="6" x2="16" y2="6"/>`;
+    case "kombisensor_luft": return sens("Tφ");
+    case "temperatursensor_luft": return sens("T");
+    case "differenzdrucksensor_luft": return sens("Δp");
+    case "drucksensor_luft": return sens("p");
+    case "volumenstromsensor_luft": return sens("V̇");
+    case "energiezaehler_luft": return sens("WMZ");
+    case "stromzaehler": return sens("kWh");
+    default:
+      return `<rect class="sym" x="-22" y="-14" width="44" height="28" rx="4"/>`;
+  }
+}
+
+function uprightText(svgStr, rot) {
+  // Beschriftungen in Symbolen gegenrotieren, damit sie bei 90°/180°/270°
+  // lesbar bleiben (Drehpunkt ≈ optische Mitte).
+  if (!rot) return svgStr;
+  return svgStr.replace(/<text\s([^>]*?)>/g, (m, attrs) => {
+    const x = Number((/(?:^|\s)x="([-\d.]+)"/.exec(attrs) || [0, 0])[1]);
+    const y = Number((/(?:^|\s)y="([-\d.]+)"/.exec(attrs) || [0, 0])[1]);
+    return `<text ${attrs} transform="rotate(${-rot} ${x} ${y - 4})">`;
+  });
+}
+
+/* ---------- Rendering ---------------------------------------------------- */
+const svg = document.getElementById("cv");
+// Mindestgröße der Zeichenfläche; wächst automatisch mit dem Inhalt
+// (immer GROW_MARGIN Reserve hinter dem äußersten Element, nie kleiner als BASE)
+const BASE_W = 4000, BASE_H = 2600, GROW_MARGIN = 600;
+let canvasW = BASE_W, canvasH = BASE_H;
+function updateCanvasSize() {
+  let mx = 0, my = 0;
+  for (const c of state.comps) { mx = Math.max(mx, c.x); my = Math.max(my, c.y); }
+  for (const w of state.wires)
+    (w.pts || []).forEach(p => { mx = Math.max(mx, p.x); my = Math.max(my, p.y); });
+  canvasW = Math.max(BASE_W, snap(mx + GROW_MARGIN));
+  canvasH = Math.max(BASE_H, snap(my + GROW_MARGIN));
+}
+let zoom = 1.0;
+function setZoom(z, ev) {
+  z = Math.min(3.0, Math.max(0.25, z));
+  const wrap = document.getElementById("canvas-wrap");
+  const rect = wrap.getBoundingClientRect();
+  const cx = ev ? ev.clientX - rect.left : wrap.clientWidth / 2;
+  const cy = ev ? ev.clientY - rect.top : wrap.clientHeight / 2;
+  const mx = (wrap.scrollLeft + cx) / zoom;      // Modellpunkt unter dem Cursor
+  const my = (wrap.scrollTop + cy) / zoom;
+  zoom = z;
+  render();
+  wrap.scrollLeft = mx * zoom - cx;              // Punkt unter dem Cursor halten
+  wrap.scrollTop = my * zoom - cy;
+  document.getElementById("zoom-label").textContent = Math.round(zoom * 100) + " %";
+}
+function render() {
+  updateCanvasSize();
+  svg.setAttribute("width", canvasW * zoom);
+  svg.setAttribute("height", canvasH * zoom);
+  let out = `<defs><pattern id="grid" width="16" height="16" patternUnits="userSpaceOnUse">
+    <path d="M16 0H0V16" fill="none" stroke="#eee" stroke-width="1"/></pattern></defs>
+    <rect width="${canvasW}" height="${canvasH}" fill="url(#grid)"/>`;
+  for (const w of state.wires) {
+    const i = state.wires.indexOf(w);
+    const sel = (selection && selection.kind==="wire" && selection.ref===w) ? " selected" : "";
+    const d = wireD(w);
+    const meas = (isTapPort(w.a.comp, w.a.port) || isTapPort(w.b.comp, w.b.port))
+      ? " measure" : "";
+    out += `<path class="wire ${w.color}${sel}${meas}" d="${d}"/>`;
+    out += flowArrow(w);
+    out += `<path class="wire-hit" data-wire="${i}" d="${d}"/>`;
+    if (sel && w.pts)                              // Knickpunkt-Griffe der Auswahl
+      w.pts.forEach((p, k) => {
+        out += `<rect class="wp" data-wire="${i}" data-wp="${k}"
+                x="${p.x - 4}" y="${p.y - 4}" width="8" height="8"/>`;
+      });
+    if (sel && w.name) {                           // Name nur bei Selektion
+      const [pa, pb] = wireEnds(w);
+      const mid = w.pts && w.pts.length ? w.pts[Math.floor((w.pts.length - 1) / 2)]
+                                        : {x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2};
+      out += `<text class="comp-label" x="${mid.x}" y="${mid.y - 8}"
+              text-anchor="middle" fill="#0b7a3e">${esc(w.name)}</text>`;
+    }
+  }
+  if (wireDrag && wireDrag.moved) {                  // Gummiband beim Ziehen
+    const a = absPort(compById(wireDrag.from.comp), wireDrag.from.port);
+    const tx = wireDrag.hover ? wireDrag.hover.x : wireDrag.mx;
+    const ty = wireDrag.hover ? wireDrag.hover.y : wireDrag.my;
+    out += `<line x1="${a.x}" y1="${a.y}" x2="${tx}" y2="${ty}"
+            stroke="#0b7a3e" stroke-width="2.5" stroke-dasharray="6 4"/>`;
+  }
+  if (boxSel && boxSel.active) {
+    const x = Math.min(boxSel.x0, boxSel.x1), y = Math.min(boxSel.y0, boxSel.y1);
+    out += `<rect x="${x}" y="${y}" width="${Math.abs(boxSel.x1-boxSel.x0)}"
+            height="${Math.abs(boxSel.y1-boxSel.y0)}" fill="rgba(11,122,62,0.07)"
+            stroke="#0b7a3e" stroke-dasharray="5 4"/>`;
+  }
+  for (const c of state.comps) {
+    const sel = isSelectedComp(c) ? " selected" : "";
+    out += `<g class="comp${sel}" data-comp="${c.id}" transform="translate(${c.x},${c.y})">`;
+    // unsichtbare Trefferfläche (Symbole mit Lücken bleiben klick-/hoverbar)
+    const hw = Math.max(compWidth(c) / 2 + 6, 32);
+    out += `<rect x="${-hw}" y="-32" width="${2 * hw}" height="64" fill="transparent"/>`;
+    out += `<g transform="rotate(${c.rot || 0})">` + uprightText(symbol(c), c.rot || 0) + `</g>`;
+    out += `<text class="comp-label" x="0" y="44" text-anchor="middle">${esc(c.name)}</text>`;
+    const res = lastResult && lastResult.komponenten && lastResult.komponenten[c.name];
+    if (res) {
+      const line = Object.entries(res)
+        .filter(([k, v]) => v !== null && v !== undefined)
+        .slice(0, 2)
+        .map(([k, v]) => {
+          const [sym, unit] = RESULT_LABELS[k] || [k, ""];
+          return `${sym} ${fmt(v, 2)}${unit ? " " + unit : ""}`;
+        }).join(" · ");
+      if (line) out += `<text class="comp-label" x="0" y="57" text-anchor="middle" fill="#0b7a3e">${line}</text>`;
+    }
+    if (c.ts) out += `<text class="ts-badge" x="26" y="-26">TS ${esc(c.ts)}</text>`;
+    const pp = portPos(c);
+    for (const [pn, p] of Object.entries(pp)) {
+      const pend = ((pendingPort && pendingPort.comp===c.id && pendingPort.port===pn) ||
+                    (wireDrag && wireDrag.hover && wireDrag.hover.comp===c.id &&
+                     wireDrag.hover.port===pn)) ? " pending" : "";
+      out += `<circle class="port-hit-ring" data-comp="${c.id}" data-port="${pn}"
+              cx="${p.dx}" cy="${p.dy}" r="7" fill="transparent">
+              <title>${esc(c.name)}.${pn}</title></circle>
+              <circle class="port${pend}" data-comp="${c.id}" data-port="${pn}"
+              cx="${p.dx}" cy="${p.dy}" r="3"><title>${esc(c.name)}.${pn}</title></circle>`;
+    }
+    out += `</g>`;
+  }
+  svg.innerHTML = `<g transform="scale(${zoom})">` + out + `</g>`;
+  renderInspector();
+  autosave();
+}
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+function compById(id){ return state.comps.find(c => c.id === id); }
+function fmt(v, d){ return (v === undefined || v === null || isNaN(v)) ? "–"
+  : Number(v).toFixed(d === undefined ? 3 : d).replace(/\.?0+$/, m => m.includes(".") ? "" : m); }
+function resultRows(name){ return []; }
+
+/* ---------- Rechnen (POST /solve, nur unter 'hydraulik serve') ------------ */
+async function solveNow() {
+  const bad = validate().filter(i => i.err);
+  if (bad.length && !confirm(`Es gibt ${bad.length} Fehler (siehe Prüfungen). Trotzdem rechnen?`)) return;
+  setStatus("Rechne …");
+  let data;
+  try {
+    const resp = await fetch("solve_air", {method: "POST", body: exportYAML(),
+                                       headers: {"Content-Type": "text/yaml"}});
+    data = await resp.json();
+  } catch (e) {
+    lastResult = null;
+    alert("Kein Rechen-Endpunkt erreichbar.\n\nDen Editor bitte über 'hydraulik serve' starten " +
+          "(dann läuft der Solver lokal mit), statt die HTML-Datei direkt zu öffnen.");
+    setStatus(""); render(); return;
+  }
+  if (!data.ok) {
+    lastResult = null;
+    document.getElementById("dlg-title").textContent = "Solver meldet Fehler";
+    dlgText.value = data.error;
+    document.getElementById("dlg-ok").style.display = "none";
+    document.getElementById("dlg-save").style.display = "none";
+    document.getElementById("dlg-file").style.display = "none";
+    dlg.showModal();
+    setStatus("Nicht gerechnet – Fehler siehe Dialog."); render(); return;
+  }
+  lastResult = data;
+  const L = data.leistungen || {}, Z = data.zuluft || {};
+  const teile = [];
+  if (L.heizen_gesamt_kW) teile.push(`Heizen ${fmt(L.heizen_gesamt_kW, 2)} kW`);
+  if (L.kuehlen_kW) teile.push(`Kühlen ${fmt(L.kuehlen_kW, 2)} kW`);
+  if (L.befeuchter_wasser_kg_h) teile.push(`Befeuchter ${fmt(L.befeuchter_wasser_kg_h, 2)} kg/h`);
+  if (L.wrg_kW) teile.push(`WRG ${fmt(L.wrg_kW, 2)} kW`);
+  if (L.ventilatoren_el_kW) teile.push(`Ventilatoren ${fmt(L.ventilatoren_el_kW, 2)} kW el.`);
+  setStatus(`Ergebnis ✓  Zuluft ${fmt(Z.t_C, 1)} °C / ${fmt(Z.phi_pct, 0)} % — ` +
+            teile.join(" · ") + ".  Details per Mouse-Over.");
+  render();
+}
+document.getElementById("btn-solve").onclick = solveNow;
+
+/* ---------- Ergebnis-Tooltips --------------------------------------------- */
+const tip = document.getElementById("tip");
+const RESULT_LABELS = {
+  q_heizen_kW: ["Q̇_Heizen", "kW"], q_kuehlen_kW: ["Q̇_Kühlen", "kW"],
+  q_befeuchter_kW: ["Q̇_Befeuchter", "kW"], wasser_kg_h: ["Wasser", "kg/h"],
+  q_wrg_kW: ["Q̇_WRG", "kW"], eta_hr: ["η_t", ""], eta_xr: ["η_x", ""],
+  n_rot: ["n_Rotor", "1/min"], p_el_kW: ["P_el", "kW"],
+  t_C: ["ϑ", "°C"], x_gkg: ["x", "g/kg"], phi_pct: ["φ", "%"], v_m3h: ["V̇", "m³/h"],
+};
+function tooltipText(target) {
+  if (!lastResult) return null;
+  const compEl = target.closest("g.comp");
+  if (!compEl) return null;
+  const c = compById(Number(compEl.dataset.comp));
+  const res = (lastResult.komponenten || {})[c.name];
+  if (!res) return null;
+  const parts = Object.entries(res)
+    .filter(([, v]) => v !== null && v !== undefined)
+    .map(([k, v]) => {
+      const [sym, unit] = RESULT_LABELS[k] || [k, ""];
+      return `${sym} = ${fmt(v, 3)}${unit ? " " + unit : ""}`;
+    });
+  return parts.length ? `${c.name}:  ` + parts.join("   ") : null;
+}
+document.getElementById("cv").addEventListener("mousemove", ev => {
+  const txt = tooltipText(ev.target);
+  if (txt) {
+    tip.textContent = txt;
+    tip.style.display = "block";
+    tip.style.left = Math.min(ev.clientX + 14, window.innerWidth - 400) + "px";
+    tip.style.top = (ev.clientY + 14) + "px";
+  } else tip.style.display = "none";
+});
+document.getElementById("cv").addEventListener("mouseleave", () => { tip.style.display = "none"; });
+
+/* Strömungsrichtungspfeil: schlankes Dreieck in Leitungsfarbe, exakt in der
+   Mitte des Linienzugs. Nur für conduits mit gültigem Ergebnis; V̇ ≈ 0
+   (z.B. geschlossenes Ventil) und zu kurze Leitungen bleiben pfeilfrei.
+   Vorzeichenkonvention: q_m3h > 0 = Strömung von Endpunkt a nach b. */
+function flowArrow(w) { return ""; }
+
+/* ---------- Palette
+/* ---------- Palette ------------------------------------------------------ */
+// 'open_end' ist durch inflow/outflow abgedeckt; 'conduit' wird nicht als
+// Kasten platziert, sondern entsteht beim Ziehen jeder Leitung (Linie).
+const PALETTE_HIDDEN = new Set();
+let paletteTab = "comps";           // Palette-Register: "comps" | "tpl"
+function buildPalette(){
+  let html = `<div class="tabs">
+    <button class="tab${paletteTab==="comps"?" active":""}" data-ptab="comps">Komponenten</button>
+    <button class="tab${paletteTab==="tpl"?" active":""}" data-ptab="tpl">Vorlagen</button>
+  </div>`;
+  if (paletteTab === "comps") {
+    const groups = {};
+    for (const t of CATALOG.types) {
+      if (PALETTE_HIDDEN.has(t.type)) continue;
+      const m = META[t.type] || {de:t.type, grp:"Sonstige", pre:"k"};
+      (groups[m.grp] = groups[m.grp] || []).push({type:t.type, label:m.de, doc:t.doc});
+    }
+    for (const g of GRP_ORDER) {
+      if (!groups[g]) continue;
+      groups[g].sort((a, b) => a.label.localeCompare(b.label, "de"));
+      html += `<h3>${g}</h3>`;
+      for (const it of groups[g])
+        html += `<button class="pal-item" data-type="${it.type}" title="${esc(it.doc)}">${esc(it.label)}</button>`;
+    }
+  } else {
+    html += `<h3>Vorlagen
+      <button class="tpl-io" id="tpl-export" title="Eigene Vorlagen als JSON-Datei sichern">⤓</button>
+      <button class="tpl-io" id="tpl-import" title="Vorlagen aus JSON-Datei laden">⤒</button></h3>`;
+    const names = [...Object.keys(BUILTIN_TEMPLATES), ...Object.keys(userTemplates).sort()];
+    for (const n of names) {
+      const own = !!userTemplates[n];
+      html += `<div class="tpl-row">
+        <button class="pal-item" data-tpl="${esc(n)}"
+          title="Einfügen: anklicken, dann auf die Zeichenfläche klicken">${esc(n)}</button>` +
+        (own ? `<button class="tpl-del" data-del="${esc(n)}" title="Vorlage löschen">×</button>` : "") +
+        `</div>`;
+    }
+    html += `<div class="hint" style="margin:4px">Eigene Vorlage: Bereich auswählen →
+      Inspector „Als Vorlage speichern".</div>
+      <input type="file" id="tpl-fileinput" accept=".json" style="display:none">`;
+  }
+  document.getElementById("palette").innerHTML = html;
+}
+buildPalette();
+document.getElementById("palette").addEventListener("click", ev => {
+  const pt = ev.target.closest("[data-ptab]");
+  if (pt) {
+    paletteTab = pt.dataset.ptab;
+    placing = null; placingTemplate = null; setStatus("");
+    buildPalette(); return;
+  }
+  const del = ev.target.closest(".tpl-del");
+  if (del) {
+    if (confirm(`Vorlage '${del.dataset.del}' löschen?`)) {
+      delete userTemplates[del.dataset.del];
+      persistTemplates(); buildPalette();
+    }
+    return;
+  }
+  if (ev.target.closest("#tpl-export")) {
+    const blob = new Blob([JSON.stringify(userTemplates, null, 1)], {type: "application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "hydraulik_vorlagen.json"; a.click();
+    URL.revokeObjectURL(a.href); return;
+  }
+  if (ev.target.closest("#tpl-import")) {
+    document.getElementById("tpl-fileinput").click(); return;
+  }
+  const b = ev.target.closest(".pal-item");
+  if (!b) return;
+  if (b.dataset.tpl !== undefined) {                 // Vorlagen-Platzierungsmodus
+    placingTemplate = (placingTemplate === b.dataset.tpl) ? null : b.dataset.tpl;
+    placing = null;
+    document.querySelectorAll(".pal-item").forEach(x =>
+      x.classList.toggle("active", x.dataset.tpl === placingTemplate));
+    setStatus(placingTemplate
+      ? `Vorlage '${placingTemplate}': auf die Zeichenfläche klicken zum Einfügen (ESC bricht ab)`
+      : "");
+    return;
+  }
+  placing = (placing === b.dataset.type) ? null : b.dataset.type;
+  placingTemplate = null;
+  document.querySelectorAll(".pal-item").forEach(x =>
+    x.classList.toggle("active", x.dataset.type === placing));
+  setStatus(placing ? `Platzieren: auf die Zeichenfläche klicken (${META[placing]?.de || placing})` : "");
+});
+document.getElementById("palette").addEventListener("change", ev => {
+  if (ev.target.id !== "tpl-fileinput") return;
+  const f = ev.target.files[0];
+  if (!f) return;
+  f.text().then(t => {
+    try {
+      const data = JSON.parse(t);
+      let n = 0;
+      for (const [name, tpl] of Object.entries(data))
+        if (tpl && Array.isArray(tpl.comps)) { userTemplates[name] = tpl; n++; }
+      persistTemplates(); buildPalette();
+      setStatus(`${n} Vorlage(n) importiert.`);
+    } catch (e) { alert("Vorlagen-Import fehlgeschlagen: " + e); }
+  });
+  ev.target.value = "";
+});
+function setStatus(msg){ document.getElementById("status").textContent = msg ||
+  "Ports anklicken, um Leitungen zu ziehen. ESC bricht ab."; }
+
+/* ---------- Komponenten anlegen ------------------------------------------ */
+function nameTaken(name, self) {
+  return state.comps.some(c => c !== self && c.name === name) ||
+         state.wires.some(w => w !== self && w.name === name);
+}
+function freshName(type) {
+  const pre = (META[type] || {pre:"k"}).pre;
+  let i = 1;
+  while (nameTaken(pre + i)) i++;
+  return pre + i;
+}
+function addComp(type, x, y) {
+  const c = {id: idSeq++, type, name: freshName(type), ts: "", x: snap(x), y: snap(y),
+             rot: 0, params: {}};
+  invalidate();
+  state.comps.push(c);
+  selection = {kind:"comp", ref:c};
+  commit();
+  render();
+  return c;
+}
+const snap = v => Math.round(v / 8) * 8;
+
+/* ---------- Canvas-Interaktion ------------------------------------------- */
+function isTapPort(compId, port) { return false; }
+function portUsed(ref) {
+  return state.wires.some(w =>
+    (w.a.comp === ref.comp && w.a.port === ref.port) ||
+    (w.b.comp === ref.comp && w.b.port === ref.port));
+}
+function addWire(a, b) {
+  if (a.comp === b.comp && a.port === b.port) return;
+  if (portUsed(a) || portUsed(b)) {
+    setStatus("Port bereits verbunden — Luftstränge sind Ketten (keine Verzweigung). " +
+              "Bestehende Leitung zuerst löschen.");
+    return;
+  }
+  invalidate();
+  state.wires.push({a: {comp: a.comp, port: a.port}, b: {comp: b.comp, port: b.port},
+                    color: "n"});
+  commit();
+}
+svg.addEventListener("mousedown", ev => {
+  const pt = svgPoint(ev);
+  const portEl = ev.target.closest(".port, .port-hit-ring");
+  if (portEl) {
+    // Ziehen ODER Klick-Klick – entschieden wird beim mouseup
+    wireDrag = {from: {comp: Number(portEl.dataset.comp), port: portEl.dataset.port},
+                sx: pt.x, sy: pt.y, mx: pt.x, my: pt.y, moved: false, hover: null};
+    ev.preventDefault(); ev.stopPropagation(); return;
+  }
+  // Doppelklick-Erkennung selbst (das Re-Rendering nach dem ersten Klick
+  // ersetzt die SVG-Elemente – das native dblclick geht dabei verloren)
+  const wpEl = ev.target.closest(".wp");
+  if (wpEl) {
+    const key = wpEl.dataset.wire + "/" + wpEl.dataset.wp;
+    if (dblTrack.key === "wp:" + key && ev.timeStamp - dblTrack.t < 450) {   // Knick entfernen
+      const w = state.wires[Number(wpEl.dataset.wire)];
+      w.pts.splice(Number(wpEl.dataset.wp), 1);
+      if (!w.pts.length) delete w.pts;
+      dblTrack = {key: "", t: 0};
+      commit(); render(); return;
+    }
+    dblTrack = {key: "wp:" + key, t: ev.timeStamp};
+    wpDrag = {w: state.wires[Number(wpEl.dataset.wire)], idx: Number(wpEl.dataset.wp), moved: false};
+    ev.stopPropagation(); return;
+  }
+  const wireEl = ev.target.closest(".wire-hit");
+  if (wireEl) {
+    const idx = Number(wireEl.dataset.wire);
+    const w = state.wires[idx];
+    if (dblTrack.key === "wire:" + idx && ev.timeStamp - dblTrack.t < 450) { // Knick einfügen
+      insertWaypoint(w, pt);
+      selection = {kind: "wire", ref: w};
+      dblTrack = {key: "", t: 0};
+      commit(); render(); return;
+    }
+    dblTrack = {key: "wire:" + idx, t: ev.timeStamp};
+    selection = {kind: "wire", ref: w};
+    render(); return;
+  }
+  dblTrack = {key: "", t: 0};
+  const compEl = ev.target.closest("g.comp");
+  if (compEl) {
+    const c = compById(Number(compEl.dataset.comp));
+    if (ev.shiftKey) {                       // Auswahl ergänzen/entfernen
+      const ids = selection && selection.kind === "multi" ? new Set(selection.ids)
+                : new Set(selection && selection.kind === "comp" ? [selection.ref.id] : []);
+      ids.has(c.id) ? ids.delete(c.id) : ids.add(c.id);
+      selection = ids.size ? {kind: "multi", ids} : null;
+      render(); return;
+    }
+    if (!isSelectedComp(c)) selection = {kind: "comp", ref: c};
+    // Knickpunkte interner Leitungen wandern mit der Gruppe mit
+    const selIds = new Set(selectedComps().map(sc => sc.id));
+    const wpts = [];
+    for (const w of state.wires)
+      if (w.pts && selIds.has(w.a.comp) && selIds.has(w.b.comp))
+        for (const p of w.pts) wpts.push({p, ox: pt.x - p.x, oy: pt.y - p.y});
+    drag = {items: selectedComps().map(sc => ({c: sc, ox: pt.x - sc.x, oy: pt.y - sc.y})),
+            wpts, moved: false};
+    render(); return;
+  }
+  if (placingTemplate) {
+    const tpl = getTemplate(placingTemplate);
+    if (tpl) insertTemplate(deepClone(tpl), pt.x, pt.y);
+    return;
+  }
+  if (placing) { addComp(placing, pt.x, pt.y); return; }
+  boxSel = {x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y, active: false};   // Rechteck oder Klick
+});
+svg.addEventListener("mousemove", ev => {
+  const pt = svgPoint(ev);
+  if (wpDrag) {
+    const p = wpDrag.w.pts[wpDrag.idx];
+    p.x = snap(pt.x); p.y = snap(pt.y);
+    wpDrag.moved = true;
+    render(); return;
+  }
+  if (wireDrag) {
+    if (Math.hypot(pt.x - wireDrag.sx, pt.y - wireDrag.sy) > 5) wireDrag.moved = true;
+    wireDrag.mx = pt.x; wireDrag.my = pt.y;
+    wireDrag.hover = portAt(pt.x, pt.y, wireDrag.from);
+    if (wireDrag.moved) render();
+    return;
+  }
+  if (boxSel) {
+    boxSel.x1 = pt.x; boxSel.y1 = pt.y;
+    if (Math.hypot(pt.x - boxSel.x0, pt.y - boxSel.y0) > 5) boxSel.active = true;
+    if (boxSel.active) render();
+    return;
+  }
+  if (!drag) return;
+  for (const it of drag.items) {
+    it.c.x = Math.max(32, snap(pt.x - it.ox));
+    it.c.y = Math.max(32, snap(pt.y - it.oy));
+  }
+  for (const it of drag.wpts) {
+    it.p.x = Math.max(16, snap(pt.x - it.ox));
+    it.p.y = Math.max(16, snap(pt.y - it.oy));
+  }
+  drag.moved = true;
+  render();
+});
+window.addEventListener("mouseup", () => {
+  if (wpDrag) { if (wpDrag.moved) commit(); wpDrag = null; }
+  if (drag) { if (drag.moved) commit(); drag = null; }
+  if (boxSel) {
+    const bs = boxSel; boxSel = null;
+    if (bs.active) {                              // Rechteck: alle Komponenten darin
+      const x0 = Math.min(bs.x0, bs.x1), x1 = Math.max(bs.x0, bs.x1);
+      const y0 = Math.min(bs.y0, bs.y1), y1 = Math.max(bs.y0, bs.y1);
+      const ids = new Set(state.comps
+        .filter(c => c.x >= x0 && c.x <= x1 && c.y >= y0 && c.y <= y1)
+        .map(c => c.id));
+      selection = ids.size ? {kind: "multi", ids} : null;
+    } else { selection = null; pendingPort = null; }   // einfacher Klick ins Leere
+    render();
+  }
+  if (!wireDrag) return;
+  const wd = wireDrag; wireDrag = null;
+  if (wd.moved) {                                    // gezogen: auf Zielport einrasten
+    if (wd.hover) addWire(wd.from, wd.hover);
+    pendingPort = null; setStatus("");
+  } else if (pendingPort) {                          // zweiter Klick
+    if (!(pendingPort.comp === wd.from.comp && pendingPort.port === wd.from.port))
+      addWire(pendingPort, wd.from);
+    pendingPort = null; setStatus("");
+  } else {                                           // erster Klick
+    pendingPort = {...wd.from};
+    setStatus("Zum Zielport ziehen oder zweiten Port anklicken … (ESC bricht ab)");
+  }
+  render();
+});
+window.addEventListener("keydown", ev => {
+  if (ev.key === "Escape") { placing = null; placingTemplate = null; pendingPort = null; wireDrag = null; boxSel = null; wpDrag = null;
+    document.querySelectorAll(".pal-item").forEach(x => x.classList.remove("active"));
+    setStatus(""); render(); }
+  const inForm = (ev.target instanceof HTMLInputElement) ||
+                 (ev.target instanceof HTMLTextAreaElement) ||
+                 (ev.target instanceof HTMLSelectElement);
+  if ((ev.key === "Delete" || ev.key === "Backspace") && !inForm) {
+    deleteSelection(); ev.preventDefault();
+  }
+  if ((ev.key === "r" || ev.key === "R") && !inForm) rotateSelection();
+  if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "z") {
+    ev.shiftKey ? redo() : undo(); ev.preventDefault();
+  }
+  if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "y") {
+    redo(); ev.preventDefault();
+  }
+  if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "c" &&
+      selection && selection.kind !== "wire") { copySelection(); ev.preventDefault(); }
+  if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "v") {
+    pasteClipboard(); ev.preventDefault();
+  }
+  if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "d") {
+    copySelection(); pasteClipboard(); ev.preventDefault();
+  }
+});
+document.getElementById("btn-copy").onclick = copySelection;
+document.getElementById("btn-paste").onclick = pasteClipboard;
+document.getElementById("btn-undo").onclick = undo;
+document.getElementById("btn-redo").onclick = redo;
+function rotateSelection() {
+  if (selection && selection.kind === "comp") {
+    selection.ref.rot = ((selection.ref.rot || 0) + 90) % 360;
+    commit();
+    render();          // reine Darstellung – Ergebnisse bleiben gültig
+  }
+}
+function svgPoint(ev) {
+  // Bounding-Rect des SVG folgt bereits dem Scroll → Zoomfaktor herausrechnen
+  const r = svg.getBoundingClientRect();
+  return {x: (ev.clientX - r.left) / zoom, y: (ev.clientY - r.top) / zoom};
+}
+document.getElementById("canvas-wrap").addEventListener("wheel", ev => {
+  if (!(ev.ctrlKey || ev.metaKey)) return;       // normales Rad = Scrollen
+  ev.preventDefault();
+  setZoom(zoom * (ev.deltaY < 0 ? 1.15 : 1 / 1.15), ev);
+}, {passive: false});
+document.getElementById("btn-zoom-in").onclick = () => setZoom(zoom * 1.25);
+document.getElementById("btn-zoom-out").onclick = () => setZoom(zoom / 1.25);
+document.getElementById("btn-zoom-reset").onclick = () => setZoom(1.0);
+function deleteSelection() {
+  if (!selection) return;
+  invalidate();
+  if (selection.kind === "wire") {
+    state.wires = state.wires.filter(w => w !== selection.ref);
+  } else {
+    const ids = new Set(selectedComps().map(c => c.id));
+    state.wires = state.wires.filter(w => !ids.has(w.a.comp) && !ids.has(w.b.comp));
+    state.comps = state.comps.filter(c => !ids.has(c.id));
+  }
+  selection = null; commit(); render();
+}
+document.getElementById("btn-del").onclick = deleteSelection;
+
+/* ---------- Inspector ----------------------------------------------------- */
+function renderInspector() {
+  const el = document.getElementById("inspector");
+  // Läuft gerade eine Eingabe (Fokus in einem Formularfeld des Inspectors),
+  // wird das Formular NICHT neu aufgebaut – sonst verschluckt der DOM-Tausch
+  // Folgeklicks auf die Spinner-Pfeile der Zahlenfelder. Nur die Prüfliste
+  // wird aktualisiert; der nächste Render (Klick in die Zeichnung, Auswahl-
+  // wechsel, …) baut das Formular regulär neu.
+  const ae = document.activeElement;
+  if (!inspectorForce &&
+      (inspectorHold ||
+       (el.contains(ae) && (ae instanceof HTMLInputElement || ae instanceof HTMLSelectElement)
+        && ae.dataset.kind !== "suffix" && ae.dataset.kind !== "choice"
+        && ae.dataset.mgroup === undefined))) {
+    refreshIssues();
+    return;
+  }
+  let html = fluidForm();
+  if (selection && selection.kind === "comp") html += compForm(selection.ref);
+  else if (selection && selection.kind === "wire") html += wireForm(selection.ref);
+  else if (selection && selection.kind === "multi")
+    html += `<h3>Auswahl</h3><div class="hint">${selection.ids.size} Komponenten ausgewählt.<br>
+      Ziehen verschiebt gemeinsam · Strg+C kopiert (inkl. interner Leitungen) ·
+      Strg+V fügt ein · Strg+D dupliziert · Entf löscht · Shift+Klick ergänzt/entfernt.</div>
+      <div class="field"><button id="btn-save-tpl">Auswahl als Vorlage speichern…</button></div>`;
+  html += `<h3>Prüfungen <span class="hint">(gesamte Zeichnung – klicken wählt aus)</span></h3>` +
+          `<ul id="issues"></ul>`;
+  el.innerHTML = html;
+  refreshIssues();
+  bindInspector();
+}
+function refreshIssues() {
+  const ul = document.getElementById("issues");
+  if (!ul) return;
+  ul.innerHTML = validate().map(i => `<li class="${i.err?'err':''}"` +
+    (i.comp !== undefined ? ` data-focus="${i.comp}"` : "") +
+    `>${esc(i.msg)}</li>`).join("");
+  ul.querySelectorAll("li[data-focus]").forEach(li => {
+    li.onclick = () => {
+      const c = compById(Number(li.dataset.focus));
+      if (c) {
+        selection = {kind: "comp", ref: c};
+        const wrap = document.getElementById("canvas-wrap");
+        wrap.scrollTo({left: Math.max(0, c.x * zoom - wrap.clientWidth / 2),
+                       top: Math.max(0, c.y * zoom - wrap.clientHeight / 2), behavior: "smooth"});
+        render();
+      }
+    };
+  });
+}
+function fluidForm() {
+  if (!lastResult) return `<h3>Lüftungsanlage</h3>
+    <div class="hint">Anlage als zwei Ketten zeichnen: Außenluft → … → Zuluft
+    (oben) und Abluft → … → Fortluft (unten); die WRG verbindet beide Stränge.
+    ▶ Rechnen ruft den VKA-Optimierer (EN 16798-5-1) auf.</div>`;
+  const L = lastResult.leistungen || {}, Z = lastResult.zuluft || {};
+  const row = (de, v, unit) => v ? `<div class="hint">${de}: <b>${fmt(v, 2)} ${unit}</b></div>` : "";
+  return `<h3>Ergebnis (${esc(lastResult.regelung)})</h3>
+    <div class="hint">Zuluft: <b>${fmt(Z.t_C, 1)} °C</b> / <b>${fmt(Z.phi_pct, 0)} %</b>
+      (${fmt(Z.x_gkg, 2)} g/kg, ${fmt(Z.v_m3h, 0)} m³/h)</div>` +
+    row("Heizen gesamt", L.heizen_gesamt_kW, "kW") +
+    row("Kühlen", L.kuehlen_kW, "kW") +
+    row("Befeuchter", L.befeuchter_wasser_kg_h, "kg/h") +
+    row("WRG-Rückgewinnung", L.wrg_kW, "kW") +
+    row("Ventilatoren elektrisch", L.ventilatoren_el_kW, "kW") +
+    (lastResult.raum ? row("Raumfeuchte (gewählt)", lastResult.raum.rh_pct, "%") : "");
+}
+/* Modusabhängige Eingabefelder je Betriebsart. */
+const PARAM_MODES = {
+  zuluft: [{source: "regelung", label: "Regelungsart", options: [
+    {key: "fest", de: "Zuluftzustand fest (gepinnt)", fields: ["t", "rh"]},
+    {key: "band", de: "Zuluft-Sollband", fields: ["t_min", "t_max", "rh_min", "rh_max"]},
+    {key: "raum", de: "raumgekoppelt (Feuchtelast)",
+     fields: ["t_min", "t_max", "raum_rh_min", "raum_rh_max", "feuchtelast"]}]}],
+  wrg: [{source: "typ", label: "Bauart", options: [
+    {key: "ROT_SORP", de: "Sorptionsrotor", fields: ["eta_hr_n", "eta_xr_n"]},
+    {key: "ROT_HYG", de: "Enthalpierotor", fields: ["eta_hr_n", "eta_xr_n", "adiab_exhaust"]},
+    {key: "ROT_NH", de: "Kondensationsrotor", fields: ["eta_hr_n", "adiab_exhaust"]},
+    {key: "KVS", de: "Kreislaufverbundsystem", fields: ["rwz_n"]},
+    {key: "PLATE", de: "Plattentauscher", fields: []}]}],
+};
+function paramSpec(type, name) { return TYPES[type].params.find(p => p.name === name); }
+function paramIsSet(c, type, name) {
+  const p = paramSpec(type, name);
+  const keys = p && p.keys ? p.keys : [name];
+  return keys.some(k => c.params[k] !== undefined);
+}
+function activeModeOption(c, type, group, gi) {
+  if (group.source) {
+    const v = c.params[group.source] ?? (paramSpec(type, group.source) || {}).default;
+    return group.options.find(o => o.key === v) || null;
+  }
+  const counts = group.options.map(o => o.fields.filter(f => paramIsSet(c, type, f)).length);
+  const maxN = Math.max(0, ...counts);
+  const cands = group.options.filter((o, i) => maxN > 0 ? counts[i] === maxN : true);
+  const chosen = c.mchoice && c.mchoice[gi];
+  const byChoice = cands.find(o => o.key === chosen);
+  if (byChoice) return byChoice;
+  if (maxN > 0) return cands[0];
+  return group.options.find(o => o.default) || null;
+}
+function paramsSection(c, type) {
+  const t = TYPES[type];
+  const groups = PARAM_MODES[type] || [];
+  const moded = new Set();
+  groups.forEach(g => {
+    if (g.source) moded.add(g.source);
+    g.options.forEach(o => o.fields.forEach(f => moded.add(f)));
+  });
+  let html = "";
+  for (const p of t.params)
+    if (p.name !== "description" && !moded.has(p.name)) html += paramField(c, p);
+  groups.forEach((g, gi) => {
+    const act = activeModeOption(c, type, g, gi);
+    html += `<div class="field"><label>${esc(g.label)}</label>
+      <select data-mgroup="${gi}" data-mtype="${type}">` +
+      (act ? "" : `<option value="" selected>– wählen –</option>`) +
+      g.options.map(o => `<option value="${o.key}"${act && act.key === o.key ? " selected" : ""}>${esc(o.de)}</option>`).join("") +
+      `</select></div>`;
+    if (act)
+      for (const f of act.fields) {
+        const p = paramSpec(type, f);
+        if (p) html += paramField(c, p);
+      }
+  });
+  return html;
+}
+function compForm(c) {
+  const t = TYPES[c.type];
+  let html = `<h3>${esc((META[c.type]||{de:c.type}).de)} <span class="hint">(${c.type})</span></h3>
+    <div class="field"><label>Name</label><input type="text" id="c-name" value="${esc(c.name)}"></div>
+    <div class="tabs">
+      <button class="tab${inspectorTab==="fluid"?" active":""}" data-tab="fluid">Fluid-Info</button>
+      <button class="tab${inspectorTab==="bems"?" active":""}" data-tab="bems">BEMS-Info</button>
+    </div>`;
+  if (inspectorTab === "bems") return html + bemsForm(c);
+  html += `<div class="field"><label>Ausrichtung: ${c.rot || 0}°</label>
+      <button id="c-rot">↻ 90° drehen (Taste r)</button></div>`;
+  html += paramsSection(c, c.type);
+  return html;
+}
+function bemsForm(c) {
+  // BEMS-Info: Semantikbeschreibung + frei viele Messpunkte (id/key/description)
+  const t = TYPES[c.type];
+  const descSpec = t.params.find(p => p.name === "description");
+  let html = descSpec ? paramField(c, descSpec) : "";
+  const list = c.bems || [];
+  html += `<h3>Messpunkte <span class="hint">(${list.length} BEMS-Datenpunkte)</span></h3>`;
+  list.forEach((e, i) => {
+    html += `<div class="bems-box">
+      <div class="field"><label>bems_id <span class="hint">(Datenpunkt-ID)</span></label>
+        <input type="text" data-bems="id" data-i="${i}" spellcheck="false"
+               placeholder="abfragbare BEMS-/Aedifion-ID…" value="${esc(e.id || "")}"></div>
+      <div class="field"><label>bems_key <span class="hint">(Alias)</span></label>
+        <input type="text" data-bems="key" data-i="${i}" spellcheck="false"
+               placeholder="z.B. EXP_VENT_VE_T_VL" value="${esc(e.key || "")}"></div>
+      <div class="field"><label>description</label>
+        <input type="text" data-bems="description" data-i="${i}"
+               placeholder="Messgröße, Einbauort…" value="${esc(e.description || "")}"></div>
+      <button class="bems-del" data-i="${i}">× Messpunkt entfernen</button>
+    </div>`;
+  });
+  html += `<div class="field"><button id="bems-add">+ Messpunkt hinzufügen</button></div>`;
+  if (!list.length)
+    html += `<div class="hint">Je Messpunkt: abfragbare Datenpunkt-ID (bems_id),
+      sprechender Alias (bems_key) und Beschreibung — beliebig viele je Komponente
+      (z.B. WMZ: V̇, Q̇, Q_kum, ϑ_VL, ϑ_RL; Speicher: mehrere Fühler).</div>`;
+  return html;
+}
+function paramField(c, p) {
+  const req = p.required ? ` <span class="req">*</span>` : "";
+  const help = p.help ? ` title="${esc(p.help)}"` : "";
+  if (p.choices) {
+    const cur = c.params[p.name];
+    return `<div class="field"${help}><label>${p.name}${req}</label>
+      <select data-param="${p.name}" data-kind="choice">
+      <option value=""></option>` +
+      p.choices.map(ch => `<option${cur===ch?" selected":""}>${ch}</option>`).join("") +
+      `</select></div>`;
+  }
+  if (p.group === "bool") {
+    return `<div class="field"${help}><label><input type="checkbox" data-param="${p.name}"
+      data-kind="bool"${c.params[p.name] ? " checked" : ""}> ${p.name}${req}</label></div>`;
+  }
+  if (p.group === "str") {                   // Freitext (BEMS-IDs, Beschreibungen)
+    const cur = c.params[p.name] ?? "";
+    return `<div class="field"${help}><label>${p.name}${req}</label>
+      <input type="text" data-param="${p.name}" data-kind="str" spellcheck="false"
+             value="${esc(String(cur))}" placeholder="${p.name.startsWith("bems") ? "BEMS-Datenpunkt…" : ""}"></div>`;
+  }
+  if (p.group === "int" || p.group === "none") {
+    const cur = firstKeyValue(c, [p.name]);
+    const ph = p.default != null ? ` placeholder="${p.default}"` : "";
+    const lim = (p.minv != null ? ` min="${p.minv}"` : "") +
+                (p.maxv != null ? ` max="${p.maxv}"` : "");
+    return `<div class="field"${help}><label>${p.name}${req}` +
+      (p.group === "none" ? ` <span class="hint">[–]</span>` : "") +
+      (p.minv != null || p.maxv != null
+        ? ` <span class="hint">[${p.minv ?? ""}…${p.maxv ?? ""}]</span>` : "") +
+      `</label><input type="number" data-param="${p.name}" data-kind="num" data-key="${p.name}"
+      ${p.group==="int"?'step="1"':""}${lim} value="${cur ?? ""}"${ph}></div>`;
+  }
+  // Einheitengruppe: Zahl + Suffixwahl (Wahl bleibt auch ohne Wert erhalten)
+  const keys = p.keys;
+  const used = keys.find(k => c.params[k] !== undefined) ||
+               (c.suffix && c.suffix[p.name]) || keys[0];
+  const factors = CATALOG.units[p.group];
+  const sfx = used.slice(p.name.length + 1);
+  const ph = p.default != null ? ` placeholder="${round6(p.default / factors[sfx])}"` : "";
+  // min/max in der Anzeigeeinheit (minv/maxv sind SI) – begrenzt die Spinner-Pfeile
+  const lim = (p.minv != null ? ` min="${round6(p.minv / factors[sfx])}"` : "") +
+              (p.maxv != null ? ` max="${round6(p.maxv / factors[sfx])}"` : "");
+  return `<div class="field"${help}><label>${p.name}${req} <span class="hint">[${GROUP_LABEL[p.group] || p.group}]</span></label>
+    <div class="unitrow">
+      <input type="number" step="any" data-param="${p.name}" data-kind="unit" data-key="${used}"
+             value="${c.params[used] ?? ""}"${ph}${lim}>
+      <select data-param="${p.name}" data-kind="suffix" data-base="${p.name}">` +
+      keys.map(k => `<option value="${k}"${k===used?" selected":""}>${unitLabel(k.slice(p.name.length+1))}</option>`).join("") +
+      `</select></div></div>`;
+}
+function firstKeyValue(c, keys){ for (const k of keys) if (c.params[k] !== undefined) return c.params[k]; }
+function round6(v){ return Math.round(v * 1e6) / 1e6; }
+function wireForm(w) {
+  const label = wl => ({aul:"Außenluft (grün)", zul:"Zuluft (blau)",
+                        abl:"Abluft (orange)", fol:"Fortluft (braun)",
+                        n:"neutral (grau)"})[wl];
+  let html = `<h3>Luftkanal</h3>
+      <div class="hint">${esc(portRef(w.a))} → ${esc(portRef(w.b))}</div>
+      <div class="field"><label>Darstellung</label>
+      <select id="w-color">` +
+      ["aul","zul","abl","fol","n"].map(cl =>
+        `<option value="${cl}"${w.color===cl?" selected":""}>${label(cl)}</option>`).join("") +
+      `</select></div>
+      <div class="hint">Leitungsführung: Doppelklick auf die Leitung setzt einen
+      Knickpunkt; Griffe ziehen zum Verschieben; Doppelklick auf einen Griff
+      entfernt ihn.</div>` +
+    (w.pts && w.pts.length
+      ? `<div class="field"><button id="w-clearpts">Alle ${w.pts.length} Knickpunkte entfernen</button></div>`
+      : "");
+  return html;
+}
+function portRef(end){ const c = compById(end.comp); return `${c ? c.name : "?"}.${end.port}`; }
+
+function bindInspector() {
+  const el = document.getElementById("inspector");
+  const flMode = el.querySelector("#fl-mode");
+  if (flMode) flMode.onchange = () => { invalidate(); state.fluid.mode = flMode.value; commit(); render(); };
+  for (const [id, key] of [["fl-t","t_C"],["fl-rho","rho"],["fl-mu","mu"],["fl-cp","cp"]]) {
+    const inp = el.querySelector("#" + id);
+    if (inp) inp.onchange = () => { invalidate(); state.fluid[key] = Number(inp.value); commit(); autosave(); };
+  }
+  const wireSel = selection && selection.kind === "wire" ? selection.ref : null;
+  if (wireSel) {
+    const wc = el.querySelector("#w-color");
+    if (wc) wc.onchange = () => { wireSel.color = wc.value; commit(); render(); };
+    const cp = el.querySelector("#w-clearpts");
+    if (cp) cp.onclick = () => { delete wireSel.pts; commit(); render(); };
+  }
+  const st = el.querySelector("#btn-save-tpl");
+  if (st) st.onclick = saveSelectionAsTemplate;
+  // Ziel für Name/ts/Parameter: Komponente ODER Verbindungsleitung
+  const c = selection && selection.kind === "comp" ? selection.ref
+          : (wireSel && wireSel.type === "conduit" ? wireSel : null);
+  if (!c) return;
+  const holdRender = () => {              // Wertänderung: Formular stehen lassen
+    inspectorHold = true;
+    try { render(); } finally { inspectorHold = false; }
+  };
+  el.querySelectorAll(".tab").forEach(btn => btn.onclick = () => {
+    inspectorTab = btn.dataset.tab; renderInspector();
+  });
+  el.querySelectorAll("[data-pipe]").forEach(inp => {
+    inp.onchange = () => {
+      if (!inp.isConnected || inspectorForce) return;
+      invalidate();
+      const seg = c.pipes[Number(inp.dataset.i)];
+      const key = inp.dataset.pipe, base = key.split("_")[0] === "d" ? "d_inner" : key.split("_")[0];
+      Object.keys(seg).forEach(k => {               // alte Suffix-Varianten räumen
+        if (k === base || k.startsWith(base + "_")) delete seg[k];
+      });
+      if (inp.value.trim() !== "") seg[key] = Number(inp.value);
+      commit(); holdRender();
+    };
+  });
+  el.querySelectorAll(".pipe-del").forEach(btn => btn.onclick = () => {
+    invalidate();
+    c.pipes.splice(Number(btn.dataset.i), 1);
+    if (!c.pipes.length) delete c.pipes;
+    commit(); renderInspector();
+  });
+  const pipeAdd = el.querySelector("#pipe-add");
+  if (pipeAdd) pipeAdd.onclick = () => {
+    invalidate(); (c.pipes = c.pipes || []).push({}); commit(); renderInspector();
+  };
+  el.querySelectorAll("select[data-mgroup]").forEach(sel => {
+    sel.onchange = () => {
+      const type = sel.dataset.mtype;
+      const g = (PARAM_MODES[type] || [])[Number(sel.dataset.mgroup)];
+      const opt = g && g.options.find(o => o.key === sel.value);
+      if (!opt) return;
+      invalidate();
+      const keep = new Set(opt.fields);
+      c.mstash = c.mstash || {};          // Werte verlassener Modi aufheben
+      g.options.forEach(o => o.fields.forEach(f => {
+        if (keep.has(f)) return;
+        const p = paramSpec(type, f);
+        (p && p.keys ? p.keys : [f]).forEach(k => {
+          if (c.params[k] !== undefined) { c.mstash[k] = c.params[k]; delete c.params[k]; }
+        });
+      }));
+      opt.fields.forEach(f => {           // …und beim Zurückschalten wiederherstellen
+        const p = paramSpec(type, f);
+        (p && p.keys ? p.keys : [f]).forEach(k => {
+          if (c.mstash[k] !== undefined && !paramIsSet(c, type, f)) {
+            c.params[k] = c.mstash[k];
+          }
+          delete c.mstash[k];
+        });
+      });
+      g.options.forEach(o => {             // Segmentlisten ebenso stashen/holen
+        if (!o.list || o === opt) return;
+        if (c[o.list] && c[o.list].length) { c.mstash["__" + o.list] = c[o.list]; delete c[o.list]; }
+      });
+      if (opt.list && c.mstash["__" + opt.list]) {
+        c[opt.list] = c.mstash["__" + opt.list];
+        delete c.mstash["__" + opt.list];
+      }
+      if (g.source) c.params[g.source] = opt.key;
+      else (c.mchoice = c.mchoice || {})[sel.dataset.mgroup] = opt.key;
+      commit();
+      inspectorForce = true;             // Umbau auch bei fokussiertem Eingabefeld
+      try { render(); } finally { inspectorForce = false; }
+    };
+  });
+  el.querySelectorAll("[data-bems]").forEach(inp => {
+    inp.onchange = () => {
+      invalidate();
+      c.bems = c.bems || [];
+      const e = c.bems[Number(inp.dataset.i)], v = inp.value.trim();
+      if (v) e[inp.dataset.bems] = v; else delete e[inp.dataset.bems];
+      commit(); holdRender();
+    };
+  });
+  el.querySelectorAll(".bems-del").forEach(btn => btn.onclick = () => {
+    invalidate();
+    c.bems.splice(Number(btn.dataset.i), 1);
+    if (!c.bems.length) delete c.bems;
+    commit(); renderInspector();
+  });
+  const bemsAdd = el.querySelector("#bems-add");
+  if (bemsAdd) bemsAdd.onclick = () => {
+    invalidate(); (c.bems = c.bems || []).push({}); commit(); renderInspector();
+  };
+  const nm = el.querySelector("#c-name");
+  nm.onchange = () => {
+    const v = nm.value.trim();
+    if (!v || nameTaken(v, c)) { nm.value = c.name; return; }
+    invalidate(); c.name = v; commit(); holdRender();
+  };
+  const tsInp = el.querySelector("#c-ts");   // nur im Register Fluid-Info vorhanden
+  if (tsInp) tsInp.onchange = ev => { invalidate(); c.ts = ev.target.value.trim(); commit(); holdRender(); };
+  const rotBtn = el.querySelector("#c-rot");
+  if (rotBtn) rotBtn.onclick = rotateSelection;
+  el.querySelectorAll("[data-param]").forEach(inp => {
+    inp.onchange = () => {
+      // nachlaufende change-Events ersetzter/gerade ausgetauschter Felder
+      // (Blur während des Modus-Umbaus) sind veraltet — ignorieren
+      if (!inp.isConnected || inspectorForce) return;
+      invalidate();
+      const kind = inp.dataset.kind, pname = inp.dataset.param;
+      if (kind === "choice") { setOrDelete(c.params, pname, inp.value || undefined); }
+      else if (kind === "bool") { c.params[pname] = inp.checked; }
+      else if (kind === "str") { setOrDelete(c.params, pname, inp.value.trim() || undefined); }
+      else if (kind === "num") { setOrDelete(c.params, pname, inp.value === "" ? undefined : Number(inp.value)); }
+      else if (kind === "unit") { setOrDelete(c.params, inp.dataset.key, inp.value === "" ? undefined : Number(inp.value)); }
+      else if (kind === "suffix") {
+        const t = TYPES[c.type], p = t.params.find(x => x.name === pname);
+        const factors = CATALOG.units[p.group];
+        const oldKey = p.keys.find(k => c.params[k] !== undefined);
+        const newKey = inp.value;
+        c.suffix = c.suffix || {};
+        c.suffix[pname] = newKey;
+        if (oldKey && oldKey !== newKey) {   // Wert in neue Einheit umrechnen
+          const si = c.params[oldKey] * factors[oldKey.slice(pname.length+1)];
+          delete c.params[oldKey];
+          c.params[newKey] = round6(si / factors[newKey.slice(pname.length+1)]);
+        }
+      }
+      commit();
+      // Reine Wertänderung: Formularstruktur bleibt – nicht neu aufbauen.
+      // Nur Suffixwechsel (Wert wird umgerechnet angezeigt) braucht den Umbau.
+      inspectorHold = (kind !== "suffix");
+      try { render(); } finally { inspectorHold = false; }
+    };
+  });
+}
+function setOrDelete(obj, key, val){ if (val === undefined) delete obj[key]; else obj[key] = val; }
+
+/* ---------- Validierung --------------------------------------------------- */
+function validate() {
+  const issues = [];
+  for (const c of state.comps) {
+    const t = TYPES[c.type];
+    for (const p of t.params) {
+      if (!p.required) continue;
+      const has = p.choices || p.group==="bool" || p.group==="int" || p.group==="none"
+        ? c.params[p.name] !== undefined && c.params[p.name] !== ""
+        : p.keys.some(k => c.params[k] !== undefined);
+      if (!has) issues.push({err:true, comp:c.id, msg:`${c.name}: Pflichtparameter '${p.name}' fehlt`});
+    }
+    // Bereichsprüfung (minv/maxv sind SI-Werte; Eingabe über Suffixfaktor umrechnen)
+    for (const p of t.params) {
+      if (p.minv == null && p.maxv == null) continue;
+      let si = null;
+      if (p.group === "int" || p.group === "none") si = c.params[p.name];
+      else if (!p.choices && p.group !== "bool") {
+        const k = p.keys.find(k => c.params[k] !== undefined);
+        if (k !== undefined)
+          si = c.params[k] * CATALOG.units[p.group][k.slice(p.name.length + 1)];
+      }
+      if (si == null || si === "") continue;
+      if (p.minv != null && si < p.minv)
+        issues.push({err:true, comp:c.id,
+          msg:`${c.name}: '${p.name}' unter Minimum (${limitLabel(p, p.minv)})`});
+      if (p.maxv != null && si > p.maxv)
+        issues.push({err:true, comp:c.id,
+          msg:`${c.name}: '${p.name}' über Maximum (${limitLabel(p, p.maxv)}) – z.B. Ventilstellung 0…1, nicht %`});
+    }
+    for (const pn of portNames(c)) {
+      const used = state.wires.some(w =>
+        (w.a.comp===c.id && w.a.port===pn) || (w.b.comp===c.id && w.b.port===pn));
+      if (!used) issues.push({err:false, comp:c.id, msg:`${c.name}.${pn} ist unverbunden`});
+    }
+  }
+  // Verbindungsleitungen: Bereichs-/Pflichtprüfung ihrer Parameter
+  for (const w of state.wires) {
+    if (w.type !== "conduit") continue;
+    for (const p of TYPES.conduit.params) {
+      if (p.minv == null && p.maxv == null) continue;
+      const k = p.keys.find(k => (w.params || {})[k] !== undefined);
+      if (k === undefined) continue;
+      const si = w.params[k] * (CATALOG.units[p.group] ? CATALOG.units[p.group][k.slice(p.name.length + 1)] : 1);
+      if (p.minv != null && si < p.minv)
+        issues.push({err:true, msg:`${w.name}: '${p.name}' unter Minimum (${limitLabel(p, p.minv)})`});
+      if (p.maxv != null && si > p.maxv)
+        issues.push({err:true, msg:`${w.name}: '${p.name}' über Maximum (${limitLabel(p, p.maxv)})`});
+    }
+  }
+  if (!state.comps.length) issues.push({err:false, msg:"Noch keine Komponenten gezeichnet."});
+  return issues;
+}
+
+/* ---------- YAML Export --------------------------------------------------- */
+function yamlScalar(v) {
+  if (typeof v === "number") return String(v);
+  if (typeof v === "boolean") return v ? "true" : "false";
+  const s = String(v);
+  return /^[A-Za-z0-9_.\-]+$/.test(s) ? s : JSON.stringify(s);
+}
+function exportYAML() {
+  let y = "components:\n";
+  const compEntry = c => {
+    const parts = [`type: ${c.type}`];
+    for (const [k, v] of Object.entries(c.params || {})) parts.push(`${k}: ${yamlScalar(v)}`);
+    if (c.ts) parts.push(`ts: ${JSON.stringify(c.ts)}`);
+    if (c.bems && c.bems.length)
+      parts.push(`bems: [${c.bems.map(e => "{" +
+        ["id", "key", "description"].filter(f => e[f])
+          .map(f => `${f}: ${JSON.stringify(e[f])}`).join(", ") + "}").join(", ")}]`);
+    if (c.pipes && c.pipes.length)
+      parts.push(`pipes: [${c.pipes.map(seg => "{" +
+        Object.entries(seg).map(([k, v]) => `${k}: ${yamlScalar(v)}`).join(", ")
+        + "}").join(", ")}]`);
+    return `  ${c.name}: {${parts.join(", ")}}\n`;
+  };
+  for (const c of state.comps) y += compEntry(c);
+  y += "\nconnections:\n";
+  for (const w of state.wires) y += `  - [${portRef(w.a)}, ${portRef(w.b)}]\n`;
+  y += "\nlayout:\n  components:\n";
+  for (const c of state.comps)
+    y += `    ${c.name}: {x: ${c.x}, y: ${c.y}${c.rot ? `, rot: ${c.rot}` : ""}}\n`;
+  y += "  wires:\n";
+  for (const w of state.wires) {
+    const pts = w.pts && w.pts.length
+      ? `, pts: ${JSON.stringify(w.pts.map(p => [p.x, p.y]))}` : "";
+    y += `    - {a: ${portRef(w.a)}, b: ${portRef(w.b)}, color: ${w.color}${pts}}\n`;
+  }
+  return y;
+}
+
+/* ---------- YAML Import (Subset-Parser für das Editor-/Beispielformat) ---- */
+function splitTop(s, sep) {                       // Kommasplit auf oberster Ebene
+  const out = []; let depth = 0, cur = "", q = null;
+  for (const ch of s) {
+    if (q) { cur += ch; if (ch === q) q = null; continue; }
+    if (ch === '"' || ch === "'") { q = ch; cur += ch; continue; }
+    if (ch === "{" || ch === "[") depth++;
+    if (ch === "}" || ch === "]") depth--;
+    if (ch === sep && depth === 0) { out.push(cur); cur = ""; } else cur += ch;
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+}
+function parseValue(s) {
+  s = s.trim();
+  if (s.startsWith("{")) return parseInlineMap(s);
+  if (s.startsWith("[")) return splitTop(s.slice(1, -1), ",").map(parseValue);
+  if (/^".*"$/.test(s) || /^'.*'$/.test(s)) return s.slice(1, -1);
+  if (s === "true") return true;
+  if (s === "false") return false;
+  if (s !== "" && !isNaN(Number(s))) return Number(s);
+  return s;
+}
+function parseInlineMap(s) {
+  s = s.trim();
+  if (s.startsWith("{")) s = s.slice(1, -1);
+  const obj = {};
+  for (const part of splitTop(s, ",")) {
+    const i = part.indexOf(":");
+    if (i < 0) continue;
+    obj[part.slice(0, i).trim()] = parseValue(part.slice(i + 1));
+  }
+  return obj;
+}
+function parseInlineList(s) {
+  s = s.trim();
+  if (s.startsWith("[")) s = s.slice(1, -1);
+  return splitTop(s, ",").map(x => String(parseValue(x)));
+}
+function importYAML(text) {
+  const doc = {fluid: null, components: {}, connections: [], layout: {components: {}, wires: []}};
+  let section = null, sub = null, buf = null;
+  const flush = () => {
+    if (!buf) return;
+    const i = buf.text.indexOf(":");
+    const name = buf.text.slice(0, i).trim();
+    const val = buf.text.slice(i + 1).trim();
+    if (buf.target === "components") doc.components[name] = parseInlineMap(val);
+    else if (buf.target === "layout-components") doc.layout.components[name] = parseInlineMap(val);
+    buf = null;
+  };
+  for (let raw of text.split(/\r?\n/)) {
+    const noComment = raw.replace(/(^|\s)#.*$/, "");
+    if (!noComment.trim()) continue;
+    const indent = noComment.match(/^ */)[0].length;
+    const line = noComment.trim();
+    if (buf) {                                   // mehrzeilige Inline-Map fortsetzen
+      buf.text += " " + line;
+      if (splitTop(buf.text.slice(buf.text.indexOf(":") + 1), ",") &&
+          (buf.text.match(/{/g) || []).length === (buf.text.match(/}/g) || []).length) flush();
+      continue;
+    }
+    if (indent === 0) {
+      const m = line.match(/^(\w+):\s*(.*)$/);
+      if (!m) continue;
+      section = m[1]; sub = null;
+      if (section === "fluid" && m[2]) doc.fluid = parseInlineMap(m[2]);
+      continue;
+    }
+    if (section === "components") {
+      buf = {target: "components", text: line};
+      if ((line.match(/{/g) || []).length === (line.match(/}/g) || []).length) flush();
+    } else if (section === "connections" && line.startsWith("-")) {
+      doc.connections.push(parseInlineList(line.replace(/^-\s*/, "")));
+    } else if (section === "layout") {
+      if (/^components:/.test(line)) { sub = "components"; }
+      else if (/^wires:/.test(line)) { sub = "wires"; }
+      else if (sub === "components") {
+        buf = {target: "layout-components", text: line};
+        if ((line.match(/{/g) || []).length === (line.match(/}/g) || []).length) flush();
+      } else if (sub === "wires" && line.startsWith("-")) {
+        doc.layout.wires.push(parseInlineMap(line.replace(/^-\s*/, "")));
+      }
+    }
+  }
+  flush();
+  loadDoc(doc);
+}
+function loadDoc(doc) {
+  state = {fluid: {mode: "preset", t_C: 50, rho: 998, mu: 0.001, cp: 4180}, comps: [], wires: []};
+  idSeq = 1; selection = null; pendingPort = null; lastResult = null;
+  if (doc.fluid) {
+    if (doc.fluid.preset) state.fluid = {mode:"preset", t_C: doc.fluid.t_C ?? 50,
+                                          rho:998, mu:0.001, cp:4180};
+    else state.fluid = {mode:"custom", t_C:50, rho:doc.fluid.rho ?? 998,
+                        mu:doc.fluid.mu ?? 0.001, cp:doc.fluid.cp ?? 4180};
+  }
+  // Verbindungsleitungen (conduit) werden als Linien rekonstruiert, nicht platziert
+  const boxNames = Object.keys(doc.components);
+  const grid = Math.ceil(Math.sqrt(Math.max(boxNames.length, 1)));
+  boxNames.forEach((name, i) => {
+    const spec = doc.components[name];
+    const type = spec.type;
+    if (!TYPES[type]) { alert(`Unbekannter Typ '${type}' bei '${name}' – übersprungen.`); return; }
+    const c = {id: idSeq++, type, name, ts: spec.ts !== undefined ? String(spec.ts) : "",
+               x: 120 + (i % grid) * 160, y: 100 + Math.floor(i / grid) * 140, rot: 0, params: {}};
+    if (Array.isArray(spec.bems) && spec.bems.length) c.bems = spec.bems;
+    if (Array.isArray(spec.pipes) && spec.pipes.length) c.pipes = spec.pipes;
+    for (const [k, v] of Object.entries(spec))
+      if (k !== "type" && k !== "ts" && k !== "bems" && k !== "pipes") c.params[k] = v;
+    const lay = doc.layout.components[name];
+    if (lay && lay.x !== undefined) { c.x = lay.x; c.y = lay.y; c.rot = lay.rot || 0; }
+    state.comps.push(c);
+  });
+  const wireMeta = {};
+  for (const w of doc.layout.wires) {
+    if (w.name) wireMeta["name:" + w.name] = w;
+    wireMeta[`${w.a}|${w.b}`] = w;
+  }
+  const applyMeta = (wire, meta) => {
+    wire.color = meta.color || "n";
+    if (meta.pts) {
+      try {
+        const arr = typeof meta.pts === "string" ? JSON.parse(meta.pts) : meta.pts;
+        wire.pts = arr.map(xy => ({x: xy[0], y: xy[1]}));
+      } catch (e) { /* Knickpunkte sind rein visuell – notfalls ignorieren */ }
+    }
+  };
+  // 1. Verbindungsleitungen: Endpunkte über <name>.in / <name>.out finden
+  const consumed = new Set();
+  // Verbindungen: einfache Kanal-Linien (Ketten)  // 2. Übrige Verbindungen: einfache Linien (Verschmelzen, aus Alt-Dateien)
+  doc.connections.forEach((conn, k) => {
+    if (consumed.has(k)) return;
+    for (let i = 1; i < conn.length; i++) {          // n Ports → n−1 Kanten (Stern)
+      const a = parseRef(conn[0]), b = parseRef(conn[i]);
+      if (!a || !b) continue;
+      const wire = {a, b, color: "n"};
+      applyMeta(wire, wireMeta[`${conn[0]}|${conn[i]}`] || {});
+      state.wires.push(wire);
+    }
+  });
+  commit();
+  render();
+}
+function parseRef(ref) {
+  const i = ref.lastIndexOf(".");
+  if (i < 0) return null;
+  const c = state.comps.find(x => x.name === ref.slice(0, i));
+  return c ? {comp: c.id, port: ref.slice(i + 1)} : null;
+}
+
+/* ---------- Dialoge / Toolbar --------------------------------------------- */
+const dlg = document.getElementById("dlg"), dlgText = document.getElementById("dlg-text");
+let dlgMode = null;
+document.getElementById("btn-export").onclick = () => {
+  const issues = validate().filter(i => i.err);
+  if (issues.length && !confirm(`Es fehlen Pflichtparameter (${issues.length}). Trotzdem exportieren?`)) return;
+  dlgMode = "export";
+  document.getElementById("dlg-title").textContent = "YAML (rechenbar mit: hydraulik run <datei>)";
+  dlgText.value = exportYAML();
+  document.getElementById("dlg-ok").style.display = "none";
+  document.getElementById("dlg-save").style.display = "";
+  document.getElementById("dlg-file").style.display = "none";
+  dlg.showModal();
+};
+document.getElementById("btn-import").onclick = () => {
+  dlgMode = "import";
+  document.getElementById("dlg-title").textContent = "YAML einfügen oder Datei laden (Editor-/Beispielformat)";
+  dlgText.value = "";
+  document.getElementById("dlg-ok").style.display = "";
+  document.getElementById("dlg-save").style.display = "none";
+  document.getElementById("dlg-file").style.display = "";
+  dlg.showModal();
+};
+document.getElementById("dlg-ok").onclick = () => {
+  if (dlgMode === "import") { try { importYAML(dlgText.value); } catch (e) { alert("Import fehlgeschlagen: " + e); } }
+  dlg.close();
+};
+document.getElementById("dlg-close").onclick = () => dlg.close();
+document.getElementById("dlg-copy").onclick = () =>
+  navigator.clipboard && navigator.clipboard.writeText(dlgText.value);
+document.getElementById("dlg-save").onclick = () => {
+  const blob = new Blob([dlgText.value], {type: "text/yaml"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "schaltung.yaml";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+document.getElementById("dlg-file").onclick = () =>
+  document.getElementById("dlg-fileinput").click();
+document.getElementById("dlg-fileinput").onchange = ev => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  f.text().then(t => { dlgText.value = t; });
+  ev.target.value = "";
+};
+document.getElementById("btn-new").onclick = () => {
+  if (confirm("Zeichnung verwerfen?")) { localStorage.removeItem("hydraulik_editor");
+    state = {fluid:{mode:"preset",t_C:50,rho:998,mu:0.001,cp:4180}, comps:[], wires:[]};
+    idSeq = 1; selection = null; lastResult = null; commit(); render(); }
+};
+
+/* ---------- Autosave ------------------------------------------------------- */
+function autosave() {
+  try { localStorage.setItem("hydraulik_luft_editor", exportYAML()); } catch (e) {}
+}
+(function restore(){
+  try {
+    const saved = localStorage.getItem("hydraulik_luft_editor");
+    if (saved && saved.includes("components:")) importYAML(saved); else render();
+  } catch (e) { render(); }
+  if (!history.length) commit();     // History startet immer mit einem Eintrag
+})();
+</script>
+</body>
+</html>
