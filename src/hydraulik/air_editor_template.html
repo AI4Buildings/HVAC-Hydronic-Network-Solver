@@ -503,8 +503,8 @@ function portPosRaw(comp) {
   if (t === "zuluft") return {in:{dx:-20,dy:0}};
   if (t === "abluft_raum") return {out:{dx:-20,dy:0}};
   if (t === "fortluft") return {in:{dx:20,dy:0}};
-  if (t === "wrg") return {abl_in:{dx:24,dy:80}, abl_out:{dx:-24,dy:80},
-                           zul_in:{dx:-24,dy:-80}, zul_out:{dx:24,dy:-80}};
+  if (t === "wrg") return {abl_in:{dx:24,dy:-80}, abl_out:{dx:-24,dy:-80},
+                           zul_in:{dx:-24,dy:80}, zul_out:{dx:24,dy:80}};
   return {in:{dx:-30,dy:0}, out:{dx:30,dy:0}};   // Zweitor-Standard (Kanal)
 }
 function compWidth(comp) {
