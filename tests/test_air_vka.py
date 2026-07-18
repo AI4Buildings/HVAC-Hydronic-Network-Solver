@@ -229,14 +229,30 @@ def test_wrg_uebertragungsgrad_physikalisch_begrenzt():
     doc["components"]["abl"].update({"t_C": 22.0, "rh": 40.0})
     doc["components"]["zul"].update({"t_min_C": 20, "t_max_C": 22})
     doc["components"]["zul"]["v_m3h"] = 4500
-    doc["components"]["fol"]["v_m3h"] = 10000
+    doc["components"]["abl"]["v_m3h"] = 10000
     r = solve_air(doc)
     assert r["komponenten"]["wrg1"]["eta_hr"] <= 1.0
     assert r["stationen"]["wrg1.zul_out"]["t_C"] <= 22.0 + 1e-6
     assert r["zuluft"]["t_C"] <= 22.0 + 0.3          # Sollband eingehalten
     assert any("Volumenstromverhältnis" in h for h in r["hinweise"])
     # balanciert: unverändert unter der Grenze, kein Hinweis
-    doc["components"]["fol"].pop("v_m3h")
+    doc["components"]["abl"].pop("v_m3h")
     rb = solve_air(doc)
     assert rb["komponenten"]["wrg1"]["eta_hr"] == pytest.approx(0.777978, abs=1e-4)
     assert not any("Volumenstromverhältnis" in h for h in rb["hinweise"])
+
+
+def test_abluft_volumenstrom_eingabe():
+    """Der Abluft-Volumenstrom wird bei 'abluft_raum' angegeben; fortluft.v
+    bleibt als Altbestand gültig (gleiches Ergebnis), Widerspruch → Fehler."""
+    doc = _doc()
+    doc["components"]["abl"]["v_m3h"] = 2000
+    r_abl = solve_air(doc)
+    doc = _doc()
+    doc["components"]["fol"]["v_m3h"] = 2000
+    r_fol = solve_air(doc)
+    assert r_abl["leistungen"] == r_fol["leistungen"]
+    doc["components"]["abl"]["v_m3h"] = 1500          # widersprüchlich
+    with pytest.raises(h.NetworkValidationError) as exc:
+        solve_air(doc)
+    assert "abluft_raum" in str(exc.value)

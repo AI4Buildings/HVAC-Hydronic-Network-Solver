@@ -222,7 +222,14 @@ def solve_air(source) -> dict:
         cfg["order"] = order
 
     v_sup = zul.v * 3600.0
-    v_exh = fol.v * 3600.0 if fol.v is not None else None
+    # Abluft-Volumenstrom: Eingabe bei 'abluft_raum' (fortluft.v = Altbestand)
+    if (abl.v is not None and fol.v is not None
+            and abs(abl.v - fol.v) > 1e-9):
+        raise NetworkValidationError(
+            ["Abluft-Volumenstrom doppelt und widersprüchlich angegeben "
+             "(abluft_raum.v und fortluft.v) — bitte nur bei 'abluft_raum' angeben."])
+    v_abl = abl.v if abl.v is not None else fol.v
+    v_exh = v_abl * 3600.0 if v_abl is not None else None
 
     hinweise: list[str] = []
     if v_exh is not None and v_sup > 0:
@@ -241,7 +248,8 @@ def solve_air(source) -> dict:
         out = simulate_room(cfg, aul.t, aul.rh, T_room=abl.t,
                             room_rh_min=zul.raum_rh_min, room_rh_max=zul.raum_rh_max,
                             T_sup_min=zul.t_min, T_sup_max=zul.t_max,
-                            moisture_g_h=zul.feuchtelast, V_sup_m3h=v_sup)
+                            moisture_g_h=zul.feuchtelast, V_sup_m3h=v_sup,
+                            V_exh_m3h=v_exh)
     else:
         if abl.rh is None:
             raise NetworkValidationError(

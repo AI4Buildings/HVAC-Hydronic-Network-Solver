@@ -65,6 +65,9 @@ class AbluftRaum(AirComponent):
         Param("t", "temperature", required=True, help="Abluft-/Raumtemperatur"),
         Param("rh", "none", minv=0.0, maxv=100.0,
               help="relative Feuchte Abluft [%] (Pflicht außer bei Regelung 'raum')"),
+        Param("v", "flow", minv=0.0,
+              help="Abluft-Volumenstrom (optional; ohne Angabe = Zuluftvolumenstrom, "
+                   "balancierte Anlage)"),
     )
 
     def port_names(self):
@@ -116,11 +119,12 @@ class Zuluft(AirComponent):
 
 @register_air("fortluft")
 class Fortluft(AirComponent):
-    """Fortluft (FOL): Austritt des Abluftstrangs; Volumenstrom optional
-    (ohne Angabe = Zuluftvolumenstrom, balancierte Anlage)."""
+    """Fortluft (FOL): Austritt des Abluftstrangs. Der Abluft-Volumenstrom
+    wird bei 'abluft_raum' angegeben; 'v' wird hier aus Altbestand toleriert."""
 
     PARAMS = (
-        Param("v", "flow", minv=0.0, help="Abluft-/Fortluft-Volumenstrom (optional)"),
+        Param("v", "flow", minv=0.0,
+              help="veraltet — Abluft-Volumenstrom bei 'abluft_raum' angeben"),
     )
 
     def port_names(self):

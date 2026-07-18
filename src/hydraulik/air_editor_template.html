@@ -1309,6 +1309,8 @@ function activeModeOption(c, type, group, gi) {
   if (maxN > 0) return cands[0];
   return group.options.find(o => o.default) || null;
 }
+//: Altbestands-Parameter, die nicht mehr eingegeben werden sollen
+const HIDDEN_PARAMS = {fortluft: ["v"]};
 function paramsSection(c, type) {
   const t = TYPES[type];
   const groups = PARAM_MODES[type] || [];
@@ -1318,8 +1320,10 @@ function paramsSection(c, type) {
     g.options.forEach(o => o.fields.forEach(f => moded.add(f)));
   });
   let html = "";
+  const hidden = HIDDEN_PARAMS[type] || [];
   for (const p of t.params)
-    if (p.name !== "description" && !moded.has(p.name)) html += paramField(c, p);
+    if (p.name !== "description" && !moded.has(p.name) && !hidden.includes(p.name))
+      html += paramField(c, p);
   groups.forEach((g, gi) => {
     const act = activeModeOption(c, type, g, gi);
     html += `<div class="field"><label>${esc(g.label)}</label>
