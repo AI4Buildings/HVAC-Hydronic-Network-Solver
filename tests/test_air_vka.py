@@ -217,3 +217,26 @@ def test_kvs_und_plattentauscher_auslegung():
                      -5.0, 80.0, 22.0, 40.0, 18, 22, 40, 55, V_sup_m3h=1359)
     assert r_kvs10["leistungen"]["heizen_gesamt_kW"] == pytest.approx(
         float(ref10["Q_heat_total_kW"][0]), abs=1e-5)
+
+
+def test_wrg_uebertragungsgrad_physikalisch_begrenzt():
+    """Regression: Bei stark unbalancierten Volumenströmen (ABL >> ZUL) trieb
+    der empirische Unbalance-Faktor f_q den Übertragungsgrad über 1 — die
+    Zuluft verließ die WRG wärmer als die Abluftquelle (2. Hauptsatz).
+    Jetzt gilt ε ≤ 1, der WRG-Austritt bleibt ≤ max(T_AUL, T_ABL)."""
+    doc = _doc()
+    doc["components"]["aul"].update({"t_C": -5.0, "rh": 80.0})
+    doc["components"]["abl"].update({"t_C": 22.0, "rh": 40.0})
+    doc["components"]["zul"].update({"t_min_C": 20, "t_max_C": 22})
+    doc["components"]["zul"]["v_m3h"] = 4500
+    doc["components"]["fol"]["v_m3h"] = 10000
+    r = solve_air(doc)
+    assert r["komponenten"]["wrg1"]["eta_hr"] <= 1.0
+    assert r["stationen"]["wrg1.zul_out"]["t_C"] <= 22.0 + 1e-6
+    assert r["zuluft"]["t_C"] <= 22.0 + 0.3          # Sollband eingehalten
+    assert any("Volumenstromverhältnis" in h for h in r["hinweise"])
+    # balanciert: unverändert unter der Grenze, kein Hinweis
+    doc["components"]["fol"].pop("v_m3h")
+    rb = solve_air(doc)
+    assert rb["komponenten"]["wrg1"]["eta_hr"] == pytest.approx(0.777978, abs=1e-4)
+    assert not any("Volumenstromverhältnis" in h for h in rb["hinweise"])

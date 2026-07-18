@@ -102,7 +102,11 @@ def _eff_factors(c, q_V_SUP, q_V_ETA, v_hr_eff, n_rot, n_rot_max, f_ODA_min,
     else:
         f_n = max(0.0, c["C3"] - c["C4"] * (n_rot / n_rot_max + c["C5"]) ** c["e1"])
 
-    eta_hr = eta_hr_nom * f_q * f_v * f_n
+    # Physikalische Grenze (Abweichung vom MATLAB-Original): die empirischen
+    # Korrekturfaktoren (insb. f_q bei stark unbalancierten Volumenströmen)
+    # können ε > 1 liefern — die Zuluft würde wärmer als die Abluftquelle
+    # (2. Hauptsatz). Übertragungsgrade daher auf ≤ 1 begrenzen.
+    eta_hr = min(1.0, eta_hr_nom * f_q * f_v * f_n)
 
     # --- latent: condensation potential -------------------------------------
     # choose evap/cond streams by sign of (T_e - T_ETA_dis_out)
@@ -149,7 +153,7 @@ def _eff_factors(c, q_V_SUP, q_V_ETA, v_hr_eff, n_rot, n_rot_max, f_ODA_min,
     else:
         f_n_x = max(0.0, c["C12"] - c["C13"] * ((n_rot / n_rot_max) * 20.0 + c["C14"]) ** c["e2"])
 
-    eta_xr = eta_xr_nom * f_dx_x * f_q_x * f_v_x * f_n_x
+    eta_xr = min(1.0, eta_xr_nom * f_dx_x * f_q_x * f_v_x * f_n_x)
 
     return dict(f_q=f_q, f_v=f_v, f_n=f_n, eta_hr=eta_hr,
                 f_dx_x=f_dx_x, f_q_x=f_q_x, f_v_x=f_v_x, f_n_x=f_n_x, eta_xr=eta_xr)
@@ -177,8 +181,9 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
     n_rot_opt = np.linspace(0.0, n_rot_max, 1001)
     f_n_opt = np.maximum(0.0, c["C3"] - c["C4"] * (n_rot_opt / n_rot_max + c["C5"]) ** c["e1"])
     f_n_x_opt = np.maximum(0.0, c["C12"] - c["C13"] * ((n_rot_opt / n_rot_max) * 20.0 + c["C14"]) ** c["e2"])
-    eta_hr_opt = c["eta_hr_nom"] * f_q * f_v * f_n_opt
-    eta_xr_opt = c["eta_xr_nom"] * f_dx_x * f_q_x * f_v_x * f_n_x_opt
+    # physikalische Grenze ε ≤ 1 (wie in _eff_factors; s. Kommentar dort)
+    eta_hr_opt = np.minimum(1.0, c["eta_hr_nom"] * f_q * f_v * f_n_opt)
+    eta_xr_opt = np.minimum(1.0, c["eta_xr_nom"] * f_dx_x * f_q_x * f_v_x * f_n_x_opt)
 
     T_out = T_ODA_preh + eta_hr_opt * (T_ETA_hr_in - T_ODA_preh)
     x_out = x_ODA_preh + eta_xr_opt * (x_ETA_hr_in - x_ODA_preh)

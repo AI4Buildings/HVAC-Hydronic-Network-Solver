@@ -81,7 +81,10 @@ src/hydraulik/
   air/               Luftseite (Lüftungsanlage, in Arbeit — Phase 1 fertig):
     vka/             integrierter VKA-Rechenkern EN 16798-5-1 (aus Skill
                      vka-effizienz-en16798 übernommen; simulate/simulate_room,
-                     energieoptimale Rotorregelung, 1:1 MATLAB-verifiziert)
+                     energieoptimale Rotorregelung, 1:1 MATLAB-verifiziert;
+                     einzige dokumentierte Abweichung: Rotor-ε auf ≤ 1
+                     begrenzt — f_q-Unbalance-Korrektur trieb ε über 1,
+                     Skill-Kopie identisch gepatcht)
     components.py    Luft-Registry (AIR_REGISTRY, gleiche Param-/BEMS-Mechanik):
                      aussenluft/abluft_raum/zuluft (regelung fest|band|raum)/
                      fortluft, wrg (5 Bauarten), frostschutz, vor-/nachheizer,

@@ -225,6 +225,13 @@ def solve_air(source) -> dict:
     v_exh = fol.v * 3600.0 if fol.v is not None else None
 
     hinweise: list[str] = []
+    if v_exh is not None and v_sup > 0:
+        ratio = v_exh / v_sup
+        if ratio > 1.3 or ratio < 0.77:
+            hinweise.append(
+                f"Volumenstromverhältnis Abluft/Zuluft = {ratio:.2f} — außerhalb "
+                "des typischen Gültigkeitsbereichs der WRG-Kennlinienkorrektur "
+                "(≈ ±30 %); Übertragungsgrade werden physikalisch auf ≤ 1 begrenzt.")
     if fan_moved:
         hinweise.append("Ventilatorwärme wird am Stranganfang bilanziert "
                         "(Modellkonvention des Rechenkerns); die gezeichnete "
