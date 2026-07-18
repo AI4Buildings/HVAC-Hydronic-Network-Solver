@@ -181,3 +181,39 @@ def test_stationszustaende_je_kanalabschnitt():
                         raum_rh_min=40, raum_rh_max=55, feuchtelast=720.0))
     assert rr["stationen"]["zul.in"]["t_C"] == pytest.approx(
         rr["zuluft"]["t_C"], abs=1e-3)
+
+
+def test_kvs_und_plattentauscher_auslegung():
+    """Skill-Parität: Plattentauscher-Rückwärmzahl (rwz_n) und KVS-Sole-
+    Nennvolumenstrom (v_m_kvs) erreichen den Kern; Defaults = Kern-Defaults."""
+    def doc(**wrg_extra):
+        d = _doc()
+        d["components"]["aul"].update({"t_C": -5.0, "rh": 80.0})
+        d["components"]["abl"].update({"t_C": 22.0, "rh": 40.0})
+        d["components"]["wrg1"] = {"type": "wrg", **wrg_extra}
+        return d
+
+    # Plattentauscher: bessere Rückwärmzahl → weniger Nachheizen
+    r_norm = solve_air(doc(typ="PLATE"))
+    r_gut = solve_air(doc(typ="PLATE", rwz_n=0.85))
+    assert r_gut["leistungen"]["wrg_kW"] > r_norm["leistungen"]["wrg_kW"] + 2.0
+    assert r_gut["leistungen"]["heizen_gesamt_kW"] < r_norm["leistungen"]["heizen_gesamt_kW"] - 2.0
+    ref = simulate({"wrg": "PLATE", "components": ["VHR", "KR", "NHR"],
+                    "humidifier": "steam", "RWZ_N": 0.85, "SFP": 3430,
+                    "V_nom_m3h": 4500.0,
+                    "order": ["Vent_ZUL", "WRG", "VHR", "Bef", "KR", "NHR"]},
+                   -5.0, 80.0, 22.0, 40.0, 18, 22, 40, 55, V_sup_m3h=1359)
+    assert r_gut["leistungen"]["heizen_gesamt_kW"] == pytest.approx(
+        float(ref["Q_heat_total_kW"][0]), abs=1e-5)
+
+    # KVS: größerer Sole-Nennvolumenstrom → schlechtere Übertragung
+    r_kvs = solve_air(doc(typ="KVS", rwz_n=0.70))
+    r_kvs10 = solve_air(doc(typ="KVS", rwz_n=0.70, v_m_kvs_m3h=10.0))
+    assert r_kvs10["leistungen"]["wrg_kW"] < r_kvs["leistungen"]["wrg_kW"]
+    ref10 = simulate({"wrg": "KVS", "components": ["VHR", "KR", "NHR"],
+                      "humidifier": "steam", "RWZ_N": 0.70, "V_M_KVS_N": 10.0,
+                      "SFP": 3430, "V_nom_m3h": 4500.0,
+                      "order": ["Vent_ZUL", "WRG", "VHR", "Bef", "KR", "NHR"]},
+                     -5.0, 80.0, 22.0, 40.0, 18, 22, 40, 55, V_sup_m3h=1359)
+    assert r_kvs10["leistungen"]["heizen_gesamt_kW"] == pytest.approx(
+        float(ref10["Q_heat_total_kW"][0]), abs=1e-5)

@@ -212,6 +212,8 @@ def solve_air(source) -> dict:
         cfg["eta_xr_N"] = wrg.eta_xr_n
     if getattr(wrg, "rwz_n", None):
         cfg["RWZ_N"] = wrg.rwz_n
+    if wrg.typ == "KVS":
+        cfg["V_M_KVS_N"] = wrg.v_m_kvs * 3600.0
     if uml is not None:
         cfg["recirculation_m3h"] = uml.v * 3600.0
     if fans:

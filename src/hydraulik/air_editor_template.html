@@ -1286,8 +1286,8 @@ const PARAM_MODES = {
     {key: "ROT_SORP", de: "Sorptionsrotor", fields: ["eta_hr_n", "eta_xr_n"]},
     {key: "ROT_HYG", de: "Enthalpierotor", fields: ["eta_hr_n", "eta_xr_n", "adiab_exhaust"]},
     {key: "ROT_NH", de: "Kondensationsrotor", fields: ["eta_hr_n", "adiab_exhaust"]},
-    {key: "KVS", de: "Kreislaufverbundsystem", fields: ["rwz_n"]},
-    {key: "PLATE", de: "Plattentauscher", fields: []}]}],
+    {key: "KVS", de: "Kreislaufverbundsystem", fields: ["rwz_n", "v_m_kvs"]},
+    {key: "PLATE", de: "Plattentauscher", fields: ["rwz_n"]}]}],
 };
 function paramSpec(type, name) { return TYPES[type].params.find(p => p.name === name); }
 function paramIsSet(c, type, name) {

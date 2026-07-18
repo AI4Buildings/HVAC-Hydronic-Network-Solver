@@ -146,7 +146,10 @@ class Waermerueckgewinnung(AirComponent):
               help="Auslegungsvolumenstrom der WRG"),
         Param("adiab_exhaust", "bool", default=False,
               help="adiabate Abluftkühlung (nur ROT_HYG/ROT_NH)"),
-        Param("rwz_n", "none", minv=0.0, help="KVS: Auslegungs-Rückwärmzahl (optional)"),
+        Param("rwz_n", "none", minv=0.0,
+              help="Auslegungs-Rückwärmzahl (KVS/Plattentauscher; leer = Normwert)"),
+        Param("v_m_kvs", "flow", default=2.5 / 3600.0, minv=1e-9,
+              help="KVS: Nennvolumenstrom des Sole-Zwischenkreises"),
     )
 
     def port_names(self):
