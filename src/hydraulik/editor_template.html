@@ -2088,7 +2088,7 @@ function parseInlineList(s) {
   if (s.startsWith("[")) s = s.slice(1, -1);
   return splitTop(s, ",").map(x => String(parseValue(x)));
 }
-function importYAML(text) {
+function parseYAMLLocal(text) {          // Subset-Parser: Inline-Format des Exports
   const doc = {fluid: null, components: {}, connections: [], layout: {components: {}, wires: []}};
   let section = null, sub = null, buf = null;
   const flush = () => {
@@ -2135,7 +2135,38 @@ function importYAML(text) {
     }
   }
   flush();
-  loadDoc(doc);
+  return doc;
+}
+function normalizeDoc(raw) {                 // Server-Dokument (PyYAML → JSON) absichern
+  const obj = v => v && typeof v === "object" && !Array.isArray(v) ? v : null;
+  const doc = obj(raw) || {};
+  const lay = obj(doc.layout) || {};
+  const comps = {};
+  for (const [name, spec] of Object.entries(obj(doc.components) || {}))
+    if (obj(spec)) comps[name] = spec;
+  return {
+    fluid: obj(doc.fluid),
+    components: comps,
+    connections: (Array.isArray(doc.connections) ? doc.connections : [])
+      .filter(Array.isArray).map(c => c.map(String)),
+    layout: {components: obj(lay.components) || {},
+             wires: (Array.isArray(lay.wires) ? lay.wires : []).filter(obj)},
+  };
+}
+async function importYAML(text) {
+  // Bevorzugt der Server-Parser (PyYAML: jede YAML-Form, Block- wie Inline-
+  // Stil; doppelte Schlüssel werden gemeldet). Ohne Rechen-Endpunkt (statische
+  // HTML-Datei) der lokale Subset-Parser für das Inline-Format des Exports.
+  // Rückgabe: Loader-Hinweise des Servers (Array) bzw. null bei lokalem Parsen.
+  let data = null;
+  try {
+    const resp = await fetch("normalize", {method: "POST", body: text,
+                                             headers: {"Content-Type": "text/yaml"}});
+    if (resp.ok) data = await resp.json();
+  } catch (e) { data = null; }
+  if (data && !data.ok) throw new Error(data.error);
+  loadDoc(data ? normalizeDoc(data.doc) : parseYAMLLocal(text));
+  return data ? (data.issues || []) : null;
 }
 function loadDoc(doc) {
   state = {fluid: {mode: "preset", t_C: 50, rho: 998, mu: 0.001, cp: 4180}, comps: [], wires: []};
@@ -2243,9 +2274,20 @@ document.getElementById("btn-import").onclick = () => {
   document.getElementById("dlg-file").style.display = "";
   dlg.showModal();
 };
-document.getElementById("dlg-ok").onclick = () => {
-  if (dlgMode === "import") { try { importYAML(dlgText.value); } catch (e) { alert("Import fehlgeschlagen: " + e); } }
+document.getElementById("dlg-ok").onclick = async () => {
+  if (dlgMode !== "import") { dlg.close(); return; }
+  const text = dlgText.value;
   dlg.close();
+  try {
+    const issues = await importYAML(text);
+    if (issues === null)
+      setStatus("YAML importiert (lokaler Parser, Inline-Format). Beliebige YAML-Form: " +
+                "Editor über 'editor server' starten.");
+    else if (issues.length)
+      setStatus(`YAML importiert. Der Loader meldet ${issues.length} Punkt(e), ` +
+                `z.B.: ${issues[0]}`);
+    else setStatus("YAML importiert (Server-Parser) – Loader ohne Beanstandung.");
+  } catch (e) { alert("Import fehlgeschlagen: " + e); }
 };
 document.getElementById("dlg-close").onclick = () => dlg.close();
 document.getElementById("dlg-copy").onclick = () =>
@@ -2279,7 +2321,7 @@ function autosave() {
 (function restore(){
   try {
     const saved = localStorage.getItem("hydraulik_editor");
-    if (saved && saved.includes("components:")) importYAML(saved); else render();
+    if (saved && saved.includes("components:")) loadDoc(parseYAMLLocal(saved)); else render();
   } catch (e) { render(); }
   if (!history.length) commit();     // History startet immer mit einem Eintrag
 })();

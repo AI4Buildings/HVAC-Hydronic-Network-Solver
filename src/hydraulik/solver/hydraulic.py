@@ -27,7 +27,7 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.sparse.linalg import spsolve
 
-from ..exceptions import ConvergenceError
+from ..exceptions import ComponentModelError, ConvergenceError, HydraulikError
 from ..network import CompiledNetwork
 from .settings import SolverSettings
 
@@ -99,9 +99,24 @@ def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = Non
     for it in range(1, s.max_iter + 1):
         # 1. Koeffizienten beim aktuellen Q auswerten
         for comp, idxs in coupled:
-            comp.pre_coefficients([float(q[i]) for i in idxs], fluid)
+            try:
+                comp.pre_coefficients([float(q[i]) for i in idxs], fluid)
+            except HydraulikError:
+                raise
+            except Exception as exc:                 # Modellfehler lesbar einhüllen
+                raise ComponentModelError(
+                    comp.name, comp.type_name, "hydraulisches",
+                    f"Volumenströme {[round(float(q[i]) * 3600, 4) for i in idxs]} m³/h "
+                    f"(Iteration {it})", exc) from exc
         for e in net.edges:
-            c = e.coeff_fn(q[e.index], fluid)
+            try:
+                c = e.coeff_fn(q[e.index], fluid)
+            except HydraulikError:
+                raise
+            except Exception as exc:
+                raise ComponentModelError(
+                    e.name, e.component.type_name, "hydraulisches",
+                    f"V̇ = {float(q[e.index]) * 3600:.4g} m³/h (Iteration {it})", exc) from exc
             a_arr[e.index], b_arr[e.index], dp_src[e.index] = c.a, c.b, c.dp_source
 
         r_floor = np.maximum(b_arr * r_floor_frac, 1e-3)  # min. 1e-3 Pa/(m³/s)

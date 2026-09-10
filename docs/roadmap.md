@@ -1,5 +1,28 @@
 # Status & Roadmap
 
+## Stand nach v0.6.0 (2026-09-10, unveröffentlicht)
+
+208 Tests, alle grün. Bugfix-Runde und Robustheit:
+
+- **Bugfixes**: Heizkörper brach bei Kleinstdurchfluss (Restleckage einer
+  sperrenden Rückschlagklappe, fast geschlossenes Ventil) mit rohem ValueError
+  aus brentq ab → Wasser kühlt auf Raumtemperatur ab, stetiger Übergang;
+  Bereichsfehler nennen den Grenzwert in der Eingabeeinheit ('1 mm' statt
+  '0.001 [inner_mm]'); `__version__` an pyproject gebunden (Test);
+  BallValve und die Sensorklassen fehlten im Paket-Export (`__all__`).
+- **Fehlerpfade**: `ComponentModelError` hüllt Ausnahmen aus Komponenten-
+  modellen mit Komponente, Modell und Betriebspunkt ein (beide Solver);
+  Plausibilitätshinweis im Bericht für Austrittstemperaturen außerhalb
+  `t_plausible_min/max`; `load_settings` typ- und bereichsgeprüft mit
+  gesammelten Meldungen und Korrekturvorschlag.
+- **Regressionsschutz**: `tests/test_smoke_random.py` (40 Zufallsnetze mit
+  festem Seed über die gesamte Palette inkl. sperrender Klappen, geschlossener
+  Ventile, T-Stücke, Druckanker); GitHub Actions (pytest, Python 3.10–3.12).
+- **Editor-Import beliebiger YAML-Form**: `POST /normalize` bzw.
+  `/normalize_air` parst mit PyYAML (Block- und Inline-Stil, doppelte
+  Schlüssel werden gemeldet, Loader-Hinweise in der Statuszeile); ohne Server
+  bleibt der lokale Subset-Parser für das Exportformat der Fallback.
+
 ## Stand v0.6.0 (2026-07-18)
 
 151 Tests, alle grün. Seit v0.5.0 ergänzt (Schwerpunkt Luftseite):
@@ -234,7 +257,7 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (151 Tests, müssen grün sein);
+1. `pip install -e ".[dev]" && pytest` (208 Tests, müssen grün sein);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/).
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
    dieser Datei lesen — dort steht, was zuletzt gebaut wurde.

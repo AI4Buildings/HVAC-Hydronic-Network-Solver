@@ -102,3 +102,90 @@ connections:
     assert any("Thermik nicht gelöst" in n for n in data["notices"])
     hk = next(c for c in data["components"] if c["name"] == "hk1")
     assert hk["q_m3h"] == pytest.approx(1.0, rel=1e-9)
+
+
+def _post_to(url, path, body: str) -> dict:
+    req = urllib.request.Request(url + path, data=body.encode("utf-8"), method="POST")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+YAML_BLOCK = """\
+# Blockstil, wie von Hand geschrieben — der lokale Editor-Parser kann das nicht
+fluid:
+  preset: water
+  t_C: 60
+components:
+  qu1:
+    type: inflow
+    t_set_C: 60
+    p_kPa: 10
+    bems:
+      - id: "A'B,C"
+        key: T_VL
+  rv1:
+    type: control_valve
+    kvs_m3h: 10
+  ab1:
+    type: outflow
+    p_kPa: 0
+connections:
+  - [qu1.port, rv1.in]
+  - - rv1.out
+    - ab1.port
+layout:
+  wires:
+    - a: qu1.port
+      b: rv1.in
+      pts: [[10, 20], [30, 40]]
+"""
+
+
+def test_normalize_endpoint_parst_blockstil(server_url):
+    from hydraulik.server import normalize_payload
+    data = _post_to(server_url, "/normalize", YAML_BLOCK)
+    assert data["ok"] and data["issues"] == []
+    doc = data["doc"]
+    assert doc["fluid"] == {"preset": "water", "t_C": 60}
+    assert doc["components"]["qu1"]["bems"][0]["id"] == "A'B,C"
+    assert doc["connections"][1] == ["rv1.out", "ab1.port"]
+    assert doc["layout"]["wires"][0]["pts"] == [[10, 20], [30, 40]]
+    assert normalize_payload(YAML_BLOCK)["doc"] == doc
+    # Pfad mit Editor-Präfix (Aufruf aus /hydraulik/) ebenso
+    assert _post_to(server_url, "/hydraulik/normalize", YAML_OK)["ok"]
+
+
+def test_normalize_endpoint_meldet_loader_hinweise_und_fehler(server_url):
+    # unvollständige Datei: laden ja (im Editor ergänzbar), Hinweise mitliefern
+    data = _post_to(server_url, "/normalize",
+                    "components:\n  pu: {type: pump, mode: constant_flow}\nconnections: []\n")
+    assert data["ok"] and "pu" in data["doc"]["components"]
+    assert any("q_m3h" in m for m in data["issues"])
+    # doppelter Komponentenname: kein stilles 'last wins'
+    data = _post_to(server_url, "/normalize",
+                    "components:\n  a: {type: cap}\n  a: {type: cap}\nconnections: []\n")
+    assert not data["ok"] and "Doppelter Schlüssel 'a'" in data["error"]
+    # YAML-Syntaxfehler mit Position
+    data = _post_to(server_url, "/normalize", "components:\n  a: {type: cap\n")
+    assert not data["ok"] and "YAML-Syntaxfehler" in data["error"] and "Zeile" in data["error"]
+    # keine Mapping-Wurzel
+    data = _post_to(server_url, "/normalize", "- nur eine Liste\n")
+    assert not data["ok"] and "Mapping" in data["error"]
+
+
+def test_normalize_air_endpoint(server_url):
+    data = _post_to(server_url, "/normalize_air",
+                    "components:\n  aul:\n    type: aussenluft\n    t_C: 5\n    rh: 80\n"
+                    "connections: []\n")
+    assert data["ok"] and data["doc"]["components"]["aul"]["type"] == "aussenluft"
+    assert data["issues"]                          # Luft-Loader: Pflichtkomponenten fehlen
+
+
+def test_editoren_nutzen_server_import_mit_fallback(server_url):
+    """Beide Editoren rufen den Server-Parser und fallen ohne Server auf den
+    lokalen Subset-Parser zurück (Autosave-Restore bleibt lokal/synchron)."""
+    html = urllib.request.urlopen(server_url + "/hydraulik").read().decode("utf-8")
+    assert 'fetch("normalize"' in html and "parseYAMLLocal(" in html
+    assert "loadDoc(parseYAMLLocal(saved))" in html
+    luft = urllib.request.urlopen(server_url + "/lueftung").read().decode("utf-8")
+    assert 'fetch("normalize_air"' in luft and "loadDoc(parseYAMLLocal(saved))" in luft

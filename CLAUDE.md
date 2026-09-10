@@ -15,7 +15,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (151 Tests)
+pytest                                   # Testsuite (208 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
@@ -36,7 +36,8 @@ src/hydraulik/
   fluids.py          Fluid (ρ, μ, cp konstant); water_at(T) mit VDI-Stoffwerttabelle
   params.py          Param-Deklarationen + Einheiten-Suffixe (dp_kPa, q_m3h, …) → SI
   friction.py        Churchill, Swamee-Jain, Kv→b, ζ→b, Rohrkoeffizienten (a, b)
-  exceptions.py      NetworkValidationError (sammelt ALLE Fehler), SingularNetworkError, …
+  exceptions.py      NetworkValidationError (sammelt ALLE Fehler), SingularNetworkError,
+                     ComponentModelError (Modellfehler mit Komponente + Betriebspunkt), …
   components/        Eine Datei je Komponentengruppe; registry.py: @register("typname")
     base.py          Solver-Verträge: EdgeCoefficients (a, b, dp_source), ThermalResult;
                      reserviertes kwarg ts=<label> (Teilstrecken-Gruppierung)
@@ -62,9 +63,10 @@ src/hydraulik/
     hydraulic.py     SIMPLE-Loop (Newton-konsistent, s. docs/numerik.md)
     thermal.py       Upwind-Advektion + Gauss-Seidel; Grenzzyklus-Dämpfung,
                      Drift-Erkennung (isolierte Umläufe), skipped_thermal
-    settings.py      SolverSettings (alle Defaults)
-  yaml_loader.py     load(), load_settings(); LLM-taugliche Fehlermeldungen;
-                     toleriert 'layout:'-Block des Editors
+    settings.py      SolverSettings (alle Defaults; t_plausible_min/max für den
+                     Plausibilitätshinweis im Bericht)
+  yaml_loader.py     load(), load_settings() (typ-/bereichsgeprüft, gesammelt);
+                     LLM-taugliche Fehlermeldungen; toleriert 'layout:'-Block
   editor.py          Katalogexport (Registry+ParamSpec → JSON) + render/build_editor()
   editor_template.html  Single-File-Hydraulikschema-Editor (__CATALOG_JSON__);
                      jede gezogene Linie = conduit (Sensor-Messleitungen = reine
@@ -77,8 +79,11 @@ src/hydraulik/
                      erhalt via mstash); Symboltexte rotationsfest;
                      Strömungsrichtungspfeile auf conduits nach dem Rechnen;
                      automatisch mitwachsende Zeichenfläche (updateCanvasSize);
-                     conduit-Rohrmodell als Abschnittsliste (pipesForm)
-  server.py          hydraulik serve: Editor + POST /solve (nur 127.0.0.1)
+                     conduit-Rohrmodell als Abschnittsliste (pipesForm);
+                     YAML-Import: Server-Parser (PyYAML, jede Form) mit lokalem
+                     Subset-Parser als Fallback ohne Server
+  server.py          hydraulik serve: Editor + POST /solve + POST /normalize[_air]
+                     (YAML → JSON-Dokument + Loader-Hinweise für den Import; nur 127.0.0.1)
   air/               Luftseite (Lüftungsanlage; Kern + GUI fertig, v0.6.0):
     vka/             integrierter VKA-Rechenkern EN 16798-5-1 (aus Skill
                      vka-effizienz-en16798 übernommen; simulate/simulate_room,
@@ -109,12 +114,16 @@ src/hydraulik/
                      3 Vorlagen Vollklima/GEA-Energetikum (Winterfall, Datenblatt)/KVS; Ergebnispanel + Tooltips;
                      hydraulik serve → /lueftung, POST /solve_air)
   results.py         SolutionResult: report(), to_dict(), to_csv(), result["name"],
-                     Teilstrecken-Tabelle (ts-Gruppen als Ketten in Strömungsrichtung)
+                     Teilstrecken-Tabelle (ts-Gruppen als Ketten in Strömungsrichtung),
+                     Plausibilitätshinweis bei Austrittstemperaturen außerhalb
+                     t_plausible_min/max (feste Leistung bei Kleinstdurchfluss)
   cli.py             Konsolenskript `hydraulik`
 docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               151 Tests: analytische Referenzen + Validierung gegen Musterlösungen
+tests/               208 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+                     test_smoke_random.py: 40 Zufallsnetze (fester Seed) über die Palette
+.github/workflows/   CI: pytest auf Python 3.10–3.12 bei Push/PR
 ```
 
 ## Konventionen

@@ -17,8 +17,8 @@ Oder deklarativ:  hydraulik.load("schaltung.yaml").solve().report()
 """
 from . import components
 from .components import *  # noqa: F401,F403 – Komponenten auch direkt exportieren
-from .exceptions import (ComponentParamError, ConvergenceError, HydraulikError,
-                         NetworkValidationError, SingularNetworkError)
+from .exceptions import (ComponentModelError, ComponentParamError, ConvergenceError,
+                         HydraulikError, NetworkValidationError, SingularNetworkError)
 from .fluids import Fluid, WATER_DEFAULT, water_at
 from .network import Network
 from .results import SolutionResult
@@ -31,6 +31,6 @@ __all__ = [
     "Network", "load", "load_settings", "SolverSettings", "SolutionResult",
     "Fluid", "water_at", "WATER_DEFAULT", "components",
     "HydraulikError", "NetworkValidationError", "SingularNetworkError",
-    "ConvergenceError", "ComponentParamError",
+    "ConvergenceError", "ComponentParamError", "ComponentModelError",
     "__version__",
 ] + list(components.__all__)

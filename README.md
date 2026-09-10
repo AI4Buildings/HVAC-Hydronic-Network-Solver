@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 151 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 208 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 ## Tool starten
@@ -112,7 +112,10 @@ Ports, fehlende Pflichtparameter, Wertebereiche; klicken wählt die
 betroffene Komponente aus). **Export erzeugt direkt
 rechenbares YAML** inkl. `layout:`-Block (Zeichnungskoordinaten) für den
 Re-Import — die Zeichnung ist damit das Modell, es gibt keinen
-Interpretationsschritt. Palette, Ports und Formulare werden aus der
+Interpretationsschritt. Der Import akzeptiert unter `editor server` jede
+YAML-Form (Block- oder Inline-Stil; PyYAML auf dem Server, doppelte
+Schlüssel werden gemeldet, Loader-Hinweise erscheinen in der Statuszeile);
+die statische HTML-Datei liest das Inline-Exportformat. Palette, Ports und Formulare werden aus der
 Komponenten-Registry generiert (Single Source of Truth): Nach neuen
 Komponenten einfach den Editor neu erzeugen.
 

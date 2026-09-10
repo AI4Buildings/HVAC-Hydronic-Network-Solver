@@ -58,6 +58,8 @@ Impulsdefekt 5× in Folge steigt (bis minimal 0.1).
 | Ideale Δp-Pumpe (R = 0) → Q auf der Kante unbestimmt | interner quadratischer Widerstand: 5 % von Δp beim Nennvolumenstrom |
 | Geschlossener Kreis: p nur bis auf Konstante bestimmt | Druckinsel-Analyse; Auto-Referenz 150 kPa je Insel ohne Druck-RB (Hinweis im Bericht) |
 | Konstantstrom-Pumpen/Fluss-RB unvereinbar | Bilanzcheck je Druckinsel zur **Compile-Zeit** → `SingularNetworkError` mit Komponentennamen (statt kryptischer Singularität im Solver) |
+| Komponentenmodell wirft eine Ausnahme (Betriebspunkt außerhalb des Modellbereichs) | Beide Solver hüllen sie in `ComponentModelError` ein: Komponente, Modell (hydraulisch/thermisch), Betriebspunkt (V̇ bzw. T_ein, ṁ, Iteration) und Ursache — statt rohem Traceback bzw. „Interner Fehler" im Server |
+| Feste Leistung bei Kleinstdurchfluss (Leckage, Ventil fast zu) → formal korrekte, physikalisch sinnlose Temperaturen | Nachlaufprüfung in `build_result`: Austrittstemperaturen durchströmter Kanten außerhalb `t_plausible_min/max` (Default −50…200 °C) werden als Hinweis gemeldet |
 
 Konstantstrom-Kanten: `Q = fix`, Koeffizient d = 1/J = 0 im Laplacian
 (keine Druckkopplung), Δp ist Ergebnis.
@@ -129,7 +131,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 151 Tests)
+## 3. Testabdeckung (tests/, 208 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..exceptions import ConvergenceError
+from ..exceptions import ComponentModelError, ConvergenceError, HydraulikError
 from ..fluids import Fluid
 from ..network import CompiledNetwork
 from .hydraulic import HydraulicState
@@ -95,7 +95,15 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
                 t_out[i] = t_node[up[i]]
                 q_dot[i] = 0.0
                 continue
-            res = e.thermal_fn(t_node[up[i]], m_abs[i], fluid)
+            try:
+                res = e.thermal_fn(t_node[up[i]], m_abs[i], fluid)
+            except HydraulikError:
+                raise
+            except Exception as exc:                 # Modellfehler lesbar einhüllen
+                raise ComponentModelError(
+                    e.name, e.component.type_name, "thermisches",
+                    f"T_ein = {float(t_node[up[i]]):.2f} °C, ṁ = {float(m_abs[i]):.3e} kg/s "
+                    f"(Sweep {it})", exc) from exc
             t_out[i], q_dot[i], extras[i] = res.t_out, res.q_dot, res.extras
 
         for nd in net.nodes:

@@ -23,3 +23,9 @@ class SolverSettings:
     max_iter_thermal: int = 500
     tol_t: float = 1e-6           # max. Temperaturänderung je Sweep [K]
     m_dot_eps: float = 1e-7       # Massenstromschwelle "stagnierend" [kg/s]
+
+    # Plausibilität (nur Bericht): Austrittstemperaturen durchströmter Kanten
+    # außerhalb dieses Bereichs werden als Hinweis gemeldet — typisch eine fest
+    # vorgegebene Leistung bei Kleinstdurchfluss (Leckage, Ventil fast zu).
+    t_plausible_min: float = -50.0
+    t_plausible_max: float = 200.0

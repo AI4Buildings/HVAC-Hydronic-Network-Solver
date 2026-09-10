@@ -246,6 +246,28 @@ def _ts_segments(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
     return segments
 
 
+def _plausibility_notices(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
+                          settings: SolverSettings, notices: list[str]) -> None:
+    """Austrittstemperaturen durchströmter Kanten außerhalb des plausiblen
+    Bereichs (settings.t_plausible_min/max) melden. Der Solver liefert dann
+    formal korrekte, physikalisch sinnlose Werte — typisch eine fest
+    vorgegebene Leistung (q_prescribed/prescribed_q) bei sehr kleinem
+    Massenstrom (Restleckage einer Rückschlagklappe, fast geschlossenes Ventil)."""
+    lo, hi = settings.t_plausible_min, settings.t_plausible_max
+    for e in net.edges:
+        m_dot = abs(float(hyd.q[e.index])) * net.fluid.rho
+        if m_dot < settings.m_dot_eps:
+            continue
+        t = float(th.t_edge_out[e.index])
+        if math.isnan(t) or t < lo or t > hi:
+            notices.append(
+                f"Komponente '{e.name}' (Typ '{e.component.type_name}'): Austrittstemperatur "
+                f"{t:.1f} °C außerhalb des plausiblen Bereichs ({lo:g} … {hi:g} °C) bei "
+                f"ṁ = {m_dot:.3e} kg/s — typisch eine fest vorgegebene Leistung bei sehr "
+                f"kleinem Massenstrom (Restleckage, fast geschlossenes Ventil). Betriebsfall "
+                f"und Parameter prüfen.")
+
+
 def build_result(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
                  settings: SolverSettings) -> SolutionResult:
     comps: list[ComponentResult] = []
@@ -273,6 +295,7 @@ def build_result(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
                         stagnant=nd.index in th.stagnant_nodes)
              for nd in net.nodes]
     notices = list(net.notices)
+    _plausibility_notices(net, hyd, th, settings, notices)
     segments = _ts_segments(net, hyd, th, notices)
 
     # Sensoren: Komponenten mit measure()-Hook lesen den gelösten Zustand ab

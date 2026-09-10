@@ -5,7 +5,7 @@ from .registry import COMPONENT_REGISTRY, register
 from .pipe import Pipe
 from .pump import Pump
 from .resistance import FlowResistance
-from .valves import BalancingValve, CheckValve, ControlValve, MixingValve3Way
+from .valves import BalancingValve, BallValve, CheckValve, ControlValve, MixingValve3Way
 from .emitters import FloorHeatingLoop, Radiator
 from .coils import CoolingCoil, HeatingCoil
 from .plants import Chiller, HeatPump
@@ -20,10 +20,11 @@ from .boundaries import Cap, Inflow, OpenEnd, Outflow
 __all__ = [
     "COMPONENT_REGISTRY", "register",
     "Component", "TwoPortComponent", "EdgeCoefficients", "ThermalResult",
-    "Pipe", "Pump", "FlowResistance", "ControlValve", "BalancingValve", "CheckValve",
+    "Pipe", "Pump", "FlowResistance", "ControlValve", "BalancingValve", "BallValve", "CheckValve",
     "MixingValve3Way",
     "Radiator", "FloorHeatingLoop", "HeatingCoil", "CoolingCoil",
     "HeatPump", "Chiller", "BufferStorage", "IdealStorage",
+    "TemperatureSensor", "PressureSensor", "PressureDiffSensor", "FlowSensor", "EnergyMeter",
     "HydraulicSeparator", "Manifold", "Tee", "Link", "Conduit",
     "Inflow", "Outflow", "OpenEnd", "Cap",
 ]

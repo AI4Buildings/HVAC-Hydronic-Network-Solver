@@ -14,6 +14,7 @@ einem Durchgang korrigiert werden kann – auch von einem LLM.
 """
 from __future__ import annotations
 
+import difflib
 from pathlib import Path
 
 import yaml
@@ -103,21 +104,53 @@ def load(source: str | Path | dict) -> Network:
     return net
 
 
+#: Solver-Einstellungen, die strikt positiv sein müssen bzw. im Intervall (0, 1] liegen
+_SETTINGS_POSITIVE = frozenset({"max_iter", "max_iter_thermal", "tol_mass_rel", "tol_mom_rel",
+                                "q_init", "q_eps_frac", "tol_t", "m_dot_eps"})
+_SETTINGS_UNIT_INTERVAL = frozenset({"alpha_p", "alpha_q"})
+
+
 def load_settings(source: str | Path | dict) -> SolverSettings:
-    """Liest den optionalen settings-Block derselben Datei."""
+    """Liest den optionalen settings-Block derselben Datei — typ- und
+    bereichsgeprüft, Fehler gesammelt (wie bei Komponentenparametern)."""
     if isinstance(source, dict):
         doc = source
     else:
         text = Path(source).read_text(encoding="utf-8") if _is_path(source) else str(source)
         doc = yaml.load(text, Loader=_UniqueKeyLoader) or {}
-    raw = doc.get("settings") or {}
-    valid = {f.name for f in SolverSettings.__dataclass_fields__.values()}
-    unknown = set(raw) - valid
-    if unknown:
+    raw = doc.get("settings")
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
         raise NetworkValidationError(
-            [f"Unbekannte Solver-Einstellung '{k}'. Gültig: {', '.join(sorted(valid))}"
-             for k in sorted(unknown)])
-    return SolverSettings(**raw)
+            [f"'settings' muss ein Mapping sein (z.B. settings: {{alpha_p: 0.6, max_iter: 400}}), "
+             f"erhalten: {raw!r}"])
+    fields = SolverSettings.__dataclass_fields__
+    errors: list[str] = []
+    values: dict[str, float] = {}
+    for key in sorted(raw):
+        val = raw[key]
+        if key not in fields:
+            hint = difflib.get_close_matches(key, list(fields), n=1)
+            sug = f" Meinten Sie '{hint[0]}'?" if hint else ""
+            errors.append(f"Unbekannte Solver-Einstellung '{key}'.{sug} "
+                          f"Gültig: {', '.join(sorted(fields))}")
+            continue
+        is_int = str(fields[key].type) in ("int", "<class 'int'>")
+        if isinstance(val, bool) or not isinstance(val, (int, float)) or (is_int and not isinstance(val, int)):
+            errors.append(f"Solver-Einstellung '{key}' = {val!r} muss eine "
+                          f"{'Ganzzahl' if is_int else 'Zahl'} sein.")
+            continue
+        if key in _SETTINGS_POSITIVE and val <= 0:
+            errors.append(f"Solver-Einstellung '{key}' = {val!r} muss größer als 0 sein.")
+            continue
+        if key in _SETTINGS_UNIT_INTERVAL and not 0.0 < val <= 1.0:
+            errors.append(f"Solver-Einstellung '{key}' = {val!r} muss im Bereich 0 < α ≤ 1 liegen.")
+            continue
+        values[key] = val
+    if errors:
+        raise NetworkValidationError(errors)
+    return SolverSettings(**values)
 
 
 def _is_path(source) -> bool:

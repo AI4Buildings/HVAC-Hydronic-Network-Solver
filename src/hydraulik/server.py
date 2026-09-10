@@ -5,8 +5,11 @@
 Serviert den Schaltbild-Editor unter http://127.0.0.1:<port>/ und stellt
 POST /solve bereit (Body: YAML der Schaltung → JSON-Ergebnis). Damit kann
 der „Rechnen"-Button im GUI den Solver direkt aufrufen und die Ergebnisse
-(p, V̇, v, T, Q̇) in die Zeichnung zurückspielen. Nur lokal gebunden
-(127.0.0.1), kein Zugriff von außen.
+(p, V̇, v, T, Q̇) in die Zeichnung zurückspielen. POST /normalize bzw.
+/normalize_air (Body: YAML beliebiger Form → JSON-Dokument) versorgt den
+Editor-Import mit dem vollständigen PyYAML-Parser (Block- und Inline-Stil,
+doppelte Schlüssel werden gemeldet) samt Loader-Hinweisen. Nur lokal
+gebunden (127.0.0.1), kein Zugriff von außen.
 """
 from __future__ import annotations
 
@@ -14,12 +17,14 @@ import json
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import yaml
+
 from .editor import render_editor
-from .exceptions import ConvergenceError, HydraulikError
+from .exceptions import ConvergenceError, HydraulikError, NetworkValidationError
 from .results import build_result
 from .solver.hydraulic import solve_hydraulics
 from .solver.thermal import skipped_thermal, solve_thermal
-from .yaml_loader import load, load_settings
+from .yaml_loader import _UniqueKeyLoader, load, load_settings
 
 
 def solve_payload(yaml_text: str) -> dict:
@@ -42,6 +47,36 @@ def solve_payload(yaml_text: str) -> dict:
                            for el in nd.elements if "::" not in el}
     payload["ok"] = True
     return payload
+
+
+def normalize_payload(yaml_text: str, kind: str = "hydraulik") -> dict:
+    """YAML beliebiger Form (Block- oder Inline-Stil) → JSON-Dokument für den
+    Editor-Import (fluid/components/connections/layout unverändert). Doppelte
+    Schlüssel werden gemeldet statt stillschweigend überschrieben. 'issues'
+    enthält die Meldungen des jeweiligen Loaders (Hydraulik oder Luft) — rein
+    informativ, damit auch unvollständige Dateien geladen und im Editor
+    ergänzt werden können."""
+    try:
+        doc = yaml.load(yaml_text, Loader=_UniqueKeyLoader)
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        where = f" (Zeile {mark.line + 1}, Spalte {mark.column + 1})" if mark else ""
+        raise NetworkValidationError(
+            [f"YAML-Syntaxfehler{where}: {getattr(exc, 'problem', None) or exc}"])
+    if not isinstance(doc, dict):
+        raise NetworkValidationError(
+            ["Eingabe muss ein Mapping mit 'components' und 'connections' sein."])
+    issues: list[str] = []
+    try:
+        if kind == "air":
+            from .air import load_air
+            load_air(doc)
+        else:
+            load(doc)
+            load_settings(doc)
+    except HydraulikError as exc:
+        issues = list(getattr(exc, "messages", None) or [str(exc)])
+    return {"ok": True, "doc": doc, "issues": issues}
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -84,14 +119,20 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path not in ("/solve", "/hydraulik/solve",
-                             "/solve_air", "/lueftung/solve_air"):
+                             "/solve_air", "/lueftung/solve_air",
+                             "/normalize", "/hydraulik/normalize",
+                             "/normalize_air", "/lueftung/normalize_air"):
             self.send_response(404)
             self.end_headers()
             return
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         try:
-            if self.path.endswith("/solve") or self.path == "/solve":
+            if self.path.endswith("/normalize"):
+                payload = normalize_payload(body, "hydraulik")
+            elif self.path.endswith("/normalize_air"):
+                payload = normalize_payload(body, "air")
+            elif self.path.endswith("/solve"):
                 payload = solve_payload(body)
             else:
                 from .air import solve_air
@@ -100,7 +141,8 @@ class _Handler(BaseHTTPRequestHandler):
             payload = {"ok": False, "error": str(exc)}
         except Exception as exc:                       # nie den Server reißen lassen
             payload = {"ok": False, "error": f"Interner Fehler: {exc!r}"}
-        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        # default=str: PyYAML kann z.B. Datumswerte liefern, die JSON nicht kennt
+        data = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))

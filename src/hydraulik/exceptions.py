@@ -33,6 +33,25 @@ class SingularNetworkError(HydraulikError):
     """Hydraulisch unlösbares Netz (z.B. unvereinbare feste Volumenströme)."""
 
 
+class ComponentModelError(HydraulikError):
+    """Ein Komponentenmodell (hydraulische Koeffizienten oder thermischer
+    Austritt) hat während der Lösung eine Ausnahme geworfen. Die Meldung nennt
+    Komponente, Modell und Betriebspunkt, damit der Fall ohne Traceback
+    reproduzierbar ist (lesbar für Nutzer und LLM statt 'Interner Fehler')."""
+
+    def __init__(self, component: str, type_name: str, model: str,
+                 operating_point: str, cause: BaseException):
+        self.component = component
+        self.type_name = type_name
+        self.model = model
+        self.operating_point = operating_point
+        self.cause = cause
+        super().__init__(
+            f"Komponente '{component}' (Typ '{type_name}'): {model} Modell fehlgeschlagen "
+            f"bei {operating_point} — {type(cause).__name__}: {cause}. Der Betriebspunkt "
+            f"liegt vermutlich außerhalb des Modellbereichs; Parameter und Betriebsfall prüfen.")
+
+
 class ConvergenceError(HydraulikError):
     """Solver hat die Toleranzen nicht erreicht."""
 
