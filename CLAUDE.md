@@ -5,9 +5,12 @@ HVAC-Hydraulikschaltungen (1D-Netzwerk, SIMPLE-artiger Druckkorrektur-Solver)
 mit grafischem Hydraulikschema-Editor (Rechnen im GUI, Human in the Loop).
 Doppelzweck: Rechenmodell UND maschinenlesbare semantische Karte für die
 BEMS-Betriebsdatenanalyse (Aedifion-Datenpunkt-IDs an jeder Komponente).
-Stand: v0.6.0 (Juli 2026); validiert gegen zwei unabhängige
-FH-Burgenland-Referenzlösungen (Verteiler-Übung, TWE-Übung Bsp 6) sowie
-gegen die Skill-Referenz cooling-coil-greybox (FläktGroup-Register).
+Stand: v0.6.0 (Juli 2026) plus Robustheitsrunde 2026-09-10 (Bugfixes,
+Fehlerpfade, Newton-Energiegleichung, Zufallsnetz-Rauchtest, CI, YAML-Import
+beliebiger Form — Details im obersten Block von docs/roadmap.md); validiert
+gegen zwei unabhängige FH-Burgenland-Referenzlösungen (Verteiler-Übung,
+TWE-Übung Bsp 6) sowie gegen die Skill-Referenz cooling-coil-greybox
+(FläktGroup-Register).
 GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 — Änderungen nach Abschluss committen und pushen (Co-Authored-By-Trailer).
 

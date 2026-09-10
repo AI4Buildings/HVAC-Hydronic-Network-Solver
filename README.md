@@ -313,15 +313,20 @@ kleinsten Kv auf Kvs/R.
   Widerstands-Floor für Q → 0, Kv-Leckage-Floor für fast geschlossene Ventile,
   Divergenz-Wächter mit automatischer Relaxationshalbierung, Jacobi-Skalierung.
   Kompilierzeit-Checks: Druckinsel-Analyse, Bilanz fester Volumenströme.
-- **Thermik**: nach Hydraulik-Konvergenz Upwind-Advektion mit
-  Gauss-Seidel-Sweeps; ideale Mischung an Knoten, UA-Verluste, Heizkörper-
+- **Thermik**: nach Hydraulik-Konvergenz Upwind-Advektion; Newton-Verfahren
+  auf der Knotenbilanz F(T) = G(T) − T (dünne Jacobi-Matrix, Kantensteigung
+  per Differenzenquotient aus dem Komponentenmodell) mit Levenberg-Marquardt-
+  Vertrauensbereich und Armijo-Liniensuche — lineare Netze in einem Schritt,
+  nichtlineare quadratisch, unabhängig vom Rezirkulationsverhältnis
+  (docs/numerik.md §2). Ideale Mischung an Knoten, UA-Verluste, Heizkörper-
   Exponentenmodell (Brent-Verfahren), ε-NTU-Register, exponentielle
   Rohr-/FBH-Modelle. Globale Energiebilanz wird geprüft und im Bericht
   ausgewiesen. Strömungsumkehr ist zulässig (Upwind folgt dem Vorzeichen).
-  Robustheit: Periode-2-Grenzzyklen (z.B. durch q_max-Klemmen) werden
-  erkannt und adaptiv gedämpft; thermisch isolierte Umläufe mit fester
-  Leistung (keine stationäre Lösung) werden als Drift erkannt und mit
-  Abhilfevorschlägen gemeldet.
+  Robustheit: Klemmen (z.B. Erzeuger an q_max) werden über den singulären
+  Unterraum verlassen; thermisch isolierte Umläufe mit fester Leistung (keine
+  stationäre Lösung) werden erkannt und mit Knoten und Abhilfevorschlägen
+  gemeldet; unplausible Austrittstemperaturen (feste Leistung bei
+  Kleinstdurchfluss) erscheinen als Hinweis im Bericht.
 
 ## Beispiele
 
