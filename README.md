@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 214 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 263 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 ## Tool starten

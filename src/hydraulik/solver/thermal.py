@@ -58,9 +58,12 @@ _LAMBDA_MIN = 1.0 / 128.0
 #: Vertrauensbereich [K]: Startwert und Untergrenze (darunter gilt „festgefahren")
 _TRUST_INIT = 1e3
 _TRUST_MIN = 1e-9
-#: Stillstand: gedämpfter Schritt ohne Abstieg, der das Residuum um höchstens
-#: diesen Anteil wachsen lässt (Toleranz für Rundung bei großen Temperaturen)
+#: Stillstand: gedämpfter Schritt ohne Armijo-Abstieg, der das Residuum um
+#: höchstens diesen Anteil wachsen lässt (Toleranz für Rundung bei großen T)
 _STALL_TOL = 1e-3
+#: Stillstand mit messbarem Abstieg (relativ) gilt als Fortschritt, nicht als
+#: Drift-Verdacht — z.B. weit entfernte, aber existierende Lösung (UA klein)
+_PROGRESS_TOL = 1e-6
 #: Kumulierte Verschiebung [K] aufeinanderfolgender Stillstand-Schritte, ab
 #: der keine stationäre Lösung existiert (isolierter Umlauf mit fester Leistung)
 _DRIFT_DISPLACEMENT_K = 1e6
@@ -260,7 +263,7 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
         force_lm = False
         step = lam * float(np.max(np.abs(delta)))
         if outcome == "stillstand":
-            stall_disp += step
+            stall_disp = 0.0 if err_new <= (1.0 - _PROGRESS_TOL) * err else stall_disp + step
             if stall_disp > _DRIFT_DISPLACEMENT_K:
                 affected = [net.nodes[i].label for i in np.flatnonzero(np.abs(F) > s.tol_t)]
                 raise ConvergenceError(

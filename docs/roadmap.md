@@ -2,7 +2,7 @@
 
 ## Stand nach v0.6.0 (2026-09-10, unveröffentlicht)
 
-214 Tests, alle grün. Bugfix-Runde und Robustheit:
+263 Tests, alle grün. Bugfix-Runde und Robustheit:
 
 - **Bugfixes**: Heizkörper brach bei Kleinstdurchfluss (Restleckage einer
   sperrenden Rückschlagklappe, fast geschlossenes Ventil) mit rohem ValueError
@@ -30,6 +30,15 @@
   Beispiele 13–347 Sweeps → 1–8 Schritte, Rezirkulation 1:20000 1019 → 5,
   geklemmter Erzeuger mit fester Last (vorher Konvergenzfehler) → 7–24;
   Ergebnisse identisch (< 1e-4 K über 40 Zufallsnetze).
+  Absicherung in `tests/test_thermal_newton.py` (49 Tests): Fixpunkt-
+  Nachrechnung direkt aus der Knotenbilanz-Definition, unabhängige gedämpfte
+  Fixpunktiteration als Orakel (Beispiele, Zufallsnetze, Kältemaschine mit
+  Greybox-Register), geschlossene Lösungen (Rezirkulation mit Rohrverlust,
+  T = T_amb + Q/UA bis 1e7 K entfernt, 300er-Rohrkette in EINEM Schritt),
+  Ein-Schritt-Exaktheit linearer Netze, Invarianzen (Startwert inkl. exakt
+  Raumtemperatur, Komponentenreihenfolge, Strömungsumkehr, Wiederholung,
+  Toleranz), Lösung genau an der q_max-Klemme, 150 parallele Stränge,
+  Nicht-Expansivität aller Modellsteigungen.
 
 ## Stand v0.6.0 (2026-07-18)
 
@@ -265,7 +274,7 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (214 Tests, müssen grün sein);
+1. `pip install -e ".[dev]" && pytest` (263 Tests, müssen grün sein);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/).
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
    dieser Datei lesen — dort steht, was zuletzt gebaut wurde.

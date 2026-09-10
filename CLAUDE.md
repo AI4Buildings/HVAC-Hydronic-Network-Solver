@@ -15,7 +15,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (214 Tests)
+pytest                                   # Testsuite (263 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
@@ -124,8 +124,10 @@ src/hydraulik/
 docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               214 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
-                     test_smoke_random.py: 40 Zufallsnetze (fester Seed) über die Palette
+tests/               263 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+                     test_smoke_random.py: 40 Zufallsnetze (fester Seed) über die Palette;
+                     test_thermal_newton.py: Energiegleichung gegen Knotenbilanz-Definition,
+                     unabhängiges Fixpunkt-Orakel, geschlossene Lösungen, Invarianzen
 .github/workflows/   CI: pytest auf Python 3.10–3.12 bei Push/PR
 ```
 
