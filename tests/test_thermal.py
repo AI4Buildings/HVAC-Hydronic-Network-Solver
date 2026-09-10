@@ -434,3 +434,68 @@ def test_radiator_hinter_sperrender_rueckschlagklappe_loesbar():
     assert r["hk2"].t_out_C == pytest.approx(20.0, abs=1e-9)
     assert -r["hk2"].q_dot_kW * 1e3 == pytest.approx(
         r["hk2"].m_dot_kg_s * net.fluid.cp * 50.0, rel=1e-9)
+
+
+def _klemmen_umlauf(q_max_kw, q_last_kw):
+    """Isolierter Umlauf: Erzeuger mit Solltemperatur und q_max-Klemme, feste
+    Last — Lösung existiert genau dann, wenn q_max > Last (Erzeuger ungeklemmt)."""
+    net = h.Network()
+    net.add(h.HeatPump("wp", mode="target_t_out", t_out_set_C=45, q_max_kW=q_max_kw,
+                       q_nom_m3h=1.0))
+    net.add(h.Pump("pu", mode="constant_flow", q_m3h=1.0))
+    net.add(h.Radiator("hk", q_prescribed_kW=q_last_kw, kv_m3h=100))
+    net.connect("wp.out", "pu.in")
+    net.connect("pu.out", "hk.in")
+    net.connect("hk.out", "wp.in")
+    return net
+
+
+@pytest.mark.parametrize("q_max", [5.1, 5.01])
+def test_geklemmter_erzeuger_verlaesst_klemme(q_max):
+    """Am Startfeld (20 °C) ist der Erzeuger an q_max geklemmt → Umlauf aus
+    lauter Steigung-1-Kanten, Linearisierung singulär. Der Solver muss die
+    Klemme über die Stillstand-Verdopplung verlassen und die Lösung mit
+    ungeklemmtem Erzeuger (45 °C Vorlauf) finden (Gauss-Seidel scheiterte)."""
+    r = _klemmen_umlauf(q_max, 5.0).solve()
+    assert r.converged and r.iterations_thermal < 60
+    assert r["wp"].t_out_C == pytest.approx(45.0, abs=1e-6)
+    assert r["wp"].q_dot_kW == pytest.approx(5.0, abs=1e-6)          # ungeklemmt: Last gedeckt
+    assert abs(r.energy_imbalance_W) < 1e-3
+
+
+def test_geklemmter_erzeuger_unter_last_meldet_drift():
+    """q_max < Last: Temperaturen fallen ohne Grenze — keine stationäre Lösung,
+    klare Meldung statt Iterationslimit."""
+    with pytest.raises(h.ConvergenceError) as exc:
+        _klemmen_umlauf(4.9, 5.0).solve()
+    msg = str(exc.value)
+    assert "keine stationäre Lösung" in msg and "thermisch isoliert" in msg
+    assert "geklemmter Erzeuger" in msg and "thermal=False" in msg
+
+
+@pytest.mark.parametrize("ratio", [20, 2000, 20000])
+def test_rezirkulation_konvergiert_in_wenigen_schritten(ratio):
+    """Bypass-Umlauf ≫ Zustrom (Kontraktionsfaktor 1 − 1/ratio): Newton auf der
+    Knotenbilanz ist vom Rezirkulationsverhältnis unabhängig (Gauss-Seidel
+    brauchte ~ratio Sweeps, bei 1:20000 über 1000)."""
+    doc = {
+        "components": {
+            "zu": {"type": "inflow", "t_set_C": 70, "q_m3h": 1.0 / ratio},
+            "pu": {"type": "pump", "mode": "constant_flow", "q_m3h": 1.0},
+            "hk": {"type": "radiator", "q_nom_kW": 3, "t_sup_nom_C": 70,
+                   "t_ret_nom_C": 55, "t_room_C": 20, "kv_m3h": 100},
+            "ab": {"type": "outflow", "p_kPa": 150},
+            "abz": {"type": "tee"},
+        },
+        "connections": [["zu.port", "pu.in"], ["pu.out", "hk.in"],
+                        ["hk.out", "abz.a"], ["abz.b", "pu.in"], ["abz.c", "ab.port"]],
+    }
+    r = h.load(doc).solve()
+    assert r.converged and r.iterations_thermal <= 10
+    assert abs(r.energy_imbalance_W) < 1e-3
+    # Stationär: Zulaufenthalpie = Heizkörperabgabe + Ablaufenthalpie (absolute
+    # Toleranz: tol_t = 1e-6 K am Mischknoten mit 1 m³/h Umlauf ≙ ~1e-3 W)
+    fluid = h.load(doc).fluid
+    m_in = 1.0 / ratio / 3600 * fluid.rho
+    t_ab = next(n.t_C for n in r.nodes if "ab.port" in n.label)
+    assert m_in * fluid.cp * (70 - t_ab) == pytest.approx(-r["hk"].q_dot_kW * 1e3, abs=2e-3)

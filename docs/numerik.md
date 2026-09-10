@@ -86,7 +86,7 @@ dokumentiert in docs/idelchik_t_stueck_*.md).
 Konvergenzkriterien (relativ): Massendefekt / max|Q| < 1e-8 und
 Impulsdefekt / Druckmaßstab < 1e-6.
 
-## 2. Thermik: Upwind-Advektion (solver/thermal.py)
+## 2. Thermik: Newton auf der Knotenbilanz (solver/thermal.py)
 
 Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 
@@ -94,32 +94,53 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
   (Vorzeichen von Q); Strömungsumkehr damit automatisch korrekt.
 - **Kante**: Komponentenmodell liefert `T_aus, Q̇ = f(T_ein, |ṁ|)`.
 - **Knoten**: ideale Mischung
-  `T = (Σ ṁ_zu·cp·T_aus + ṁ_RB·cp·T_zulauf + UA·T_amb) / (Σ ṁ_zu·cp + ṁ_RB·cp + UA)`
-- Gauss-Seidel-Sweeps bis max|ΔT| < 1e-6 K; fällt der Fehler am Sweep-Limit
-  nachweislich geometrisch (Trendprüfung über Fenstermaxima, z.B. große
-  Rezirkulationsverhältnisse über Bypässe → Kontraktionsfaktor nahe 1),
-  wird bis 20× max_iter_thermal fortgesetzt; echte Drift (konstante Rate)
-  bricht die Trendprüfung wie bisher ab. Konvergiert, weil jedes
-  Wärmeübertragungsmodell |∂T_aus/∂T_ein| ≤ 1 hat (Kontraktion in Kreisen).
-- **Grenzzyklus-Wächter**: Komponenten mit Verstärkung exakt 1 (feste
-  Leistung, geklemmte Erzeuger an der q_max-Grenze) können Periode-2-
-  Oszillationen erzeugen (Eigenwert ≈ −1). Erkennung über den Feldvergleich
-  |T_k − T_{k−2}| ≪ max|ΔT| → adaptive Dämpfung α = 0.5 … 0.3.
-  (Reine Stagnation löst NICHT aus — wandernde Advektionsfronten haben
-  konstantes ΔT je Sweep, sind aber konvergent.)
-- **Drift-Erkennung**: Bewegt sich das Feld seit dem Halbzeit-Schnappschuss
-  weit, obwohl max|ΔT| stagniert, zirkuliert ein thermisch isolierter Umlauf
-  (kein Zustrom, kein UA) mit fest vorgegebener Leistung — dafür existiert
-  keine stationäre Lösung. Fehlermeldung nennt Abhilfen (UA angeben,
-  physikalisches Modell, `solve(thermal=False)`).
+  `G_j(T) = (Σ ṁ_zu·cp·T_aus + ṁ_RB·cp·T_zulauf + UA·T_amb) / (Σ ṁ_zu·cp + ṁ_RB·cp + UA)`
+- **Gleichung**: Fixpunkt `F(T) = G(T) − T = 0` in den Knotentemperaturen.
+  Statt der früheren Gauss-Seidel-Iteration (Kontraktionsfaktor nahe 1 bei
+  großen Rezirkulationsverhältnissen → hunderte Sweeps, Trendfenster,
+  Grenzzyklus-Dämpfung, Drift-Heuristik) ein **Newton-Verfahren**:
+  `(I − ∂G/∂T)·δ = F`. ∂G/∂T ist dünn besetzt — ein Eintrag
+  `ṁ_e·cp·f_e'/D_j` je durchströmter Kante an (Knoten stromab, Knoten
+  stromauf); die Steigung `f_e' = ∂T_aus/∂T_ein` kommt generisch per
+  Differenzenquotient (h = max(1e-3 K, 1e-6·|T|)) aus dem Komponentenmodell,
+  ohne neuen Vertrag. Lineare Netze (Rohre, Mischung, Speicher) sind damit in
+  EINEM Schritt exakt, unabhängig vom Rezirkulationsverhältnis; nichtlineare
+  Modelle konvergieren quadratisch (typisch 2–8 Iterationen).
+- **Globalisierung (Levenberg–Marquardt, Vertrauensbereich Δ)**: Ist die
+  Linearisierung singulär oder der Newton-Schritt länger als Δ — typisch an
+  Umläufen aus lauter Kanten mit Steigung 1 (Erzeuger an der q_max-Klemme,
+  Heizkörper „aus" am Startfeld 20 °C = Raumtemperatur, feste Leistungen) —
+  wird `(I − ∂G/∂T + μI)·δ = F` mit `μ = |F|_∞/Δ` gelöst: im singulären
+  Unterraum wird δ zum gedämpften Fixpunktschritt, sonst bleibt es Newton.
+  Armijo-Liniensuche auf `max|F|` (λ = 1, ½, … 1/128) entscheidet über die
+  Annahme. Da alle Modelle nicht-expansiv sind (0 ≤ f' ≤ 1, Mischung konvex,
+  also ‖∂G/∂T‖_∞ ≤ 1), kann ein kleiner gedämpfter Schritt das Residuum nie
+  vergrößern — ein Grenzzyklus-Wächter ist überflüssig. Wächst das Residuum
+  in jede Richtung, schrumpft Δ (¼); war die ungedämpfte Newton-Richtung
+  selbst unbrauchbar, wird der nächste Schritt gedämpft.
+- **Stillstand und Drift**: Ein voller gedämpfter Schritt, der `max|F|`
+  praktisch unverändert lässt, heißt: G ist entlang δ affin-identisch
+  (Klemme oder isolierter Umlauf). Bewegung ist dort frei — der Schritt wird
+  angenommen und Δ verdoppelt, bis eine Klemme verlassen ist (der geklemmte
+  Erzeuger erreicht seine Solltemperatur; die alte Iteration scheiterte an
+  genau diesem Fall). Übersteigt die Verschiebung 1e6 K ohne Änderung der
+  Bilanz, existiert keine stationäre Lösung: thermisch isolierter Umlauf mit
+  fester Leistung (q_prescribed/prescribed_q oder Erzeuger dauerhaft an
+  q_max). Die `ConvergenceError`-Meldung nennt die betroffenen Knoten und
+  Abhilfen (UA angeben, physikalisches Modell, `solve(thermal=False)`).
 - `solve(thermal=False)` überspringt die Energiegleichung (rein hydraulische
   Studien, z.B. Ventilhub-Kennlinien).
 - Fluss-Randbedingungen: mehrere je Knoten zulässig; jede geht mit ihrer
   eigenen Zulauftemperatur in die Enthalpiebilanz ein.
 - Tote Kanten (|ṁ| < 1e-7 kg/s): Durchreichen, Q̇ = 0; Knoten ganz ohne
-  Zustrom behalten T_init und werden als „stagnierend" markiert.
+  Zustrom behalten T_init und werden als „stagnierend" markiert (F ≡ 0).
 - **Globale Energiebilanz** (Σ Q̇_Kanten + Σ UA·(T_amb − T) + Randenthalpien)
   wird berechnet und im Bericht ausgewiesen; Tests fordern |Bilanz| < 1 W.
+- Vergleich alt/neu (Iterationen bis 1e-6 K): Beispiele 13–347 Sweeps →
+  1–8 Newton-Schritte; Bypass-Rezirkulation 1:20000 1019 → 5; Weiche mit
+  Sekundär > Primär 58 → 4; geklemmter Erzeuger mit fester Last im Umlauf
+  (q_max knapp über Last) vorher Konvergenzfehler, jetzt 7–24 Schritte;
+  Ergebnisse identisch (max |ΔT| < 1e-4 K über 40 Zufallsnetze).
 
 ### Thermische Komponentenmodelle
 
@@ -131,7 +152,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 208 Tests)
+## 3. Testabdeckung (tests/, 214 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/

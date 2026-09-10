@@ -39,7 +39,7 @@ def test_thermischer_modellfehler_wird_eingehuellt():
     msg = str(exc.value)
     assert "'r1'" in msg and "'pipe'" in msg and "thermisches Modell" in msg
     # Betriebspunkt des fehlgeschlagenen Aufrufs: erster Sweep startet bei t_init
-    assert "T_ein = 20.00 °C" in msg and "ṁ = 2.744e-01 kg/s" in msg and "(Sweep 1)" in msg
+    assert "T_ein = 20.00 °C" in msg and "ṁ = 2.744e-01 kg/s" in msg and "(Startfeld)" in msg
     assert "ZeroDivisionError: Testfehler im Modell" in msg
     assert isinstance(exc.value, h.HydraulikError)
     assert isinstance(exc.value.cause, ZeroDivisionError)

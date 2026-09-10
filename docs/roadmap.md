@@ -2,7 +2,7 @@
 
 ## Stand nach v0.6.0 (2026-09-10, unveröffentlicht)
 
-208 Tests, alle grün. Bugfix-Runde und Robustheit:
+214 Tests, alle grün. Bugfix-Runde und Robustheit:
 
 - **Bugfixes**: Heizkörper brach bei Kleinstdurchfluss (Restleckage einer
   sperrenden Rückschlagklappe, fast geschlossenes Ventil) mit rohem ValueError
@@ -22,6 +22,14 @@
   `/normalize_air` parst mit PyYAML (Block- und Inline-Stil, doppelte
   Schlüssel werden gemeldet, Loader-Hinweise in der Statuszeile); ohne Server
   bleibt der lokale Subset-Parser für das Exportformat der Fallback.
+- **Energiegleichung: Newton statt Gauss-Seidel** (docs/numerik.md §2):
+  dünne Jacobi-Matrix per Differenzenquotient je Kante, Levenberg-Marquardt-
+  Vertrauensbereich, Armijo-Liniensuche; Stillstand → Δ-Verdopplung (Klemmen
+  werden verlassen), > 1e6 K ohne Bilanzänderung = keine stationäre Lösung.
+  Trendfenster, Halbzeit-Schnappschuss und Grenzzyklus-Dämpfung entfallen.
+  Beispiele 13–347 Sweeps → 1–8 Schritte, Rezirkulation 1:20000 1019 → 5,
+  geklemmter Erzeuger mit fester Last (vorher Konvergenzfehler) → 7–24;
+  Ergebnisse identisch (< 1e-4 K über 40 Zufallsnetze).
 
 ## Stand v0.6.0 (2026-07-18)
 
@@ -257,7 +265,7 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (208 Tests, müssen grün sein);
+1. `pip install -e ".[dev]" && pytest` (214 Tests, müssen grün sein);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/).
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
    dieser Datei lesen — dort steht, was zuletzt gebaut wurde.

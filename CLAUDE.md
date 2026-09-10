@@ -15,7 +15,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (208 Tests)
+pytest                                   # Testsuite (214 Tests)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
@@ -61,8 +61,11 @@ src/hydraulik/
                      Druckinsel-Analyse, Bilanzcheck fester Volumenströme
   solver/
     hydraulic.py     SIMPLE-Loop (Newton-konsistent, s. docs/numerik.md)
-    thermal.py       Upwind-Advektion + Gauss-Seidel; Grenzzyklus-Dämpfung,
-                     Drift-Erkennung (isolierte Umläufe), skipped_thermal
+    thermal.py       Upwind-Advektion; Newton auf der Knotenbilanz (dünne
+                     Jacobi-Matrix per Differenzenquotient je Kante, Levenberg-
+                     Marquardt-Vertrauensbereich, Armijo-Liniensuche); Stillstand
+                     → Δ-Verdopplung (Klemmen), > 1e6 K = keine stationäre Lösung
+                     (isolierter Umlauf, Drift-Meldung); skipped_thermal
     settings.py      SolverSettings (alle Defaults; t_plausible_min/max für den
                      Plausibilitätshinweis im Bericht)
   yaml_loader.py     load(), load_settings() (typ-/bereichsgeprüft, gesammelt);
@@ -121,7 +124,7 @@ src/hydraulik/
 docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               208 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+tests/               214 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
                      test_smoke_random.py: 40 Zufallsnetze (fester Seed) über die Palette
 .github/workflows/   CI: pytest auf Python 3.10–3.12 bei Push/PR
 ```
@@ -157,6 +160,11 @@ tests/               208 Tests: analytische Referenzen + Validierung gegen Muste
   Druckkorrektur (beide nutzen J = a + 2b|Q|). Die naive Picard-Form
   Q* = Δp/R_lin divergiert oszillierend — nicht „vereinfachen"!
   Details und Herleitung: docs/numerik.md.
+- Thermik: Newton mit LM-Vertrauensbereich statt Fixpunkt-Sweeps. Die
+  Stillstand-Verdopplung ist KEINE Heuristik für einen Sonderfall, sondern
+  die Behandlung des singulären Unterraums (Kanten mit Steigung 1); der
+  Differenzenschritt muss relativ zu |T| skalieren, sonst macht Rundung
+  singuläre Umläufe fälschlich regulär (Drift wird dann nicht erkannt).
 - Verbindungssemantik: „verbinden = Knoten verschmelzen" (ein Druck, EINE
   Temperatur). Anschlüsse entlang einer Leitung brauchen getrennte Knoten
   (aufgeteilte Widerstände oder `link`), sonst mischt der Solver stromab
