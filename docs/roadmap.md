@@ -2,7 +2,7 @@
 
 ## Stand v0.6.0 (2026-07-18)
 
-147 Tests, alle grün. Seit v0.5.0 ergänzt (Schwerpunkt Luftseite):
+151 Tests, alle grün. Seit v0.5.0 ergänzt (Schwerpunkt Luftseite):
 
 - **Lüftungsschema-Editor** (`editor server` → /lueftung): Lüftungsanlagen
   als zwei Ketten (Zuluft unten, Abluft oben, WRG verbindet), integrierter
@@ -234,7 +234,7 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (147 Tests, müssen grün sein);
+1. `pip install -e ".[dev]" && pytest` (151 Tests, müssen grün sein);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/).
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
    dieser Datei lesen — dort steht, was zuletzt gebaut wurde.

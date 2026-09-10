@@ -385,3 +385,52 @@ def test_coil_q_prescribed_ohne_ua():
     with pytest.raises(h.NetworkValidationError) as exc:
         h.load(doc)
     assert "ua_ref_W_K" in str(exc.value)
+
+
+def test_radiator_kleinstdurchfluss_kuehlt_auf_raumtemperatur():
+    """Sehr kleiner Massenstrom (Restleckage, fast geschlossenes Ventil): das
+    Wasser kühlt vollständig auf Raumtemperatur ab. Vorher brach die
+    Nullstellensuche mit ValueError ab, weil die Nullstelle unterhalb der
+    unteren Intervallgrenze (t_room + 1e-6) lag."""
+    fluid = h.water_at(50)
+    hk = h.Radiator("hk", q_nom_kW=5, t_sup_nom_C=70, t_ret_nom_C=55, t_room_C=20)
+    for m_dot in (1e-4, 1e-5, 1e-7):
+        r = hk.thermal_outlet(70.0, m_dot, fluid)
+        assert r.t_out == pytest.approx(20.0, abs=1e-9)
+        assert -r.q_dot == pytest.approx(m_dot * fluid.cp * 50.0, rel=1e-12)
+        assert r.extras["dt_lm_K"] > 0.0
+    # Stetigkeit über die Schwelle: Wärmeabgabe je Massenstrom-Schritt (Faktor
+    # 1.02) ändert sich nirgends sprunghaft, t_out wächst monoton mit ṁ.
+    q_prev = t_prev = None
+    m_dot = 1e-5
+    while m_dot < 2e-2:
+        r = hk.thermal_outlet(70.0, m_dot, fluid)
+        if q_prev is not None:
+            assert -r.q_dot >= q_prev
+            assert -r.q_dot <= q_prev * 1.03
+            assert r.t_out >= t_prev - 1e-9
+        q_prev, t_prev = -r.q_dot, r.t_out
+        m_dot *= 1.02
+
+
+def test_radiator_hinter_sperrender_rueckschlagklappe_loesbar():
+    """Heizkörperstrang hinter einer in Sperrrichtung angeströmten Rückschlag-
+    klappe: die dokumentierte Restleckage (≈ 1 l/h) liegt weit über der
+    Stagnationsschwelle — die Thermik muss durchlaufen (vorher Absturz)."""
+    net = h.Network()
+    net.add(h.IdealStorage("sp", t_set_C=70))
+    net.add(h.Pump("pu", mode="constant_flow", q_m3h=0.5))
+    net.add(h.Radiator("hk1", q_nom_kW=5, t_sup_nom_C=70, t_ret_nom_C=55, t_room_C=20))
+    net.add(h.CheckValve("rk", kvs_m3h=2.0))
+    net.add(h.Radiator("hk2", q_nom_kW=5, t_sup_nom_C=70, t_ret_nom_C=55, t_room_C=20))
+    net.connect("sp.out", "pu.in")
+    net.connect("pu.out", "hk1.in", "rk.out")          # rk sperrt den Weg zu hk2
+    net.connect("rk.in", "hk2.in")
+    net.connect("hk1.out", "hk2.out", "sp.in")
+    r = net.solve()
+    assert r.converged
+    assert abs(r.energy_imbalance_W) < 1e-3
+    assert 0.0 < r["hk2"].m_dot_kg_s < 1e-3                 # Leckage, nicht stagnierend
+    assert r["hk2"].t_out_C == pytest.approx(20.0, abs=1e-9)
+    assert -r["hk2"].q_dot_kW * 1e3 == pytest.approx(
+        r["hk2"].m_dot_kg_s * net.fluid.cp * 50.0, rel=1e-9)

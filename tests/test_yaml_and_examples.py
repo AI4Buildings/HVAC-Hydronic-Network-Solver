@@ -120,3 +120,31 @@ connections:
     with pytest.raises(h.NetworkValidationError) as exc:
         h.load(yaml_text)
     assert "hk1" in str(exc.value) and "Doppelter Schlüssel" in str(exc.value)
+
+
+def test_bereichsfehler_nennt_grenze_in_eingabeeinheit():
+    """Bereichsverletzungen melden den Grenzwert in der Einheit des verwendeten
+    Schlüssels (vorher: SI-Wert mit abgeschnittenem Label, z.B.
+    '0.001 [inner_mm]' statt '1 mm')."""
+    with pytest.raises(h.ComponentParamError) as exc:
+        h.Pipe("r", length_m=1, d_inner_mm=0.5)
+    assert "Minimum (1 mm)" in str(exc.value)
+    with pytest.raises(h.ComponentParamError) as exc:
+        h.Pipe("r", length_m=1, d_inner_m=3.0)
+    assert "Maximum (2 m)" in str(exc.value)
+    with pytest.raises(h.ComponentParamError) as exc:
+        h.Link("l", q_nom_m3h=1e-9)
+    assert "Minimum (0.00036 m3h)" in str(exc.value)
+    with pytest.raises(h.ComponentParamError) as exc:
+        h.HeatingCoil("h", ua_ref_W_K=0.5, m_dot_air_kg_h=1e-3, t_air_in_C=20)
+    msg = str(exc.value)
+    assert "Minimum (1 W_K)" in msg and "Minimum (0.36 kg_h)" in msg
+    with pytest.raises(h.ComponentParamError) as exc:        # einheitenlos: unverändert
+        h.ControlValve("v", kvs_m3h=1, opening=150)
+    assert "Maximum (1)" in str(exc.value)
+
+
+def test_version_stimmt_mit_pyproject_ueberein():
+    import re
+    text = (Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+    assert h.__version__ == re.search(r'^version\s*=\s*"([^"]+)"', text, re.M).group(1)

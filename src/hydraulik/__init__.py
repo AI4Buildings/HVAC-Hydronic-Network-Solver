@@ -25,7 +25,7 @@ from .results import SolutionResult
 from .solver.settings import SolverSettings
 from .yaml_loader import load, load_settings
 
-__version__ = "0.3.0"
+__version__ = "0.6.0"          # muss mit pyproject.toml übereinstimmen (Test)
 
 __all__ = [
     "Network", "load", "load_settings", "SolverSettings", "SolutionResult",

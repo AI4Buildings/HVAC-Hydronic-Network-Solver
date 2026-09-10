@@ -118,10 +118,10 @@ def parse_params(type_name: str, specs: tuple[Param, ...], kwargs: dict) -> tupl
             val = float(raw) * factor
 
         if spec.minv is not None and val < spec.minv:
-            errors.append(f"'{key}' = {raw} liegt unter dem Minimum ({_fmt_si(spec.minv, spec)}).")
+            errors.append(f"'{key}' = {raw} liegt unter dem Minimum ({_fmt_limit(spec.minv, spec, key)}).")
             continue
         if spec.maxv is not None and val > spec.maxv:
-            errors.append(f"'{key}' = {raw} liegt über dem Maximum ({_fmt_si(spec.maxv, spec)}).")
+            errors.append(f"'{key}' = {raw} liegt über dem Maximum ({_fmt_limit(spec.maxv, spec, key)}).")
             continue
         values[spec.name] = val
 
@@ -139,9 +139,13 @@ def parse_params(type_name: str, specs: tuple[Param, ...], kwargs: dict) -> tupl
     return values, errors
 
 
-def _fmt_si(v: float, spec: Param) -> str:
-    unit = "" if spec.group in ("none", "int") else f" [{spec.display_key().split('_', 1)[-1] if '_' in spec.display_key() else ''}]"
-    return f"{v:g}{unit}"
+def _fmt_limit(v_si: float, spec: Param, key: str) -> str:
+    """Grenzwert (intern SI) in der Einheit des vom Nutzer verwendeten
+    Schlüssels, z.B. minv = 1e-3 m für 'd_inner_mm' → '1 mm'."""
+    if spec.group in ("none", "int"):
+        return f"{v_si:g}"
+    sfx = key[len(spec.name) + 1:]
+    return f"{v_si / UNIT_GROUPS[spec.group][sfx]:g} {sfx}"
 
 
 def params_doc(specs: tuple[Param, ...]) -> str:

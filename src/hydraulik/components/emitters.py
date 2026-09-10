@@ -101,8 +101,21 @@ class Radiator(TwoPortComponent):
             dtlm = lmtd(t_in, t_out, self.t_room)
             return c * (t_in - t_out) - self.q_nom * (dtlm / dtlm_nom) ** self.n
 
-        # balance(t_room+) > 0, balance(t_in) < 0 → Vorzeichenwechsel garantiert
-        t_out = float(brentq(balance, self.t_room + 1e-6, t_in, xtol=1e-8))
+        # balance(t_in) < 0 gilt immer. Untere Intervallgrenze knapp über der
+        # Raumtemperatur: ist die Bilanz dort bereits ≤ 0 (sehr kleiner
+        # Massenstrom, z.B. Restleckage einer sperrenden Rückschlagklappe oder
+        # fast geschlossenes Ventil), liegt die Nullstelle unterhalb der
+        # numerischen Auflösung — das Wasser kühlt vollständig auf Raum-
+        # temperatur ab und gibt seinen gesamten Enthalpiestrom ab. Ohne diese
+        # Abfrage bräche brentq mit ValueError ab (kein Vorzeichenwechsel).
+        t_lo = self.t_room + 1e-6
+        if balance(t_lo) <= 0.0:
+            q_emit = c * (t_in - self.t_room)
+            dtlm = dtlm_nom * (q_emit / self.q_nom) ** (1.0 / self.n)
+            return ThermalResult(self.t_room, -q_emit,
+                                 extras={"q_emitted_W": q_emit, "dt_lm_K": dtlm})
+        # balance(t_lo) > 0, balance(t_in) < 0 → Vorzeichenwechsel garantiert
+        t_out = float(brentq(balance, t_lo, t_in, xtol=1e-8))
         q_emit = c * (t_in - t_out)
         return ThermalResult(t_out, -q_emit,
                              extras={"q_emitted_W": q_emit, "dt_lm_K": lmtd(t_in, t_out, self.t_room)})
