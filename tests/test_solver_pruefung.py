@@ -246,3 +246,68 @@ def test_thermik_fehlermeldung_nennt_unplausible_spreizung():
     with pytest.raises(ConvergenceError) as ei:
         net.solve(SolverSettings(max_iter_thermal=20))
     assert "'hk'" in str(ei.value)
+
+
+# --- Netze gegen geschlossene Lösungen (unabhängige Referenzen) ------------------
+
+@pytest.mark.parametrize("qp, qs", [(2.0, 3.0), (3.0, 2.0)])
+def test_weiche_mischtemperaturen_beide_betriebsfaelle(qp, qs):
+    net = h.Network(fluid=W50)
+    net.add(h.IdealStorage("erz", t_set_C=70))
+    net.add(h.Pump("pp", mode="constant_flow", q_m3h=qp))
+    net.add(h.HydraulicSeparator("hw"))
+    net.add(h.Pump("ps", mode="constant_flow", q_m3h=qs))
+    net.add(h.IdealStorage("vb", t_set_C=40))
+    net.connect("erz.out", "pp.in"); net.connect("pp.out", "hw.prim_in"); net.connect("hw.prim_out", "erz.in")
+    net.connect("hw.sec_out", "ps.in"); net.connect("ps.out", "vb.in"); net.connect("vb.out", "hw.sec_in")
+    r = net.solve()
+    t_sec = (qp * 70 + (qs - qp) * 40) / qs if qs > qp else 70.0
+    t_ret = 40.0 if qs > qp else (qs * 40 + (qp - qs) * 70) / qp
+    assert r["ps"].t_in_C == pytest.approx(t_sec, abs=1e-6)
+    assert r["erz"].t_in_C == pytest.approx(t_ret, abs=1e-6)
+
+
+def test_heizkoerper_en442_gegen_eigene_nullstellensuche():
+    qn, ts, tr, troom, n, q_m3h, t_vl = 2000.0, 55.0, 45.0, 20.0, 1.3, 0.12, 50.0
+    net = h.Network(fluid=W50)
+    net.add(h.IdealStorage("sp", t_set_C=t_vl))
+    net.add(h.Pump("pu", mode="constant_flow", q_m3h=q_m3h))
+    net.add(h.Radiator("hk", q_nom_W=qn, t_sup_nom_C=ts, t_ret_nom_C=tr, t_room_C=troom, n=n))
+    net.connect("sp.out", "pu.in"); net.connect("pu.out", "hk.in"); net.connect("hk.out", "sp.in")
+    r = net.solve()
+    m, cp = q_m3h / 3600 * W50.rho, W50.cp
+    dtn = (ts - tr) / math.log((ts - troom) / (tr - troom))
+
+    def f(t):                                   # Energiebilanz minus EN-442-Leistung, steigend in t? → umdrehen
+        dt = (t_vl - t) / math.log((t_vl - troom) / (t - troom))
+        return qn * (dt / dtn) ** n - m * cp * (t_vl - t)
+    t_ret = _bisect(f, troom + 1e-9, t_vl)
+    assert r["hk"].t_out_C == pytest.approx(t_ret, abs=1e-6)
+
+
+def test_waermepumpe_an_der_leistungsgrenze():
+    net = h.Network(fluid=W50)
+    net.add(h.HeatPump("wp", mode="target_t_out", t_out_set_C=55, q_max_kW=5, q_nom_m3h=1))
+    net.add(h.Pump("pu", mode="constant_flow", q_m3h=1.0))
+    net.add(h.IdealStorage("vb", t_set_C=30))
+    net.connect("wp.out", "pu.in"); net.connect("pu.out", "vb.in"); net.connect("vb.out", "wp.in")
+    r = net.solve()
+    assert r["wp"].t_out_C == pytest.approx(30 + 5000 / (1 / 3600 * W50.rho * W50.cp), abs=1e-6)
+
+
+def test_offenes_system_und_gesperrte_rueckschlagklappe():
+    from hydraulik.friction import kv_to_b
+    net = h.Network(fluid=W50)
+    net.add(h.Inflow("zu", t_set_C=15, p_kPa=200)); net.add(h.FlowResistance("r", c_Pa_m3h2=5000))
+    net.add(h.Outflow("ab", p_kPa=50))
+    net.connect("zu.port", "r.in"); net.connect("r.out", "ab.port")
+    r = net.solve()
+    assert r["r"].q_m3h == pytest.approx(math.sqrt(150e3 / 5000), rel=1e-9)
+    assert r["r"].t_out_C == pytest.approx(15.0, abs=1e-12)
+    net = h.Network(fluid=W50)
+    net.add(h.Inflow("zu", t_set_C=15, p_kPa=50)); net.add(h.CheckValve("rk", kvs_m3h=4))
+    net.add(h.Outflow("ab", p_kPa=150))
+    net.connect("zu.port", "rk.in"); net.connect("rk.out", "ab.port")
+    r = net.solve(thermal=False)
+    leak = -math.sqrt(100e3 / (1e6 * kv_to_b(4, W50.rho))) * 3600
+    assert r["rk"].q_m3h == pytest.approx(leak, rel=1e-9)
