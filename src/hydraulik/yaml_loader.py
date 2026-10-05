@@ -18,8 +18,9 @@ import difflib
 from pathlib import Path
 
 from .exceptions import ComponentParamError, NetworkValidationError
-from .fluids import Fluid, WATER_DEFAULT, water_at
+from .fluids import FLUID_CUSTOM_PARAMS, FLUID_PRESET_PARAMS, Fluid, WATER_DEFAULT, water_at
 from .network import Network, component_from_dict
+from .params import finite_float, parse_params
 from .solver.settings import SolverSettings
 from .yamlio import load_document
 
@@ -108,9 +109,15 @@ def load_settings(source: str | Path | dict) -> SolverSettings:
                           f"Gültig: {', '.join(sorted(fields))}")
             continue
         is_int = str(fields[key].type) in ("int", "<class 'int'>")
+        if is_int and isinstance(val, float) and val.is_integer():
+            val = int(val)                       # 1e3, 400.0 wie JSON Schema 'integer'
         if isinstance(val, bool) or not isinstance(val, (int, float)) or (is_int and not isinstance(val, int)):
             errors.append(f"Solver-Einstellung '{key}' = {val!r} muss eine "
                           f"{'Ganzzahl' if is_int else 'Zahl'} sein.")
+            continue
+        if finite_float(val) is None:
+            errors.append(f"Solver-Einstellung '{key}' = {val!r} ist keine endliche Zahl "
+                          f"(inf/nan sind unzulässig).")
             continue
         if key in _SETTINGS_POSITIVE and val <= 0:
             errors.append(f"Solver-Einstellung '{key}' = {val!r} muss größer als 0 sein.")
@@ -125,19 +132,22 @@ def load_settings(source: str | Path | dict) -> SolverSettings:
 
 
 def _parse_fluid(spec, errors: list[str]) -> Fluid:
+    """fluid-Block: preset: water (+ t_C) ODER eigene Stoffwerte rho/mu/cp
+    (+ name) — typ-, bereichs- und schlüsselgeprüft wie Komponentenparameter."""
     if spec is None:
         return WATER_DEFAULT
     if not isinstance(spec, dict):
         errors.append(f"'fluid' muss ein Mapping sein, erhalten: {spec!r}")
         return WATER_DEFAULT
-    if "preset" in spec:
-        if spec["preset"] != "water":
-            errors.append(f"Unbekanntes Fluid-Preset '{spec['preset']}'. Verfügbar: water")
-            return WATER_DEFAULT
-        return water_at(float(spec.get("t_C", 50.0)))
-    try:
-        return Fluid(name=str(spec.get("name", "custom")), rho=float(spec["rho"]),
-                     mu=float(spec["mu"]), cp=float(spec["cp"]))
-    except KeyError as exc:
-        errors.append(f"'fluid': Schlüssel {exc} fehlt (erwartet rho, mu, cp oder preset: water).")
+    preset = "preset" in spec
+    values, errs = parse_params("fluid (preset)" if preset else "fluid (Stoffwerte)",
+                                FLUID_PRESET_PARAMS if preset else FLUID_CUSTOM_PARAMS, spec)
+    if errs:
+        errors += [f"'fluid': {m}" for m in errs]
+        if preset and set(spec) & {"rho", "mu", "cp"}:
+            errors.append("'fluid': entweder preset: water (+ t_C) ODER eigene Stoffwerte "
+                          "rho/mu/cp (+ name) – nicht beides.")
         return WATER_DEFAULT
+    if preset:
+        return water_at(values["t"])
+    return Fluid(name=values["name"], rho=values["rho"], mu=values["mu"], cp=values["cp"])

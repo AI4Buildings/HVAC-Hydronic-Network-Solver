@@ -48,6 +48,22 @@ class NetworkBuilder(Protocol):
     def flow_bc(self, el: str, q: float, t_supply: float) -> None: ...
 
 
+def parse_label(field: str, raw, errors: list[str]) -> str | None:
+    """Label-Felder (ts, BEMS id/key/description) sind Zeichenketten.
+
+    Ganzzahlen werden übernommen (ts: 4 → "4"; YAML 1.2 liest ts: 08 als 8),
+    Fließkommazahlen, Wahrheitswerte und Strukturen sind ein Fehler — sie
+    würden still verfälscht (1.10 → "1.1", true → "True")."""
+    if raw is None or isinstance(raw, str):
+        return raw
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        return str(raw)
+    errors.append(f"'{field}' = {raw!r} muss eine Zeichenkette sein – Labels bitte in "
+                  f"Anführungszeichen setzen (z.B. {field}: \"1.10\"); ungequotet liest "
+                  f"YAML 1.2 Zahlen und true/false.")
+    return None
+
+
 def _parse_bems(name: str, raw) -> list[dict]:
     """BEMS-Messpunktliste (reserviert für JEDE Komponente): frei viele
     Datenpunkte je Komponente, jeder mit id (abfragbare BEMS-/Aedifion-ID),
@@ -71,7 +87,12 @@ def _parse_bems(name: str, raw) -> list[dict]:
             errors.append(f"bems[{k}]: unbekannte Schlüssel {sorted(unknown)} "
                           f"(erlaubt: id, key, description)")
             continue
-        out.append({f: str(entry[f]) for f in ("id", "key", "description") if entry.get(f)})
+        rec = {}
+        for f in ("id", "key", "description"):
+            val = parse_label(f"bems[{k}].{f}", entry.get(f), errors)
+            if val not in (None, ""):
+                rec[f] = val
+        out.append(rec)
     if errors:
         raise ComponentParamError(name, errors)
     return out
@@ -90,10 +111,15 @@ class Component(ABC):
 
     def __init__(self, name: str, **kwargs):
         self.name = str(name)
-        ts = kwargs.pop("ts", None)
-        self.ts = None if ts is None else str(ts)
-        self.bems = _parse_bems(self.name, kwargs.pop("bems", None))
-        values, errors = parse_params(self.type_name, self.PARAMS, kwargs)
+        errors: list[str] = []
+        self.ts = parse_label("ts", kwargs.pop("ts", None), errors)
+        try:
+            self.bems = _parse_bems(self.name, kwargs.pop("bems", None))
+        except ComponentParamError as exc:          # mit den übrigen Fehlern sammeln
+            errors += exc.messages
+            self.bems = []
+        values, param_errors = parse_params(self.type_name, self.PARAMS, kwargs)
+        errors += param_errors
         if errors:
             raise ComponentParamError(self.name, errors)
         for key, val in values.items():

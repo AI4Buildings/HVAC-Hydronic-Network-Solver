@@ -7,6 +7,7 @@ gehalten (Pa, m³/s, kg/s, W, m, °C).
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 # Suffix -> Faktor zur SI-Einheit. Erster Eintrag = bevorzugte Anzeige.
@@ -32,6 +33,11 @@ UNIT_GROUPS: dict[str, dict[str, float]] = {
     "quad_resistance": {"Pa_m3h2": 3600.0 ** 2, "Pa_m3s2": 1.0},
     "lin_resistance":  {"Pa_m3h": 3600.0, "Pa_m3s": 1.0},
 }
+
+
+#: Wahrheitswörter aus YAML 1.1, die YAML 1.2 als Zeichenketten liest —
+#: bei Bool-Parametern mit eigenem Hinweis gemeldet (Vergleich in Kleinschrift)
+YAML11_BOOL_WORDS = frozenset({"yes", "no", "on", "off", "y", "n"})
 
 
 @dataclass(frozen=True)
@@ -101,11 +107,15 @@ def parse_params(type_name: str, specs: tuple[Param, ...], kwargs: dict) -> tupl
             continue
         if spec.group == "bool":
             if not isinstance(raw, bool):
-                errors.append(f"'{key}' muss true/false sein, erhalten: {raw!r}")
+                errors.append(f"'{key}' muss true/false sein, erhalten: {raw!r}"
+                              + yaml11_bool_hint(raw))
                 continue
             values[spec.name] = raw
             continue
         if spec.group == "int":
+            # ganzzahlige Floats (2.0, 1e3) wie JSON Schema 'integer' zulassen
+            if isinstance(raw, float) and raw.is_integer():
+                raw = int(raw)
             if isinstance(raw, bool) or not isinstance(raw, int):
                 errors.append(f"'{key}' muss eine Ganzzahl sein, erhalten: {raw!r}")
                 continue
@@ -115,7 +125,12 @@ def parse_params(type_name: str, specs: tuple[Param, ...], kwargs: dict) -> tupl
                 errors.append(f"'{key}' muss eine Zahl sein, erhalten: {raw!r}")
                 continue
             factor = 1.0 if spec.group == "none" else UNIT_GROUPS[spec.group][key[len(spec.name) + 1:]]
-            val = float(raw) * factor
+            val = finite_float(raw)
+            val = None if val is None else val * factor
+            if val is None or not math.isfinite(val):
+                errors.append(f"'{key}' = {raw!r} ist keine endliche Zahl "
+                              f"(inf/nan bzw. Überlauf sind unzulässig).")
+                continue
 
         if spec.minv is not None and val < spec.minv:
             errors.append(f"'{key}' = {raw} liegt unter dem Minimum ({_fmt_limit(spec.minv, spec, key)}).")
@@ -137,6 +152,24 @@ def parse_params(type_name: str, specs: tuple[Param, ...], kwargs: dict) -> tupl
                 f"Gültige Parameter: {', '.join(valid)}"
             )
     return values, errors
+
+
+def finite_float(raw) -> float | None:
+    """int/float → float; None bei inf/nan oder Überlauf (z.B. Ganzzahl 10**400)."""
+    try:
+        val = float(raw)
+    except OverflowError:
+        return None
+    return val if math.isfinite(val) else None
+
+
+def yaml11_bool_hint(raw) -> str:
+    """Zusatzhinweis, wenn ein Bool-Wert als YAML-1.1-Wort (yes/no/on/off)
+    angegeben wurde — YAML 1.2 liest diese Wörter als Zeichenketten."""
+    if isinstance(raw, str) and raw.strip().lower() in YAML11_BOOL_WORDS:
+        return (f" – '{raw}' ist in YAML 1.2 eine Zeichenkette, kein Wahrheitswert; "
+                f"bitte true/false verwenden")
+    return ""
 
 
 def _fmt_limit(v_si: float, spec: Param, key: str) -> str:

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .params import Param
+
 
 @dataclass(frozen=True)
 class Fluid:
@@ -12,6 +14,25 @@ class Fluid:
     rho: float   # kg/m³
     mu: float    # Pa·s
     cp: float    # J/(kg·K)
+
+
+#: fluid-Block der Eingabedatei — Variante 1: Wasser aus der Stoffwerttabelle.
+#: Wie Komponentenparameter deklariert (Single Source of Truth für Loader UND
+#: JSON Schema): fluid: {preset: water, t_C: 50}
+FLUID_PRESET_PARAMS = (
+    Param("preset", "str", required=True, choices=("water",),
+          help="Stoffwerttabelle Wasser (VDI-Wärmeatlas, 1 bar)"),
+    Param("t", "temperature", default=50.0,
+          help="mittlere Netztemperatur für die Stoffwerte (Tabelle 10–90 °C, außerhalb geklemmt)"),
+)
+#: Variante 2: konstante Stoffwerte frei vorgegeben:
+#: fluid: {name: glykol, rho: 1040, mu: 3.5e-3, cp: 3600}
+FLUID_CUSTOM_PARAMS = (
+    Param("name", "str", default="custom", help="Bezeichnung (nur Bericht)"),
+    Param("rho", "none", required=True, minv=1e-3, help="Dichte [kg/m³]"),
+    Param("mu", "none", required=True, minv=1e-9, help="dynamische Viskosität [Pa·s]"),
+    Param("cp", "none", required=True, minv=1.0, help="spezifische Wärmekapazität [J/(kg·K)]"),
+)
 
 
 # Stoffwerte Wasser bei 1 bar (VDI-Wärmeatlas, gerundet)
