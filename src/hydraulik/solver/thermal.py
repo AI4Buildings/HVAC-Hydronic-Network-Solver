@@ -196,6 +196,20 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
                 return None
         return x if np.all(np.isfinite(x)) else None
 
+    def spread_hint(t_now: np.ndarray, t_out_now: np.ndarray) -> str:
+        """Diagnose für Abbruchmeldungen: Kanten mit unplausibler Temperatur-
+        spreizung (> 100 K) — fast immer eine feste Leistung bei sehr kleinem
+        Durchfluss (die stationäre Lösung liegt dann bei absurden Temperaturen
+        oder existiert nicht)."""
+        bad = sorted(((abs(float(t_out_now[i] - t_now[up[i]])), edges[i].component.name)
+                      for i in modelled
+                      if abs(float(t_out_now[i] - t_now[up[i]])) > 100.0), reverse=True)
+        if not bad:
+            return ""
+        names = ", ".join(f"'{nm}' ({d:.0f} K)" for d, nm in bad[:5])
+        return (f" Unplausible Temperaturspreizung an: {names} – typisch eine feste Leistung "
+                f"(q_prescribed/prescribed_q) bei sehr kleinem Durchfluss.")
+
     identity = sp.identity(n, format="csc")
     t = np.full(n, float(s.t_init))
     g, t_out, q_dot, extras = evaluate(t, "Startfeld")
@@ -225,7 +239,7 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
             if delta is None:
                 raise ConvergenceError(
                     f"Thermik-Solver: Linearisierung in Iteration {it} auch gedämpft "
-                    f"singulär (max. Bilanzabweichung {err:.2e} K).")
+                    f"singulär (max. Bilanzabweichung {err:.2e} K)." + spread_hint(t, t_out))
             nrm = float(np.max(np.abs(delta)))
             if nrm > trust:
                 delta *= trust / nrm
@@ -256,7 +270,8 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
                 if trust < _TRUST_MIN:
                     raise ConvergenceError(
                         f"Thermik-Solver festgefahren nach {it} Iterationen (max. "
-                        f"Bilanzabweichung {err:.2e} K, kein Abstieg mehr möglich).")
+                        f"Bilanzabweichung {err:.2e} K, kein Abstieg mehr möglich)."
+                        + spread_hint(t, t_out))
             else:                                       # Newton-Richtung selbst unbrauchbar
                 force_lm = True                         # (nahezu singulär): nächster Schritt gedämpft
             continue
@@ -275,7 +290,7 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
                     f"vorgegebener Leistung (q_prescribed/prescribed_q, ggf. ein an q_max "
                     f"geklemmter Erzeuger) – dafür existiert keine stationäre Lösung. Abhilfe: "
                     f"UA-Verlust angeben, physikalisches Wärmeübertragermodell verwenden oder "
-                    f"nur hydraulisch rechnen (net.solve(thermal=False)).")
+                    f"nur hydraulisch rechnen (net.solve(thermal=False))." + spread_hint(t, t_out))
             trust = 2.0 * max(trust, step)
         else:
             stall_disp = 0.0
@@ -291,7 +306,8 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
     if not converged:
         raise ConvergenceError(
             f"Thermik-Solver nicht konvergiert nach {it} Iterationen "
-            f"(max. Bilanzabweichung {err:.2e} K). Abhilfe: settings.max_iter_thermal erhöhen.")
+            f"(max. Bilanzabweichung {err:.2e} K). Abhilfe: settings.max_iter_thermal erhöhen."
+            + spread_hint(t, t_out))
 
     t_node = t
     stagnant = [nd.index for nd in net.nodes

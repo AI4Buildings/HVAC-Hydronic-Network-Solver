@@ -228,3 +228,21 @@ def test_kuehlregister_wasser_nie_ueber_feuchtkugelgrenze(rh, m_w, t_w_in):
     limit = max(t_star, t_w_in) if r.extras.get("betrieb") == "nass" else 23.098
     assert r.t_out <= limit + 1e-6
     assert r.t_out <= 23.098 + 1e-9
+
+
+# --- B12: Thermik-Fehlermeldung nennt die wahrscheinliche Ursache ----------------
+
+def test_thermik_fehlermeldung_nennt_unplausible_spreizung():
+    """Feste Leistung durch einen Kleinstdurchfluss (fast geschlossenes Ventil)
+    im isolierten Teilkreis: die Fehlermeldung nennt die Kante mit der
+    unplausiblen Temperaturspreizung."""
+    from hydraulik.exceptions import ConvergenceError
+    from hydraulik.solver.settings import SolverSettings
+    net = h.Network(fluid=W50)
+    net.add(h.Pump("pu", mode="constant_flow", q_m3h=0.0005))
+    net.add(h.Radiator("hk", q_prescribed_kW=2.0, kv_m3h=2.0))
+    net.connect("pu.out", "hk.in")
+    net.connect("hk.out", "pu.in")
+    with pytest.raises(ConvergenceError) as ei:
+        net.solve(SolverSettings(max_iter_thermal=20))
+    assert "'hk'" in str(ei.value)
