@@ -45,7 +45,34 @@ das Schur-Komplement des Druckblocks:
 
 → quadratische Konvergenz, typisch 3–6 Iterationen, Massendefekt ~1e-16.
 Defaults α = 1.0; ein Divergenz-Wächter halbiert die Relaxation, wenn der
-Impulsdefekt 5× in Folge steigt (bis minimal 0.1).
+Impulsdefekt 5× in Folge steigt (bis minimal 0.1), und verdoppelt sie nach
+3 Abnahmen in Folge wieder bis zum eingestellten Wert (die Dämpfung ist nur
+vorübergehend — dauerhaft gedämpft konvergierte Newton nur noch linear,
+≈ 1 % je Iteration).
+
+**Jacobi-Steigung.** `a + 2b·|Q|` ist die exakte Ableitung nur für
+Q-unabhängige a, b. Im laminar-turbulenten Übergang (Churchill, Re ≈
+2200–3000) unterschätzt sie dΔp/dQ bis Faktor 2.8 → Newton schießt über,
+Grenzzyklus. Verwendet wird daher `J = max(a + 2b|Q|, dR/dQ)` mit dem
+Differenzenquotienten der Kantenkennlinie R(Q) = a·Q + b·Q|Q| − Δp_source
+aus `coeff_fn` (generisch, kein neuer Vertrag; das Maximum ist nie zu flach).
+
+**Konsistente Konvergenzprüfung.** Residuen werden am Iterationsanfang mit
+den BEIM AKTUELLEN Zustand ausgewerteten Koeffizienten geprüft, erst danach
+folgt das Newton-Update. (Bis Oktober 2026 wurde nach dem Update mit den
+Koeffizienten des alten Q geprüft: Rohre ohne Startwert beginnen bei q_init
+laminar, d.h. linear; Newton löste das lineare Modell exakt und der Solver
+meldete nach EINER Iteration Konvergenz mit laminarer Stromaufteilung —
+Fehler bis 17 % ohne Warnung.) Zusätzlich muss die letzte Volumenstrom-
+Korrektur klein sein (≤ 1e-6·max|Q| bzw. R-Floor-Auflösung): das Impuls-
+residuum relativ zum GLOBALEN Druckmaßstab legt Ströme mit kleinem Δp nicht
+fest (widerstandsarme oder antriebslose Maschen, doppelte Nullstelle von
+b·Q|Q| = 0 → nur lineare Konvergenz).
+
+**Eigenschleifen** (Ein- und Austritt am selben Knoten, kurzgeschlossenes
+Bauteil): Δp ≡ 0, die Kante ist entkoppelt; ihre skalare Gleichung
+R(Q) = Δp_Quelle wird vorab exakt gelöst (Bisektion: passiv V̇ = 0, Pumpe
+Kurzschluss-Zirkulation √(dp/b_int)).
 
 ### Robustheitsmaßnahmen
 
@@ -83,8 +110,20 @@ Validierung: tests/test_tee_idelchik.py (Handrechnung Trennung x = 0.4 und
 Vereinigung x = 0.1 mit ζ = −0.65 auf 0.2 Pa genau; Tabellenquelle
 dokumentiert in docs/idelchik_t_stueck_*.md).
 
-Konvergenzkriterien (relativ): Massendefekt / max|Q| < 1e-8 und
-Impulsdefekt / Druckmaßstab < 1e-6.
+Konvergenzkriterien (relativ): Massendefekt / max|Q| < 1e-8, Impulsdefekt /
+Druckmaßstab < 1e-6 (beide mit den Koeffizienten des geprüften Zustands) und
+letzte Volumenstrom-Korrektur ≤ 1e-6·max|Q|.
+
+Plausibilitätshinweise nach dem Lösen (Hook `result_notices`): Pumpen melden,
+wenn der interne Regularisierungswiderstand > 15 % der Druckerhöhung aufzehrt
+(typisch q_nom nicht angegeben), Erzeuger, wenn ihr Default-Nennpunkt
+(15 kPa bei 1 m³/h) bei viel größerem Volumenstrom einen großen
+Innendruckverlust ergibt.
+
+Bekannte Grenze: Das Idelchik-T-Stück hat keine Lösung, wenn zwei Schenkel
+am selben Knoten liegen bzw. über eine ideale Verbindung eine Masche durch
+das T-Stück bilden (ζ springt beim Regimewechsel Trennen↔Vereinigen bei
+Schenkelstrom 0) — der Solver bricht dann mit Konvergenzfehler ab.
 
 ## 2. Thermik: Newton auf der Knotenbilanz (solver/thermal.py)
 
@@ -148,11 +187,11 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 |---|---|
 | Rohr / FBH | exponentielles Abklingen an T_amb bzw. T_raum: `T_aus = T_∞ + (T_ein − T_∞)·e^(−UA/ṁcp)` (analytisch, robust bei kleinem ṁ) |
 | Heizkörper | EN-442-Exponentenmodell `Q̇ = Q̇_N·(ΔT_lm/ΔT_lm,N)^n`, gekoppelt mit Enthalpiebilanz; Nullstelle via brentq auf [T_raum, T_ein] (Vorzeichenwechsel garantiert) |
-| Register | sensibles ε-NTU (Gegenstrom / Kreuzstrom unvermischt) mit Teillastkorrektur UA = UA_ref·[(V̇g/V̇g,ref)·(V̇w/V̇w,ref)]^n (Gl. 4.2, FH-Skript Wärmetechnik 2; Default n = 0.4, ohne Referenzen konstant); Kühlregister optional als Greybox mit Kondensation (Skill cooling-coil-greybox): Q̇ = max(Q̇_trocken, ε*-NTU*-Nassmodell mit Enthalpietreiber h_ein − h_sat(ϑ_w)), Magnus-Psychrometrie, Kondensatrate in extras — validiert gegen die Skill-Referenzvorhersage (FläktGroup H241611, < 0.3 % Abweichung) |
+| Register | sensibles ε-NTU (Gegenstrom / Kreuzstrom unvermischt) mit Teillastkorrektur UA = UA_ref·[(V̇g/V̇g,ref)·(V̇w/V̇w,ref)]^n (Gl. 4.2, FH-Skript Wärmetechnik 2; Default n = 0.4, ohne Referenzen konstant); Kühlregister optional als Greybox mit Kondensation (Skill cooling-coil-greybox): Q̇ = max(Q̇_trocken, ε*-NTU*-Nassmodell mit Enthalpietreiber h_ein − h_sat(ϑ_w)), Magnus-Psychrometrie, Kondensatrate in extras — validiert gegen die Skill-Referenzvorhersage (FläktGroup H241611, < 0.3 % Abweichung); Nassbetrieb begrenzt auf den Gleichgewichtszustand h_sat(T_w,aus) ≤ h_Luft,ein (zweiter Hauptsatz; die konstante Sättigungs-Wärmekapazität c_s überschätzte sonst bei kleinem Wasserstrom die Leistung); Gegenstrom-ε numerisch stabil für jedes Kapazitätsverhältnis |
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 633 Tests)
+## 3. Testabdeckung (tests/, 745 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/

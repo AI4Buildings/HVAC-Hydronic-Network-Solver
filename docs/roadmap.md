@@ -2,7 +2,7 @@
 
 ## Eingabeformat gehärtet (2026-10-05, unveröffentlicht)
 
-633 Tests, alle grün (Paritätstests brauchen node, sonst übersprungen).
+745 Tests, alle grün (Paritätstests brauchen node, sonst übersprungen).
 Anlass: externes Review — PyYAML (YAML 1.1) las `1.4e0` als String und
 `no`/`off` als False; die Editoren hatten eigene Mini-Parser mit anderer
 Semantik. Jetzt:
@@ -318,7 +318,7 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (633 Tests, müssen grün sein; node für die Paritätstests);
+1. `pip install -e ".[dev]" && pytest` (745 Tests, müssen grün sein; node für die Paritätstests);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/).
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
    dieser Datei lesen — dort steht, was zuletzt gebaut wurde.
