@@ -209,3 +209,22 @@ def test_hinweis_erzeuger_ohne_q_nom_grosser_innendruckverlust():
     net.components["wp"].q_nom = 8.6 / 3600.0                       # angegeben → ruhig
     net.components["wp"].given = net.components["wp"].given | {"q_nom"}
     assert "'wp'" not in _notices_for(net)
+
+
+# --- B11: Greybox-Nassmodell darf den zweiten Hauptsatz nicht verletzen ---------
+
+@pytest.mark.parametrize("rh", [0.5, 0.7, 0.912])
+@pytest.mark.parametrize("m_w", [2.0, 0.5, 0.193, 0.05, 0.01, 1e-4])
+@pytest.mark.parametrize("t_w_in", [6.0, 12.563, 18.0])
+def test_kuehlregister_wasser_nie_ueber_feuchtkugelgrenze(rh, m_w, t_w_in):
+    """Gegenstrom: das Wasser kann höchstens den Zustand im Gleichgewicht mit der
+    eintretenden Luft erreichen, h_sat(T_w,aus) ≤ h_Luft,ein (Nassbetrieb) bzw.
+    T_w,aus ≤ T_Luft,ein (trocken)."""
+    from hydraulik.components.coils import h_moist, t_air_from_h_phi, x_from_rh
+    c = h.CoolingCoil("kr", ua_ref_W_K=1500, ua_star_wet_kg_s=0.525, rh_air_in=rh,
+                      m_dot_air_kg_s=2.0, t_air_in_C=23.098)
+    r = c.thermal_outlet(t_w_in, m_w, h.water_at(20))
+    t_star = t_air_from_h_phi(h_moist(23.098, x_from_rh(23.098, rh)), 1.0)
+    limit = max(t_star, t_w_in) if r.extras.get("betrieb") == "nass" else 23.098
+    assert r.t_out <= limit + 1e-6
+    assert r.t_out <= 23.098 + 1e-9

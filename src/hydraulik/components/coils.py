@@ -221,6 +221,13 @@ class CoolingCoil(_WaterAirCoil):
         x_in = x_from_rh(self.t_air_in, self.rh_air_in)
         h_in = h_moist(self.t_air_in, x_in)
         q_wet = eps_star * m_da * (h_in - h_moist(t_in, x_from_rh(t_in, 1.0)))
+        # Zweiter Hauptsatz: das Wasser erreicht höchstens den Gleichgewichts-
+        # zustand mit der eintretenden Luft, h_sat(T_w,aus) ≤ h_Luft,ein. Die
+        # lineare Sättigungskennlinie (konstantes c_s, kalibriert für Kalt-
+        # wasser) überschätzt sonst bei großer Wassererwärmung (kleiner
+        # Wasserstrom) die Leistung: Wasser wärmer als die Luft.
+        t_star = t_air_from_h_phi(h_in, 1.0)
+        q_wet = min(q_wet, max(0.0, c_w * (t_star - t_in)))
 
         if q_wet <= q_dry:                                  # trockener Betrieb
             extras = dict(dry.extras)
