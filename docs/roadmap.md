@@ -1,5 +1,18 @@
 # Status & Roadmap
 
+## Solver-Prüfung (2026-10-06, Branch fix/solver-pruefung, unveröffentlicht)
+
+754 Tests, alle grün. Ausführlich: docs/solver_pruefung_2026-10.md
+(Code-Review, geschlossene Lösungen, 3300 Zufallsnetze mit unabhängiger
+Nachrechnung). Behoben: falsche Konvergenzmeldung mit veralteten
+Koeffizienten (bis 17 % Fehler bei parallelen Rohren), Nicht-Konvergenz im
+laminar-turbulenten Übergang, Reststrom in Eigenschleifen, dauerhafte
+Dämpfung, Greybox-Überlauf und 2.-Hauptsatz-Verletzung; Hinweise bei
+Default-Referenzwiderständen (Pumpe, Erzeuger, Weiche). Offen (Entscheidung):
+3-Wege-Ventil-Kennlinie B, Idelchik-T-Stück (Maschen durch zwei Schenkel,
+Mehrdeutigkeit), adaptiver Jacobi-Floor, Kennzeichnung thermisch
+unbestimmter Umläufe; Lüftungskern L1–L12 (Abweichung von der MATLAB-Referenz).
+
 ## Eingabeformat gehärtet (2026-10-05, unveröffentlicht)
 
 745 Tests, alle grün (Paritätstests brauchen node, sonst übersprungen).

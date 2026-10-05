@@ -139,7 +139,8 @@ src/hydraulik/
                      Plausibilitätshinweis bei Austrittstemperaturen außerhalb
                      t_plausible_min/max (feste Leistung bei Kleinstdurchfluss)
   cli.py             Konsolenskript `hydraulik`
-docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
+docs/                architektur.md, numerik.md, erweitern.md, roadmap.md,
+                     solver_pruefung_2026-10.md (Prüfbericht, offene Punkte)
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
 tests/               745 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
