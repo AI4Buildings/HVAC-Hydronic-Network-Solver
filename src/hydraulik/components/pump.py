@@ -47,6 +47,23 @@ class Pump(TwoPortComponent):
         q_nom = self.q_nom or (1.0 / 3600.0)
         return self.dp_internal_frac * self.dp / q_nom ** 2 if self.dp else 1e6
 
+    def result_notices(self, q: float, fluid: Fluid) -> list[str]:
+        """Hinweis, wenn der interne Regularisierungswiderstand am Arbeitspunkt
+        einen spürbaren Teil der Druckerhöhung aufzehrt (typisch: q_nom fehlt,
+        Default 1 m³/h, tatsächlicher Volumenstrom viel größer)."""
+        if self.mode != "constant_dp" or not self.dp:
+            return []
+        frac = self._b_internal() * q * q / self.dp
+        if frac <= 0.15:
+            return []
+        q_nom = (self.q_nom or 1.0 / 3600.0) * 3600.0
+        herkunft = "Default" if "q_nom" not in self.given else "angegeben"
+        return [f"Pumpe '{self.name}': am Arbeitspunkt V̇ = {abs(q) * 3600:.3f} m³/h gehen "
+                f"{100 * frac:.0f} % der eingestellten Druckerhöhung ({self.dp / 1e3:g} kPa) im "
+                f"internen Regularisierungswiderstand verloren (dp_internal_frac = "
+                f"{self.dp_internal_frac:g} bei q_nom = {q_nom:.3g} m³/h, {herkunft}). "
+                f"q_nom_m3h auf den Auslegungsvolumenstrom setzen bzw. dp_internal_frac verkleinern."]
+
     def build(self, b: NetworkBuilder) -> None:
         if self.mode == "constant_flow":
             b.edge(b.port("in"), b.port("out"),

@@ -171,3 +171,41 @@ def test_greybox_epsilon_stabile_form_gleich_originalformel():
                 ref = (1 - e) / (1 - m * e)
             assert _eps_counterflow(ntu, m) == pytest.approx(ref, rel=1e-9)
     assert _eps_counterflow(5.0, 1e6) == pytest.approx(1e-6, rel=1e-9)    # ε* → 1/m*
+
+
+# --- B1/B2: stille Verfälschung durch interne Referenzwiderstände ---------------
+
+def _notices_for(net):
+    return " | ".join(net.solve(thermal=False).notices)
+
+
+def test_hinweis_pumpe_ohne_q_nom_verliert_foerderhoehe():
+    net = h.Network(fluid=W50)
+    net.add(h.Pump("pu", mode="constant_dp", dp_kPa=50))
+    net.add(h.FlowResistance("r", c_Pa_m3h2=500))
+    net.connect("pu.out", "r.in")
+    net.connect("r.out", "pu.in")
+    msg = _notices_for(net)
+    assert "Pumpe 'pu'" in msg and "q_nom" in msg and "%" in msg
+    # mit passendem q_nom: kein Hinweis (5 % Regularisierung ist dokumentiert)
+    net2 = h.Network(fluid=W50)
+    net2.add(h.Pump("pu", mode="constant_dp", dp_kPa=50, q_nom_m3h=10))
+    net2.add(h.FlowResistance("r", c_Pa_m3h2=500))
+    net2.connect("pu.out", "r.in")
+    net2.connect("r.out", "pu.in")
+    assert "Pumpe 'pu'" not in _notices_for(net2)
+
+
+def test_hinweis_erzeuger_ohne_q_nom_grosser_innendruckverlust():
+    net = h.Network(fluid=W50)
+    net.add(h.HeatPump("wp", mode="target_t_out", t_out_set_C=45, q_max_kW=60))
+    net.add(h.Pump("pu", mode="constant_dp", dp_kPa=60, q_nom_m3h=8.6))
+    net.add(h.Radiator("hk", q_nom_kW=50, t_sup_nom_C=45, t_ret_nom_C=40))
+    net.connect("wp.out", "pu.in")
+    net.connect("pu.out", "hk.in")
+    net.connect("hk.out", "wp.in")
+    msg = _notices_for(net)
+    assert "'wp'" in msg and "q_nom" in msg and "kPa" in msg
+    net.components["wp"].q_nom = 8.6 / 3600.0                       # angegeben → ruhig
+    net.components["wp"].given = net.components["wp"].given | {"q_nom"}
+    assert "'wp'" not in _notices_for(net)

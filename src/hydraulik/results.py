@@ -296,6 +296,11 @@ def build_result(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
              for nd in net.nodes]
     notices = list(net.notices)
     _plausibility_notices(net, hyd, th, settings, notices)
+    # Komponenten-eigene Plausibilitätshinweise (duck-typed result_notices)
+    for e in net.edges:
+        fn = getattr(e.component, "result_notices", None)
+        if fn is not None:
+            notices += fn(float(hyd.q[e.index]), fluid)
     segments = _ts_segments(net, hyd, th, notices)
 
     # Sensoren: Komponenten mit measure()-Hook lesen den gelösten Zustand ab

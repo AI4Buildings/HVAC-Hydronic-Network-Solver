@@ -45,6 +45,17 @@ class _PlantBase(TwoPortComponent):
     def hydraulic_coefficients(self, q: float, fluid: Fluid) -> EdgeCoefficients:
         return EdgeCoefficients(b=self.dp_nom / self.q_nom ** 2)
 
+    def result_notices(self, q: float, fluid: Fluid) -> list[str]:
+        """Hinweis, wenn der Default-Nennpunkt (dp_nom bei q_nom = 1 m³/h) bei
+        einem viel größeren Volumenstrom einen großen Innendruckverlust ergibt."""
+        if "q_nom" in self.given or abs(q) <= 1.5 * self.q_nom:    # Δp_int > 2.25·dp_nom
+            return []
+        dp_int = self.dp_nom * (q / self.q_nom) ** 2
+        return [f"'{self.name}' ({self.type_name}): interner Druckverlust {dp_int / 1e3:.1f} kPa "
+                f"bei V̇ = {abs(q) * 3600:.3f} m³/h — berechnet aus dem Default-Nennpunkt "
+                f"{self.dp_nom / 1e3:g} kPa bei q_nom = {self.q_nom * 3600:g} m³/h. "
+                f"q_nom_m3h (und dp_nom_kPa) des Geräts angeben."]
+
     def thermal_outlet(self, t_in: float, m_dot: float, fluid: Fluid) -> ThermalResult:
         c = m_dot * fluid.cp
         if self.mode == "prescribed_q":

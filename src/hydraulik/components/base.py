@@ -121,6 +121,10 @@ class Component(ABC):
         except ComponentParamError as exc:          # mit den übrigen Fehlern sammeln
             errors += exc.messages
             self.bems = []
+        #: ausdrücklich angegebene Parameter (SI-Namen) — für Hinweise, wenn ein
+        #: Default (z.B. q_nom) die Lösung spürbar beeinflusst
+        self.given = frozenset(spec.name for spec in self.PARAMS
+                               if any(k in kwargs for k in spec.accepted_keys()))
         values, param_errors = parse_params(self.type_name, self.PARAMS, kwargs)
         errors += param_errors
         if errors:
