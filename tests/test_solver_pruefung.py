@@ -311,3 +311,20 @@ def test_offenes_system_und_gesperrte_rueckschlagklappe():
     r = net.solve(thermal=False)
     leak = -math.sqrt(100e3 / (1e6 * kv_to_b(4, W50.rho))) * 3600
     assert r["rk"].q_m3h == pytest.approx(leak, rel=1e-9)
+
+
+def test_hinweis_weiche_ohne_q_nom_mit_spuerbarem_druckverlust():
+    def netz(**kw):
+        net = h.Network(fluid=W50)
+        net.add(h.IdealStorage("erz", t_set_C=70))
+        net.add(h.Pump("pp", mode="constant_dp", dp_kPa=40, q_nom_m3h=20))
+        net.add(h.FlowResistance("rp", c_Pa_m3h2=80))
+        net.add(h.HydraulicSeparator("hw", **kw))
+        net.add(h.Pump("ps", mode="constant_dp", dp_kPa=30, q_nom_m3h=5))
+        net.add(h.FlowResistance("rs", c_Pa_m3h2=1080))
+        net.connect("erz.out", "pp.in"); net.connect("pp.out", "rp.in"); net.connect("rp.out", "hw.prim_in")
+        net.connect("hw.prim_out", "erz.in"); net.connect("hw.sec_out", "ps.in"); net.connect("ps.out", "rs.in")
+        net.connect("rs.out", "hw.sec_in")
+        return " | ".join(net.solve().notices)
+    assert "Weiche 'hw'" in netz() and "q_nom" in netz()
+    assert "Weiche 'hw'" not in netz(q_nom_m3h=25)

@@ -36,6 +36,18 @@ class HydraulicSeparator(Component):
     def port_names(self) -> tuple[str, ...]:
         return ("prim_in", "prim_out", "sec_in", "sec_out")
 
+    def result_notices(self, q: float, fluid: Fluid) -> list[str]:
+        """Hinweis, wenn der Default-Nennpunkt (100 Pa bei 2 m³/h) bei großer
+        Querströmung einen spürbaren Druckverlust ergibt — die Weiche
+        entkoppelt dann Primär- und Sekundärkreis nicht mehr."""
+        dp = self.dp_nom * (q / self.q_nom) ** 2
+        if "q_nom" in self.given or dp <= 1e3:
+            return []
+        return [f"Weiche '{self.name}': Druckverlust der vertikalen Strecke {dp / 1e3:.1f} kPa "
+                f"bei V̇ = {abs(q) * 3600:.2f} m³/h (Default-Nennpunkt {self.dp_nom:g} Pa bei "
+                f"q_nom = {self.q_nom * 3600:g} m³/h) — die hydraulische Entkopplung ist "
+                f"gestört. q_nom_m3h auf den Auslegungsvolumenstrom der Weiche setzen."]
+
     def _vertical_coeff(self, q: float, fluid: Fluid) -> EdgeCoefficients:
         return EdgeCoefficients(b=self.dp_nom / self.q_nom ** 2)
 
