@@ -104,6 +104,9 @@ class Component(ABC):
 
     type_name: ClassVar[str] = ""
     PARAMS: ClassVar[tuple[Param, ...]] = ()
+    #: reservierte Listen-Kwargs mit Abschnitts-Parametern (z.B. conduit.pipes);
+    #: rein deklarativ für JSON Schema/Katalog — das Parsen übernimmt die Klasse
+    LIST_PARAMS: ClassVar[dict[str, tuple[Param, ...]]] = {}
 
     #: optionales Teilstrecken-Label (klassische TS-Nummer als Gruppierung
     #: für den Bericht; jede Komponente kann z.B. ts="4" tragen)

@@ -1,4 +1,5 @@
-"""Kommandozeile: `hydraulik run schaltung.yaml [--csv out.csv] [--json]`."""
+"""Kommandozeile: `hydraulik run schaltung.yaml [--csv out.csv] [--json]`,
+`hydraulik schema [--luft] [--out datei.json]` (JSON Schema des Eingabeformats)."""
 from __future__ import annotations
 
 import argparse
@@ -21,6 +22,9 @@ def main(argv: list[str] | None = None) -> int:
     ed.add_argument("--out", default="hydraulik_editor.html", help="Zieldatei")
     ed.add_argument("--luft", action="store_true",
                     help="Lüftungsschema-Editor statt Hydraulik erzeugen")
+    sc = sub.add_parser("schema", help="JSON Schema (Draft 2020-12) des Eingabeformats ausgeben")
+    sc.add_argument("--luft", action="store_true", help="Schema der Lüftungsanlage statt Hydraulik")
+    sc.add_argument("--out", help="Zieldatei (sonst Ausgabe auf stdout)")
     sv = sub.add_parser("serve", help="Editor mit Rechen-Endpunkt starten (Rechnen im GUI)")
     sv.add_argument("--port", type=int, default=8091)
     sv.add_argument("--no-open", action="store_true", help="Browser nicht automatisch öffnen")
@@ -32,6 +36,17 @@ def main(argv: list[str] | None = None) -> int:
             args.out = "lueftung_editor.html"
         path = build_air_editor(args.out) if args.luft else build_editor(args.out)
         print(f"Editor erzeugt: {path}  (im Browser öffnen; Rechnen im GUI: 'editor server')")
+        return 0
+    if args.cmd == "schema":
+        from .schema import json_schema
+        text = json.dumps(json_schema("air" if args.luft else "hydraulik"),
+                          indent=2, ensure_ascii=False) + "\n"
+        if args.out:
+            with open(args.out, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            print(f"JSON Schema geschrieben: {args.out}", file=sys.stderr)
+        else:
+            sys.stdout.write(text)
         return 0
     if args.cmd == "serve":
         from .server import serve

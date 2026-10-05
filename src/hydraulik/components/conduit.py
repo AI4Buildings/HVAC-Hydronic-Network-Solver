@@ -85,6 +85,8 @@ class Conduit(TwoPortComponent):
               help="Nennvolumenstrom der idealen Verbindung (1 Pa Referenz)"),
     )
 
+    LIST_PARAMS = {"pipes": PIPE_SEGMENT_PARAMS}      # Rohrmodell als Abschnittsliste
+
     def __init__(self, name: str, **kwargs):
         self.pipes = _parse_pipes(str(name), kwargs.pop("pipes", None))
         super().__init__(name, **kwargs)

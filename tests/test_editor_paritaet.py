@@ -364,6 +364,16 @@ def test_export_roundtrip_exakt(air):
         assert "." in m.group(1) and m.group(2), m.group(0)
 
 
+@pytest.mark.parametrize("air", [False, True], ids=["hydraulik", "lueftung"])
+def test_export_erfuellt_json_schema(air):
+    """Was der Editor exportiert, ist schema-konform (JSON Schema aus der Registry)."""
+    jsonschema = pytest.importorskip("jsonschema")
+    from hydraulik.schema import json_schema
+    text = _run_export(render_air_editor() if air else render_editor(), STATE_AIR if air else STATE_HYD)
+    v = jsonschema.Draft202012Validator(json_schema("air" if air else "hydraulik"))
+    assert [e.message for e in v.iter_errors(parse_yaml(text))] == []
+
+
 def test_export_ist_rechenbar_und_werte_gleich():
     text = _run_export(render_editor(), STATE_HYD)
     doc = parse_yaml(text)

@@ -26,7 +26,8 @@ _DYNAMIC_PORTS = {
 }
 
 
-def _port_spec(type_name: str, cls) -> dict:
+def port_spec(type_name: str, cls) -> dict:
+    """Ports eines Typs: feste Namen bzw. Vorlage + Anzahlparameter (manifold, Puffer)."""
     if type_name in _DYNAMIC_PORTS:
         return dict(_DYNAMIC_PORTS[type_name])
     obj = cls.__new__(cls)          # statische port_names() brauchen keine Parameter
@@ -55,7 +56,7 @@ def _catalog_from(registry: dict) -> dict:
         types.append({
             "type": type_name,
             "doc": doc,
-            "ports": _port_spec(type_name, cls),
+            "ports": port_spec(type_name, cls),
             "params": params,
         })
     units = {g: dict(sfx) for g, sfx in UNIT_GROUPS.items()}
