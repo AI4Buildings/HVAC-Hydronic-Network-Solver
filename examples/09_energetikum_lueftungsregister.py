@@ -15,7 +15,6 @@ liefert die Zuordnung Simulationswert ↔ Zeitreihe (Soll-Ist-Vergleich).
 """
 from pathlib import Path
 
-import yaml
 from scipy.optimize import brentq
 
 import hydraulik as h
@@ -36,7 +35,7 @@ def zeile(r, sfx):
 
 
 def main() -> None:
-    doc = yaml.safe_load(YAML.read_text(encoding="utf-8"))
+    doc = h.load_document(YAML)             # YAML 1.2 → dict (zentraler Loader)
     fluid = h.water_at(50.0)
 
     # -- 1) Auslegungszustand (Ventilhübe wie in der YAML hinterlegt) --------

@@ -7,9 +7,10 @@ POST /solve bereit (Body: YAML der Schaltung → JSON-Ergebnis). Damit kann
 der „Rechnen"-Button im GUI den Solver direkt aufrufen und die Ergebnisse
 (p, V̇, v, T, Q̇) in die Zeichnung zurückspielen. POST /normalize bzw.
 /normalize_air (Body: YAML beliebiger Form → JSON-Dokument) versorgt den
-Editor-Import mit dem vollständigen PyYAML-Parser (Block- und Inline-Stil,
-doppelte Schlüssel werden gemeldet) samt Loader-Hinweisen. Nur lokal
-gebunden (127.0.0.1), kein Zugriff von außen.
+Editor-Import mit dem vollständigen YAML-1.2-Parser (yamlio; Block- und
+Inline-Stil, doppelte Schlüssel werden gemeldet) samt Loader-Hinweisen.
+Der Body ist immer YAML-TEXT, nie ein Dateipfad. Nur lokal gebunden
+(127.0.0.1), kein Zugriff von außen.
 """
 from __future__ import annotations
 
@@ -17,14 +18,13 @@ import json
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-import yaml
-
 from .editor import render_editor
 from .exceptions import ConvergenceError, HydraulikError, NetworkValidationError
 from .results import build_result
 from .solver.hydraulic import solve_hydraulics
 from .solver.thermal import skipped_thermal, solve_thermal
-from .yaml_loader import _UniqueKeyLoader, load, load_settings
+from .yaml_loader import load, load_settings
+from .yamlio import parse_yaml
 
 
 def solve_payload(yaml_text: str) -> dict:
@@ -32,8 +32,9 @@ def solve_payload(yaml_text: str) -> dict:
     damit das GUI Knotenzustände an den Leitungen anzeigen kann.
     Schlägt nur die Thermik fehl (z.B. isolierter Umlauf mit fester Leistung),
     werden die Hydraulikergebnisse mit Hinweis zurückgegeben."""
-    net = load(yaml_text)
-    settings = load_settings(yaml_text)
+    doc = _parse_body(yaml_text)
+    net = load(doc)
+    settings = load_settings(doc)
     compiled = net.compile()
     hyd = solve_hydraulics(compiled, settings)
     try:
@@ -49,6 +50,16 @@ def solve_payload(yaml_text: str) -> dict:
     return payload
 
 
+def _parse_body(text: str) -> dict:
+    """Request-Body (YAML-Text) → Mapping. Bewusst parse_yaml statt
+    load_document: ein Body wird nie als lokaler Dateipfad gedeutet."""
+    doc = parse_yaml(text)
+    if not isinstance(doc, dict):
+        raise NetworkValidationError(
+            ["Eingabe muss ein Mapping mit 'components' und 'connections' sein."])
+    return doc
+
+
 def normalize_payload(yaml_text: str, kind: str = "hydraulik") -> dict:
     """YAML beliebiger Form (Block- oder Inline-Stil) → JSON-Dokument für den
     Editor-Import (fluid/components/connections/layout unverändert). Doppelte
@@ -56,16 +67,7 @@ def normalize_payload(yaml_text: str, kind: str = "hydraulik") -> dict:
     enthält die Meldungen des jeweiligen Loaders (Hydraulik oder Luft) — rein
     informativ, damit auch unvollständige Dateien geladen und im Editor
     ergänzt werden können."""
-    try:
-        doc = yaml.load(yaml_text, Loader=_UniqueKeyLoader)
-    except yaml.YAMLError as exc:
-        mark = getattr(exc, "problem_mark", None)
-        where = f" (Zeile {mark.line + 1}, Spalte {mark.column + 1})" if mark else ""
-        raise NetworkValidationError(
-            [f"YAML-Syntaxfehler{where}: {getattr(exc, 'problem', None) or exc}"])
-    if not isinstance(doc, dict):
-        raise NetworkValidationError(
-            ["Eingabe muss ein Mapping mit 'components' und 'connections' sein."])
+    doc = _parse_body(yaml_text)
     issues: list[str] = []
     try:
         if kind == "air":
@@ -136,12 +138,12 @@ class _Handler(BaseHTTPRequestHandler):
                 payload = solve_payload(body)
             else:
                 from .air import solve_air
-                payload = solve_air(body)
+                payload = solve_air(_parse_body(body))
         except (HydraulikError, ValueError) as exc:
             payload = {"ok": False, "error": str(exc)}
         except Exception as exc:                       # nie den Server reißen lassen
             payload = {"ok": False, "error": f"Interner Fehler: {exc!r}"}
-        # default=str: PyYAML kann z.B. Datumswerte liefern, die JSON nicht kennt
+        # default=str: Absicherung – yamlio liefert nur JSON-Typen
         data = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")

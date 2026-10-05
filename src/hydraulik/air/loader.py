@@ -10,12 +10,9 @@ Fehler werden gesammelt gemeldet (LLM-tauglich, mit Vorschlägen).
 from __future__ import annotations
 
 import difflib
-from pathlib import Path
-
-import yaml
 
 from ..exceptions import ComponentParamError, NetworkValidationError
-from ..yaml_loader import _UniqueKeyLoader
+from ..yamlio import load_document
 from .components import AIR_REGISTRY, AIR_SENSOR_TYPES
 
 
@@ -33,12 +30,8 @@ class AirPlant:
 
 
 def load_air(source) -> AirPlant:
-    if isinstance(source, dict):
-        doc = source
-    else:
-        text = (Path(source).read_text(encoding="utf-8")
-                if _is_path(source) else str(source))
-        doc = yaml.load(text, Loader=_UniqueKeyLoader)
+    """Luftschema aus dict, Datei oder YAML-Text (YAML 1.2, zentral in yamlio)."""
+    doc = load_document(source)
     if not isinstance(doc, dict):
         raise NetworkValidationError(
             ["Eingabe muss ein Mapping mit 'components' und 'connections' sein."])
@@ -122,10 +115,3 @@ def load_air(source) -> AirPlant:
     if errors:
         raise NetworkValidationError(errors)
     return AirPlant(comps, conns, meas)
-
-
-def _is_path(source) -> bool:
-    if isinstance(source, Path):
-        return True
-    s = str(source)
-    return "\n" not in s and (s.endswith((".yaml", ".yml", ".json")) or Path(s).exists())

@@ -17,45 +17,17 @@ from __future__ import annotations
 import difflib
 from pathlib import Path
 
-import yaml
-
 from .exceptions import ComponentParamError, NetworkValidationError
 from .fluids import Fluid, WATER_DEFAULT, water_at
 from .network import Network, component_from_dict
 from .solver.settings import SolverSettings
-
-
-class _UniqueKeyLoader(yaml.SafeLoader):
-    """SafeLoader, der doppelte Mapping-Schlüssel meldet statt sie
-    stillschweigend zu überschreiben (YAML-Standardverhalten wäre
-    'last wins' – ein mehrfach vergebener Komponentenname würde sonst
-    unbemerkt eine Komponente verschlucken)."""
-
-
-def _construct_mapping_unique(loader, node, deep=False):
-    seen = set()
-    for key_node, _ in node.value:
-        key = loader.construct_object(key_node, deep=deep)
-        if key in seen:
-            raise NetworkValidationError(
-                [f"Doppelter Schlüssel '{key}' in der YAML-Datei "
-                 f"(Zeile {key_node.start_mark.line + 1}) – z.B. ein mehrfach "
-                 f"vergebener Komponentenname. Bitte eindeutig benennen."])
-        seen.add(key)
-    return yaml.SafeLoader.construct_mapping(loader, node, deep)
-
-
-_UniqueKeyLoader.add_constructor(
-    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping_unique)
+from .yamlio import load_document
 
 
 def load(source: str | Path | dict) -> Network:
-    """Lädt eine Schaltung aus YAML-/JSON-Datei, YAML-String oder dict."""
-    if isinstance(source, dict):
-        doc = source
-    else:
-        text = Path(source).read_text(encoding="utf-8") if _is_path(source) else str(source)
-        doc = yaml.load(text, Loader=_UniqueKeyLoader)
+    """Lädt eine Schaltung aus YAML-/JSON-Datei, YAML-String oder dict
+    (YAML 1.2 Core Schema, zentral in yamlio)."""
+    doc = load_document(source)
     if not isinstance(doc, dict):
         raise NetworkValidationError(
             ["Eingabe muss ein Mapping mit den Schlüsseln 'components' und 'connections' sein."])
@@ -113,11 +85,10 @@ _SETTINGS_UNIT_INTERVAL = frozenset({"alpha_p", "alpha_q"})
 def load_settings(source: str | Path | dict) -> SolverSettings:
     """Liest den optionalen settings-Block derselben Datei — typ- und
     bereichsgeprüft, Fehler gesammelt (wie bei Komponentenparametern)."""
-    if isinstance(source, dict):
-        doc = source
-    else:
-        text = Path(source).read_text(encoding="utf-8") if _is_path(source) else str(source)
-        doc = yaml.load(text, Loader=_UniqueKeyLoader) or {}
+    doc = load_document(source)
+    if not isinstance(doc, dict):
+        raise NetworkValidationError(
+            ["Eingabe muss ein Mapping mit den Schlüsseln 'components' und 'connections' sein."])
     raw = doc.get("settings")
     if raw is None:
         raw = {}
@@ -151,13 +122,6 @@ def load_settings(source: str | Path | dict) -> SolverSettings:
     if errors:
         raise NetworkValidationError(errors)
     return SolverSettings(**values)
-
-
-def _is_path(source) -> bool:
-    if isinstance(source, Path):
-        return True
-    s = str(source)
-    return "\n" not in s and (s.endswith((".yaml", ".yml", ".json")) or Path(s).exists())
 
 
 def _parse_fluid(spec, errors: list[str]) -> Fluid:
