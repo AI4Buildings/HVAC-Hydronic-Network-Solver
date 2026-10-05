@@ -143,3 +143,31 @@ def test_antriebslose_masche_ohne_kreisstroemung(q_init):
     net.connect("m1.out", "m2.in")
     r = net.solve(SolverSettings(q_init=q_init), thermal=False)
     assert abs(r["m1"].q_m3h) < 1e-6 and abs(r["m2"].q_m3h) < 1e-6 and abs(r["an"].q_m3h) < 1e-6
+
+
+# --- B4: Greybox-Kühlregister bei kleinem Wasserstrom ---------------------------
+
+@pytest.mark.parametrize("m_w", [0.5, 0.05, 5e-3, 1e-3, 4.3e-5, 3.9e-7, 1e-9])
+def test_kuehlregister_greybox_kleiner_wasserstrom(m_w):
+    """m* = ṁ_L·c_s/(ṁ_w·cp) ≫ 1: kein OverflowError; Q̇ endlich, Wasser höchstens
+    bis zur Luft-Eintrittstemperatur erwärmt, Energiebilanz Wasser = Q̇."""
+    c = h.CoolingCoil("kr", ua_ref_W_K=1500, ua_star_wet_kg_s=1.0, rh_air_in=0.6,
+                      m_dot_air_kg_s=2.0, t_air_in_C=30)
+    r = c.thermal_outlet(12.0, m_w, W50)
+    assert math.isfinite(r.t_out) and math.isfinite(r.q_dot)
+    assert 12.0 <= r.t_out <= 30.0 + 1e-9
+    assert r.q_dot == pytest.approx(m_w * W50.cp * (r.t_out - 12.0), rel=1e-9, abs=1e-12)
+
+
+def test_greybox_epsilon_stabile_form_gleich_originalformel():
+    """Die stabile Umformung für m* > 1 ist algebraisch identisch."""
+    from hydraulik.components.coils import _eps_counterflow
+    for ntu in (0.1, 1.0, 3.0, 10.0):
+        for m in (0.2, 0.9, 0.999999, 1.0, 1.000001, 1.5, 4.0, 30.0):
+            if abs(1 - m) < 1e-9:
+                ref = ntu / (1 + ntu)
+            else:
+                e = math.exp(-ntu * (1 - m))
+                ref = (1 - e) / (1 - m * e)
+            assert _eps_counterflow(ntu, m) == pytest.approx(ref, rel=1e-9)
+    assert _eps_counterflow(5.0, 1e6) == pytest.approx(1e-6, rel=1e-9)    # ε* → 1/m*

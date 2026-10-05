@@ -30,14 +30,28 @@ H_LV0 = 2501e3      # J/kg Verdampfungsenthalpie bei 0 °C
 CP_VAP = 1860.0     # J/(kg·K) Wasserdampf
 
 
+def _eps_counterflow(ntu: float, c_r: float) -> float:
+    """Gegenstrom-ε für JEDES Kapazitätsverhältnis c_r ≥ 0, numerisch stabil.
+
+    Für c_r > 1 (z.B. Greybox-m* bei kleinem Wasserstrom) liefe die übliche
+    Form exp(−NTU·(1 − c_r)) über; algebraisch identisch ist dann
+    (1 − e′)/(c_r − e′) mit e′ = exp(−NTU·(c_r − 1)) ≤ 1 (→ 1/c_r für NTU → ∞)."""
+    if ntu <= 0.0:
+        return 0.0
+    if abs(1.0 - c_r) < 1e-9:
+        return ntu / (1.0 + ntu)
+    if c_r < 1.0:
+        e = math.exp(-ntu * (1.0 - c_r))
+        return (1.0 - e) / (1.0 - c_r * e)
+    e = math.exp(-ntu * (c_r - 1.0))
+    return (1.0 - e) / (c_r - e)
+
+
 def effectiveness(ntu: float, c_r: float, arrangement: str) -> float:
     if ntu <= 0.0:
         return 0.0
     if arrangement == "counterflow":
-        if abs(1.0 - c_r) < 1e-9:
-            return ntu / (1.0 + ntu)
-        e = math.exp(-ntu * (1.0 - c_r))
-        return (1.0 - e) / (1.0 - c_r * e)
+        return _eps_counterflow(ntu, c_r)
     # crossflow_unmixed (Näherung nach Incropera)
     return 1.0 - math.exp(ntu ** 0.22 / c_r * (math.exp(-c_r * ntu ** 0.78) - 1.0))
 
@@ -203,11 +217,7 @@ class CoolingCoil(_WaterAirCoil):
 
         m_star = m_da * C_S / c_w
         ntu_star = (self.ua_star_wet * f) / m_da
-        if abs(1.0 - m_star) < 1e-9:
-            eps_star = ntu_star / (1.0 + ntu_star)
-        else:
-            e = math.exp(-ntu_star * (1.0 - m_star))
-            eps_star = (1.0 - e) / (1.0 - m_star * e)
+        eps_star = _eps_counterflow(ntu_star, m_star)
         x_in = x_from_rh(self.t_air_in, self.rh_air_in)
         h_in = h_moist(self.t_air_in, x_in)
         q_wet = eps_star * m_da * (h_in - h_moist(t_in, x_from_rh(t_in, 1.0)))
