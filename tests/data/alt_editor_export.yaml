@@ -1,0 +1,30 @@
+# Export des Schaltbild-Editors im Format bis v0.6.0 (vor YAML 1.2), erzeugt mit
+# dem damaligen exportYAML(): unquotierte Namen, color: n, JSON-Zahlen.
+# Testet, dass alte Exporte/Autosaves weiterhin identisch gelesen werden.
+fluid: {preset: water, t_C: 55}
+
+components:
+  qu1: {type: inflow, t_set_C: 60, p_kPa: 20, ts: "1", bems: [{id: "FHPinkEgk'AS01'TFl-AI1", key: "T_VL", description: "Vorlauf \"VL\" – Δϑ"}]}
+  rv1: {type: control_valve, kvs_m3h: 4, opening: 0.65, characteristic: equal_percentage, description: "Regelventil #1", ts: "2"}
+  ab1: {type: outflow, p_kPa: 0}
+  t1: {type: temperature_sensor}
+  lt1: {type: conduit, length_m: 12, d_inner_mm: 26}
+  lt2: {type: conduit, c_Pa_m3h2: 1500}
+
+connections:
+  - [qu1.port, lt1.in]
+  - [lt1.out, rv1.in]
+  - [rv1.out, lt2.in]
+  - [lt2.out, ab1.port]
+  - [t1.port, rv1.in]
+
+layout:
+  components:
+    qu1: {x: 120, y: 240}
+    rv1: {x: 280, y: 240, rot: 90}
+    ab1: {x: 440, y: 240}
+    t1: {x: 280, y: 120}
+  wires:
+    - {name: lt1, a: qu1.port, b: rv1.in, color: vl, pts: [[200,240]]}
+    - {name: lt2, a: rv1.out, b: ab1.port, color: rl}
+    - {a: t1.port, b: rv1.in, color: n}

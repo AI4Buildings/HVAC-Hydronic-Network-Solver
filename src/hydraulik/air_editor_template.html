@@ -123,6 +123,7 @@
 <script>
 "use strict";
 const CATALOG = __CATALOG_JSON__;
+/*__YAML_CORE_JS__*/
 
 /* ---------- Einheiten-Anzeige (YAML-Suffix → lesbare Einheit) ------------- */
 const UNIT_LABEL = {
@@ -1482,7 +1483,9 @@ function paramField(c, p) {
       `</select></div></div>`;
 }
 function firstKeyValue(c, keys){ for (const k of keys) if (c.params[k] !== undefined) return c.params[k]; }
-function round6(v){ return Math.round(v * 1e6) / 1e6; }
+// Rundung auf 12 signifikante Stellen (entfernt Gleitkomma-Rauschen wie
+// 0.30000000000000004, erhält aber kleine Werte wie 1.5e-6 m Rauheit)
+function round6(v){ return v === 0 || !Number.isFinite(v) ? v : Number(v.toPrecision(12)); }
 function wireForm(w) {
   const label = wl => ({aul:"Außenluft (grün)", zul:"Zuluft (blau)",
                         abl:"Abluft (orange)", fol:"Fortluft (braun)",
@@ -1689,6 +1692,10 @@ function validate() {
         issues.push({err:true, comp:c.id,
           msg:`${c.name}: '${p.name}' über Maximum (${limitLabel(p, p.maxv)}) – z.B. Ventilstellung 0…1, nicht %`});
     }
+    // inf/nan (z.B. Eingabe 1e400) lehnt der Loader ab – hier früh melden
+    for (const [k, v] of Object.entries(c.params || {}))
+      if (typeof v === "number" && !Number.isFinite(v))
+        issues.push({err:true, comp:c.id, msg:`${c.name}: '${k}' ist keine endliche Zahl`});
     for (const pn of portNames(c)) {
       const used = state.wires.some(w =>
         (w.a.comp===c.id && w.a.port===pn) || (w.b.comp===c.id && w.b.port===pn));
@@ -1714,12 +1721,9 @@ function validate() {
 }
 
 /* ---------- YAML Export --------------------------------------------------- */
-function yamlScalar(v) {
-  if (typeof v === "number") return String(v);
-  if (typeof v === "boolean") return v ? "true" : "false";
-  const s = String(v);
-  return /^[A-Za-z0-9_.\-]+$/.test(s) ? s : JSON.stringify(s);
-}
+// YAML 1.2 (yaml_core.js): Zahlen eindeutig, missverständliche Strings gequotet
+function yamlScalar(v) { return YamlCore.scalar(v); }
+function yamlKey(s) { return YamlCore.string(s); }
 function exportYAML() {
   let y = "components:\n";
   const compEntry = c => {
@@ -1734,117 +1738,25 @@ function exportYAML() {
       parts.push(`pipes: [${c.pipes.map(seg => "{" +
         Object.entries(seg).map(([k, v]) => `${k}: ${yamlScalar(v)}`).join(", ")
         + "}").join(", ")}]`);
-    return `  ${c.name}: {${parts.join(", ")}}\n`;
+    return `  ${yamlKey(c.name)}: {${parts.join(", ")}}\n`;
   };
   for (const c of state.comps) y += compEntry(c);
   y += "\nconnections:\n";
-  for (const w of state.wires) y += `  - [${portRef(w.a)}, ${portRef(w.b)}]\n`;
+  for (const w of state.wires) y += `  - [${yamlKey(portRef(w.a))}, ${yamlKey(portRef(w.b))}]\n`;
   y += "\nlayout:\n  components:\n";
   for (const c of state.comps)
-    y += `    ${c.name}: {x: ${c.x}, y: ${c.y}${c.rot ? `, rot: ${c.rot}` : ""}}\n`;
+    y += `    ${yamlKey(c.name)}: {x: ${yamlScalar(c.x)}, y: ${yamlScalar(c.y)}${c.rot ? `, rot: ${yamlScalar(c.rot)}` : ""}}\n`;
   y += "  wires:\n";
   for (const w of state.wires) {
     const pts = w.pts && w.pts.length
-      ? `, pts: ${JSON.stringify(w.pts.map(p => [p.x, p.y]))}` : "";
-    y += `    - {a: ${portRef(w.a)}, b: ${portRef(w.b)}, color: ${w.color}${pts}}\n`;
+      ? `, pts: ${yamlScalar(w.pts.map(p => [p.x, p.y]))}` : "";
+    y += `    - {a: ${yamlKey(portRef(w.a))}, b: ${yamlKey(portRef(w.b))}, color: ${yamlKey(w.color)}${pts}}\n`;
   }
   return y;
 }
 
-/* ---------- YAML Import (Subset-Parser für das Editor-/Beispielformat) ---- */
-function splitTop(s, sep) {                       // Kommasplit auf oberster Ebene
-  const out = []; let depth = 0, cur = "", q = null, esc = false;
-  for (const ch of s) {
-    if (q) { cur += ch;
-      if (esc) esc = false;
-      else if (ch === "\\") esc = true;
-      else if (ch === q) q = null;
-      continue; }
-    if (ch === '"' || ch === "'") { q = ch; cur += ch; continue; }
-    if (ch === "{" || ch === "[") depth++;
-    if (ch === "}" || ch === "]") depth--;
-    if (ch === sep && depth === 0) { out.push(cur); cur = ""; } else cur += ch;
-  }
-  if (cur.trim()) out.push(cur);
-  return out;
-}
-function parseValue(s) {
-  s = s.trim();
-  if (s.startsWith("{")) return parseInlineMap(s);
-  if (s.startsWith("[")) return splitTop(s.slice(1, -1), ",").map(parseValue);
-  if (/^".*"$/.test(s)) { try { return JSON.parse(s); } catch (e) { return s.slice(1, -1); } }
-  if (/^'.*'$/.test(s)) return s.slice(1, -1);
-  if (s === "true") return true;
-  if (s === "false") return false;
-  if (s !== "" && !isNaN(Number(s))) return Number(s);
-  return s;
-}
-function parseInlineMap(s) {
-  s = s.trim();
-  if (s.startsWith("{")) s = s.slice(1, -1);
-  const obj = {};
-  for (const part of splitTop(s, ",")) {
-    const i = part.indexOf(":");
-    if (i < 0) continue;
-    obj[part.slice(0, i).trim()] = parseValue(part.slice(i + 1));
-  }
-  return obj;
-}
-function parseInlineList(s) {
-  s = s.trim();
-  if (s.startsWith("[")) s = s.slice(1, -1);
-  return splitTop(s, ",").map(x => String(parseValue(x)));
-}
-function parseYAMLLocal(text) {          // Subset-Parser: Inline-Format des Exports
-  const doc = {fluid: null, components: {}, connections: [], layout: {components: {}, wires: []}};
-  let section = null, sub = null, buf = null;
-  const flush = () => {
-    if (!buf) return;
-    const i = buf.text.indexOf(":");
-    const name = buf.text.slice(0, i).trim();
-    const val = buf.text.slice(i + 1).trim();
-    if (buf.target === "components") doc.components[name] = parseInlineMap(val);
-    else if (buf.target === "layout-components") doc.layout.components[name] = parseInlineMap(val);
-    buf = null;
-  };
-  for (let raw of text.split(/\r?\n/)) {
-    const noComment = raw.replace(/(^|\s)#.*$/, "");
-    if (!noComment.trim()) continue;
-    const indent = noComment.match(/^ */)[0].length;
-    const line = noComment.trim();
-    if (buf) {                                   // mehrzeilige Inline-Map fortsetzen
-      buf.text += " " + line;
-      if (splitTop(buf.text.slice(buf.text.indexOf(":") + 1), ",") &&
-          (buf.text.match(/{/g) || []).length === (buf.text.match(/}/g) || []).length) flush();
-      continue;
-    }
-    if (indent === 0) {
-      const m = line.match(/^(\w+):\s*(.*)$/);
-      if (!m) continue;
-      section = m[1]; sub = null;
-      if (section === "fluid" && m[2]) doc.fluid = parseInlineMap(m[2]);
-      continue;
-    }
-    if (section === "components") {
-      buf = {target: "components", text: line};
-      if ((line.match(/{/g) || []).length === (line.match(/}/g) || []).length) flush();
-    } else if (section === "connections" && line.startsWith("-")) {
-      doc.connections.push(parseInlineList(line.replace(/^-\s*/, "")));
-    } else if (section === "layout") {
-      if (/^components:/.test(line)) { sub = "components"; }
-      else if (/^wires:/.test(line)) { sub = "wires"; }
-      else if (sub === "components") {
-        buf = {target: "layout-components", text: line};
-        if ((line.match(/{/g) || []).length === (line.match(/}/g) || []).length) flush();
-      } else if (sub === "wires" && line.startsWith("-")) {
-        doc.layout.wires.push(parseInlineMap(line.replace(/^-\s*/, "")));
-      }
-    }
-  }
-  flush();
-  return doc;
-}
-function normalizeDoc(raw) {                 // Server-Dokument (PyYAML → JSON) absichern
+/* ---------- YAML Import ------------------------------------------------ */
+function normalizeDoc(raw) {                 // geparstes Dokument (Server oder lokal) absichern
   const obj = v => v && typeof v === "object" && !Array.isArray(v) ? v : null;
   const doc = obj(raw) || {};
   const lay = obj(doc.layout) || {};
@@ -1861,9 +1773,10 @@ function normalizeDoc(raw) {                 // Server-Dokument (PyYAML → JSON
   };
 }
 async function importYAML(text) {
-  // Bevorzugt der Server-Parser (PyYAML: jede YAML-Form, Block- wie Inline-
-  // Stil; doppelte Schlüssel werden gemeldet). Ohne Rechen-Endpunkt (statische
-  // HTML-Datei) der lokale Subset-Parser für das Inline-Format des Exports.
+  // Bevorzugt der Server-Parser (yamlio: vollständiges YAML 1.2 samt Loader-
+  // Hinweisen). Ohne Rechen-Endpunkt (statische HTML-Datei) der lokale Parser
+  // aus yaml_core.js — gleiche YAML-1.2-Semantik (Block- und Flow-Stil), lehnt
+  // Anker, Tags und Block-Skalare mit Meldung ab.
   // Rückgabe: Loader-Hinweise des Servers (Array) bzw. null bei lokalem Parsen.
   let data = null;
   try {
@@ -1872,7 +1785,7 @@ async function importYAML(text) {
     if (resp.ok) data = await resp.json();
   } catch (e) { data = null; }
   if (data && !data.ok) throw new Error(data.error);
-  loadDoc(data ? normalizeDoc(data.doc) : parseYAMLLocal(text));
+  loadDoc(normalizeDoc(data ? data.doc : YamlCore.parse(text)));
   return data ? (data.issues || []) : null;
 }
 function loadDoc(doc) {
@@ -1968,8 +1881,8 @@ document.getElementById("dlg-ok").onclick = async () => {
   try {
     const issues = await importYAML(text);
     if (issues === null)
-      setStatus("YAML importiert (lokaler Parser, Inline-Format). Beliebige YAML-Form: " +
-                "Editor über 'editor server' starten.");
+      setStatus("YAML importiert (lokaler YAML-1.2-Parser, ohne Loader-Prüfung). " +
+                "Prüfung und Rechnen: Editor über 'editor server' starten.");
     else if (issues.length)
       setStatus(`YAML importiert. Der Loader meldet ${issues.length} Punkt(e), ` +
                 `z.B.: ${issues[0]}`);
@@ -2008,7 +1921,7 @@ function autosave() {
 (function restore(){
   try {
     const saved = localStorage.getItem("hydraulik_luft_editor");
-    if (saved && saved.includes("components:")) loadDoc(parseYAMLLocal(saved)); else render();
+    if (saved && saved.includes("components:")) loadDoc(normalizeDoc(YamlCore.parse(saved))); else render();
   } catch (e) { render(); }
   if (!history.length) commit();     // History startet immer mit einem Eintrag
 })();

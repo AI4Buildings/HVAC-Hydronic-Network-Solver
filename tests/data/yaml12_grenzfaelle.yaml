@@ -1,0 +1,42 @@
+# Grenzfälle YAML 1.1 ↔ 1.2 (Review-Befunde) — Paritätskorpus: Editor-Parser
+# (yaml_core.js, node) und Python-Loader (yamlio) müssen dasselbe liefern.
+# Kein rechenbares Netz: geprüft wird die gelesene Datenstruktur.
+fluid: {preset: water, t_C: 4.5e1}
+
+components:
+  # Befund-Tabelle: Exponentenschreibweise, YAML-1.1-Wahrheitswörter, führende Nullen
+  zahlen:  {type: x, a: 1.4e0, b: 14e-1, c: 1e3, d: 5e-7, e: 1.0e+3, f: -2.5E-3, g: .5, h: 1., i: +.5,
+            j: 08, k: 07, l: 010, m: 0o17, n: 0x1F, o: -0, p: 1e400, q: .inf, r: -.Inf, s: .NaN}
+  no:      {type: inflow, ts: 08, flag: yes, f2: no, f3: on, f4: off, f5: y, f6: n, f7: Yes, f8: NO}
+  off:     {type: outflow, ts: 07, b1: true, b2: True, b3: TRUE, b4: false, b5: False, b6: FALSE}
+  on:      {type: tee, n1: null, n2: Null, n3: NULL, n4: ~, n5: }
+  "true":  {type: cap, s1: 1_000, s2: 0b101, s3: 2026-10-05, s4: 12:30, s5: 1:30:00, s6: Infinity,
+            s7: NaN, s8: inf, s9: 0x, s10: -0x10, s11: 1e, s12: e3, s13: ., s14: 1.2.3, s15: 0X10}
+  08:      {type: cap, q1: '08', q2: "1e3", q3: 'it''s', q4: "Kreis #2", q5: 'no', q6: "Tab\there",
+            q7: "\x41ä\N", q8: "a: b", q9: '- x', q10: "", q11: '', q12: "[x]", q13: '{y}'}
+  plain:   {type: cap, p1: it's, p2: Kreis 'A', p3: a#b, p4: x:y, p5: Δp ϑ, p6: two  spaces,
+            p7: -x, p9: a/b\c}   # Kommentar nach dem Mapping
+  liste:   {type: cap, l1: [1, 2.5, x, "y", 'z', true, null, ~, 1e-3, [a, b], {c: d}],
+            l2: [], l3: {}, l4: [a: 1, b], l5: {k1, k2: v}, l6: [x, ]}
+  flow:    {type: cap, "quoted key": 1, 'single': 2, k:3, "j":4}
+
+connections:
+  - [no.port, on.a]
+  - [on.b, off.port, "true.port"]
+
+# Block-Stil (von Hand geschrieben) mit Listen und Schachtelung
+layout:
+  components:
+    no:
+      x: 120
+      y: 2.4e2
+    off: {x: -0, y: 1e-7}
+  wires:
+    - a: no.port
+      b: on.a
+      pts:
+        - [1, 2]
+        - - 3
+          - 4
+      color: n
+    - {a: on.b, b: off.port, color: "vl"}

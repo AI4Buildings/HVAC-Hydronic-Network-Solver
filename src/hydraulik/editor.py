@@ -73,15 +73,28 @@ def air_catalog() -> dict:
     return _catalog_from(AIR_REGISTRY)
 
 
-def render_editor() -> str:
-    """Editor-HTML mit injiziertem Komponentenkatalog."""
-    template = resources.files("hydraulik").joinpath("editor_template.html").read_text(
-        encoding="utf-8")
-    catalog = json.dumps(component_catalog(), ensure_ascii=False)
-    html = template.replace("__CATALOG_JSON__", catalog)
-    if "__CATALOG_JSON__" in html:
-        raise RuntimeError("Platzhalter im Editor-Template nicht ersetzt.")
+#: Platzhalter für den gemeinsamen YAML-1.2-Code beider Editoren (yaml_core.js)
+_YAML_CORE_PLACEHOLDER = "/*__YAML_CORE_JS__*/"
+
+
+def yaml_core_js() -> str:
+    """Gemeinsamer YAML-1.2-Parser/-Serializer der Editoren (gleiche Semantik
+    wie yamlio; die Paritätstests laden dieselbe Datei mit node)."""
+    return resources.files("hydraulik").joinpath("yaml_core.js").read_text(encoding="utf-8")
+
+
+def _render(template_name: str, catalog: dict) -> str:
+    template = resources.files("hydraulik").joinpath(template_name).read_text(encoding="utf-8")
+    html = template.replace("__CATALOG_JSON__", json.dumps(catalog, ensure_ascii=False))
+    html = html.replace(_YAML_CORE_PLACEHOLDER, yaml_core_js())
+    if "__CATALOG_JSON__" in html or _YAML_CORE_PLACEHOLDER in html:
+        raise RuntimeError(f"Platzhalter in {template_name} nicht ersetzt.")
     return html
+
+
+def render_editor() -> str:
+    """Editor-HTML mit injiziertem Komponentenkatalog und YAML-Kern."""
+    return _render("editor_template.html", component_catalog())
 
 
 def build_editor(path: str | Path = "hydraulik_editor.html") -> Path:
@@ -93,14 +106,8 @@ def build_editor(path: str | Path = "hydraulik_editor.html") -> Path:
 
 
 def render_air_editor() -> str:
-    """Lüftungsschema-Editor-HTML mit injiziertem Luft-Katalog."""
-    template = resources.files("hydraulik").joinpath(
-        "air_editor_template.html").read_text(encoding="utf-8")
-    html = template.replace("__CATALOG_JSON__",
-                            json.dumps(air_catalog(), ensure_ascii=False))
-    if "__CATALOG_JSON__" in html:
-        raise RuntimeError("Platzhalter im Luft-Editor-Template nicht ersetzt.")
-    return html
+    """Lüftungsschema-Editor-HTML mit injiziertem Luft-Katalog und YAML-Kern."""
+    return _render("air_editor_template.html", air_catalog())
 
 
 def build_air_editor(path: str | Path = "lueftung_editor.html") -> Path:

@@ -183,9 +183,11 @@ def test_normalize_air_endpoint(server_url):
 
 def test_editoren_nutzen_server_import_mit_fallback(server_url):
     """Beide Editoren rufen den Server-Parser und fallen ohne Server auf den
-    lokalen Subset-Parser zurück (Autosave-Restore bleibt lokal/synchron)."""
+    lokalen YAML-1.2-Parser (yaml_core.js) zurück (Autosave-Restore bleibt
+    lokal/synchron)."""
     html = urllib.request.urlopen(server_url + "/hydraulik").read().decode("utf-8")
-    assert 'fetch("normalize"' in html and "parseYAMLLocal(" in html
-    assert "loadDoc(parseYAMLLocal(saved))" in html
+    assert 'fetch("normalize"' in html and "YamlCore.parse(text)" in html
+    assert "loadDoc(normalizeDoc(YamlCore.parse(saved)))" in html
     luft = urllib.request.urlopen(server_url + "/lueftung").read().decode("utf-8")
-    assert 'fetch("normalize_air"' in luft and "loadDoc(parseYAMLLocal(saved))" in luft
+    assert 'fetch("normalize_air"' in luft and "loadDoc(normalizeDoc(YamlCore.parse(saved)))" in luft
+    assert "const YamlCore" in html and "const YamlCore" in luft

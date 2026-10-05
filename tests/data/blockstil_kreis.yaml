@@ -1,0 +1,29 @@
+# Rechenbarer Kreis vollständig im Block-Stil — vom lokalen Editor-Parser
+# (ohne Server) und vom Python-Loader identisch gelesen.
+fluid:
+  preset: water
+  t_C: 50
+settings:
+  max_iter: 4.0e2
+components:
+  no:                         # Name 'no' bleibt in YAML 1.2 ein String
+    type: inflow
+    t_set_C: 60
+    p_kPa: 1.0e1
+    ts: "08"
+    bems:
+      - id: "FHP'A,B #1"
+        key: T_VL
+        description: Vorlauf "VL" – Δϑ
+  off:
+    type: control_valve
+    kvs_m3h: 1e1
+    opening: 5.0e-1
+    description: 'Ventil #2: it''s'
+  "true":
+    type: outflow
+    p_kPa: 0
+connections:
+  - [no.port, off.in]
+  - - off.out
+    - true.port
