@@ -328,3 +328,20 @@ def test_hinweis_weiche_ohne_q_nom_mit_spuerbarem_druckverlust():
         return " | ".join(net.solve().notices)
     assert "Weiche 'hw'" in netz() and "q_nom" in netz()
     assert "Weiche 'hw'" not in netz(q_nom_m3h=25)
+
+
+@pytest.mark.parametrize("t_in", [-244.87, -100.0, -40.0, 95.0, 150.0, 1e4, -1e4])
+def test_kuehlregister_greybox_endlich_fuer_jeden_eingang(t_in):
+    """Newton-Zwischenschritte können absurde Temperaturen liefern; das Modell
+    muss trotzdem endlich antworten (kein OverflowError)."""
+    c = h.CoolingCoil("kr", ua_ref_W_K=1500, ua_star_wet_kg_s=1.0, rh_air_in=0.6,
+                      m_dot_air_kg_s=2.0, t_air_in_C=30)
+    for m_w in (1.0, 9.5e-7):
+        r = c.thermal_outlet(t_in, m_w, W50)
+        assert math.isfinite(r.t_out) and math.isfinite(r.q_dot)
+
+
+def test_psychrometrie_im_gueltigkeitsbereich_unveraendert():
+    from hydraulik.components.coils import p_ws
+    for t in (-30.0, 0.0, 20.0, 60.0):
+        assert p_ws(t) == pytest.approx(611.2 * math.exp(17.62 * t / (243.12 + t)), rel=1e-15)

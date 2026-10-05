@@ -59,7 +59,11 @@ def effectiveness(ntu: float, c_r: float, arrangement: str) -> float:
 # ---- Psychrometrie (Magnus / ideales Gemisch, wie Skill-Backend "simple") ----
 
 def p_ws(t: float) -> float:
-    """Sättigungsdampfdruck [Pa] über Wasser (Magnus)."""
+    """Sättigungsdampfdruck [Pa] über Wasser (Magnus). Außerhalb −60…90 °C
+    (Modellbereich, unterhalb des Siedepunkts) auf den Rand begrenzt: Newton-
+    Zwischenschritte dürfen absurde Temperaturen liefern, ohne dass die
+    Formel überläuft (Pol bei −243 °C)."""
+    t = min(max(t, -60.0), 90.0)
     return 611.2 * math.exp(17.62 * t / (243.12 + t))
 
 
