@@ -1,8 +1,10 @@
-"""Zentrales Einlesen von Eingabedokumenten (YAML 1.2 Core Schema).
+"""Zentrales Einlesen von Eingabedokumenten (YAML 1.2 Core Schema, JSON).
 
-EINZIGE Stelle im Paket, die YAML parst — Hydraulik-Loader, Luft-Loader,
+EINZIGE Stelle im Paket, die YAML/JSON parst — Hydraulik-Loader, Luft-Loader,
 Server (/solve, /normalize) und CLI rufen alle `load_document()` bzw.
-`parse_yaml()`. Damit gilt überall dieselbe Typauflösung:
+`parse_yaml()`. Dateien mit Endung .json werden strikt als JSON gelesen
+(`parse_json`); `canonical_json()` schreibt das Eingabemodell als JSON
+(hydraulik export --json). Für YAML gilt überall dieselbe Typauflösung:
 
 - **YAML 1.2.2 Core Schema** (Kap. 10.3.2), nichts darüber hinaus:
   null = ``~ | null | Null | NULL | (leer)``;
@@ -21,6 +23,7 @@ Server (/solve, /normalize) und CLI rufen alle `load_document()` bzw.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -226,6 +229,72 @@ def parse_yaml(text: str):
     return doc
 
 
+class _NonStandardConstant(ValueError):
+    pass
+
+
+def _reject_constant(name: str):
+    raise _NonStandardConstant(name)
+
+
+def parse_json(text: str):
+    """Strikter JSON-Text → reine Python-Daten. Doppelte Schlüssel (mit
+    Zeilen der Vorkommen) und NaN/Infinity sind Fehler, Syntaxfehler mit Position."""
+    dups: list[str] = []
+
+    def pairs_hook(pairs):
+        out: dict = {}
+        for key, value in pairs:
+            if key in out:
+                dups.append(key)
+            out[key] = value
+        return out
+
+    try:
+        doc = json.loads(text, object_pairs_hook=pairs_hook, parse_constant=_reject_constant)
+    except _NonStandardConstant as exc:
+        raise NetworkValidationError(
+            [f"JSON: '{exc}' ist kein gültiger JSON-Wert (NaN/Infinity sind nicht "
+             f"standardkonform; erlaubt sind nur endliche Zahlen)."]) from None
+    except json.JSONDecodeError as exc:
+        hint = ""
+        if exc.pos == 0 and text.strip():
+            hint = (" – die Datei ist kein JSON (JSON kennt keine Kommentare); "
+                    "YAML-Inhalt bitte mit Endung .yaml/.yml speichern")
+        raise NetworkValidationError(
+            [f"JSON-Syntaxfehler (Zeile {exc.lineno}, Spalte {exc.colno}): {exc.msg}{hint}"]) from None
+    messages = []
+    for key in dict.fromkeys(dups):
+        quoted = re.escape(json.dumps(key, ensure_ascii=False))
+        lines = [text.count("\n", 0, m.start()) + 1 for m in re.finditer(quoted + r"\s*:", text)]
+        where = f" (Vorkommen in Zeile {', '.join(map(str, lines))})" if lines else ""
+        messages.append(f"Doppelter Schlüssel '{key}' in der JSON-Datei{where} – z.B. ein "
+                        f"mehrfach vergebener Komponentenname. Bitte eindeutig benennen.")
+    if messages:
+        raise NetworkValidationError(messages)
+    return doc
+
+
+#: Reihenfolge der obersten Ebene im kanonischen JSON
+_TOP_ORDER = ("fluid", "settings", "components", "connections", "layout")
+
+
+def canonical_json(doc: dict) -> str:
+    """Eingabemodell als kanonisches JSON: gleiche Schlüssel (keine Einheiten-
+    umrechnung), stabile Reihenfolge — oberste Ebene fest, Komponenten in
+    Dateireihenfolge mit 'type' zuerst, sonst Dateireihenfolge. Kommentare
+    des YAML-Originals entfallen."""
+    out = {k: doc[k] for k in _TOP_ORDER if k in doc}
+    out.update({k: v for k, v in doc.items() if k not in out})
+    comps = out.get("components")
+    if isinstance(comps, dict):
+        out["components"] = {
+            name: ({"type": spec["type"], **{k: v for k, v in spec.items() if k != "type"}}
+                   if isinstance(spec, dict) and "type" in spec else spec)
+            for name, spec in comps.items()}
+    return json.dumps(out, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
+
+
 def is_path(source) -> bool:
     """Pfad oder Text? (Text enthält Zeilenumbrüche oder endet nicht auf eine
     Dateiendung einer existierenden Datei.)"""
@@ -236,10 +305,12 @@ def is_path(source) -> bool:
 
 
 def load_document(source):
-    """Eingabedokument aus dict, Datei (Path/Pfad-String) oder YAML-Text.
+    """Eingabedokument aus dict, Datei (Path/Pfad-String) oder YAML-/JSON-Text.
 
     Ein dict wird unverändert durchgereicht (Python-API). Dateien werden als
-    UTF-8 gelesen; fehlende Dateien → NetworkValidationError."""
+    UTF-8 gelesen — .json strikt als JSON, sonst YAML 1.2; fehlende Dateien →
+    NetworkValidationError. Text wird als YAML 1.2 gelesen (JSON ist darin
+    enthalten)."""
     if isinstance(source, dict):
         return source
     if is_path(source):
@@ -250,5 +321,7 @@ def load_document(source):
             raise NetworkValidationError([f"Datei '{path}' nicht gefunden."]) from None
         except IsADirectoryError:
             raise NetworkValidationError([f"'{path}' ist ein Verzeichnis, keine Datei."]) from None
+        if path.suffix.lower() == ".json":
+            return parse_json(text)
         return parse_yaml(text)
     return parse_yaml(str(source))
