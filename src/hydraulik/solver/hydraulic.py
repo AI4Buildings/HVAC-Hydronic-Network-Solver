@@ -76,7 +76,7 @@ def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = Non
 
     alpha_p, alpha_q = s.alpha_p, s.alpha_q
     history: list[tuple[float, float]] = []
-    rising = 0
+    rising = falling = 0
 
     a_arr = np.zeros(m)
     b_arr = np.zeros(m)
@@ -95,9 +95,37 @@ def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = Non
                 coupled.append((e.component, _seen[key]))
             _seen[key].append(e.index)
 
+    def coefficients(e, q_e: float, it: int):
+        try:
+            return e.coeff_fn(q_e, fluid)
+        except HydraulikError:
+            raise
+        except Exception as exc:                     # Modellfehler lesbar einhüllen
+            raise ComponentModelError(
+                e.name, e.component.type_name, "hydraulisches",
+                f"V̇ = {float(q_e) * 3600:.4g} m³/h (Iteration {it})", exc) from exc
+
+    n_from = np.array([e.node_from for e in net.edges], dtype=int)
+    n_to = np.array([e.node_to for e in net.edges], dtype=int)
+
+    # Eigenschleifen (Ein- und Austritt am selben Knoten, z.B. kurzgeschlossenes
+    # Bauteil): Δp ≡ 0, die Kante ist vom Netz entkoppelt und ihre Gleichung
+    # R(Q) = Δp_Quelle skalar. Exakt vorab lösen — im Netzverbund konvergiert
+    # die doppelte Nullstelle passiver Kanten (b·Q|Q| = 0) nur linear und
+    # bliebe beim Startwert-Bruchteil stehen.
+    coupled_idx = {i for _, idxs in coupled for i in idxs}
+    for e in net.edges:
+        i = e.index
+        if e.node_from == e.node_to and not fixed[i] and i not in coupled_idx:
+            root = _self_loop_flow(e, float(seeds[i]), coefficients)
+            if root is not None:
+                fixed[i], q_fix[i], q[i] = True, root, root
+
     mass_res = mom_res = np.inf
-    for it in range(1, s.max_iter + 1):
-        # 1. Koeffizienten beim aktuellen Q auswerten
+    step_ok = False                                  # letzte Newton-Korrektur klein?
+    updates = 0
+    for it in range(1, s.max_iter + 2):
+        # 1. Koeffizienten beim AKTUELLEN Q auswerten
         for comp, idxs in coupled:
             try:
                 comp.pre_coefficients([float(q[i]) for i in idxs], fluid)
@@ -109,26 +137,77 @@ def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = Non
                     f"Volumenströme {[round(float(q[i]) * 3600, 4) for i in idxs]} m³/h "
                     f"(Iteration {it})", exc) from exc
         for e in net.edges:
-            try:
-                c = e.coeff_fn(q[e.index], fluid)
-            except HydraulikError:
-                raise
-            except Exception as exc:
-                raise ComponentModelError(
-                    e.name, e.component.type_name, "hydraulisches",
-                    f"V̇ = {float(q[e.index]) * 3600:.4g} m³/h (Iteration {it})", exc) from exc
+            c = coefficients(e, q[e.index], it)
             a_arr[e.index], b_arr[e.index], dp_src[e.index] = c.a, c.b, c.dp_source
 
-        r_floor = np.maximum(b_arr * r_floor_frac, 1e-3)  # min. 1e-3 Pa/(m³/s)
-        jac = np.maximum(a_arr + 2.0 * b_arr * np.abs(q), r_floor)
+        # 2. Residuen des aktuellen Zustands — mit den Koeffizienten DIESES
+        #    Zustands. (Früher nach dem Update mit den Koeffizienten des alten Q:
+        #    stark Q-abhängige Widerstände, z.B. Rohre mit laminarem Startwert,
+        #    wurden so nach einem Schritt fälschlich als konvergiert gemeldet.)
+        dp_nodes = p[n_from] - p[n_to]
+        r_edge = a_arr * q + b_arr * q * np.abs(q)
+        mom_defect = dp_nodes + dp_src - r_edge
+        q_scale = max(float(np.max(np.abs(q))), 1e-9)
+        mass_vec = (A @ q - sources)[~pinned]
+        mass_res = float(np.max(np.abs(mass_vec))) / q_scale if mass_vec.size else 0.0
+        mom_vec = np.where(fixed, 0.0, mom_defect)
+        dp_scale = max(float(np.max(np.abs(dp_src))), float(np.max(np.abs(r_edge))), 1e3)
+        mom_res = float(np.max(np.abs(mom_vec))) / dp_scale
+        history.append((mass_res, mom_res))
 
-        # 2. Impulsprädiktor (Newton-Inkrement der Kantenimpulsgleichung)
-        dp_nodes = p[[e.node_from for e in net.edges]] - p[[e.node_to for e in net.edges]]
-        mom_defect = dp_nodes + dp_src - (a_arr * q + b_arr * q * np.abs(q))
+        if not np.isfinite(mass_res) or not np.isfinite(mom_res):
+            raise ConvergenceError(
+                f"Hydraulik-Solver divergiert (NaN/Inf in Iteration {it}).", history)
+        # Konvergenz: Residuen klein UND letzte Volumenstrom-Korrektur klein —
+        # das Impulsresiduum allein (relativ zum GLOBALEN Druckmaßstab) legt
+        # Ströme mit kleinem Δp nicht fest (widerstandsarme oder antriebslose
+        # Maschen: dort konvergiert Newton nur linear).
+        if mass_res < s.tol_mass_rel and mom_res < s.tol_mom_rel and step_ok:
+            return HydraulicState(p, q, updates, mass_res, mom_res, True, history)
+        if updates >= s.max_iter:
+            break
+
+        # Divergenz-Wächter: steigt der Impulsdefekt 5× in Folge, Relaxation
+        # halbieren (bis minimal 0.1). Die Dämpfung ist nur vorübergehend: nach
+        # 3 Abnahmen in Folge wieder verdoppeln (bis zum eingestellten Wert) —
+        # sonst liefe Newton nach einer unruhigen Anlaufphase dauerhaft
+        # gedämpft und konvergierte nur noch linear (≈ 1 % je Iteration).
+        if len(history) > 1 and history[-1][1] > history[-2][1]:
+            rising, falling = rising + 1, 0
+            if rising >= 5 and alpha_q > 0.1:
+                alpha_p, alpha_q, rising = max(alpha_p / 2, 0.1), max(alpha_q / 2, 0.1), 0
+        else:
+            rising, falling = 0, falling + 1
+            if falling >= 3 and (alpha_q < s.alpha_q or alpha_p < s.alpha_p):
+                alpha_p, alpha_q = min(alpha_p * 2, s.alpha_p), min(alpha_q * 2, s.alpha_q)
+                falling = 0
+
+        # 3. Jacobi-Steigung J = dR/dQ der Kantenimpulsgleichung. a + 2b|Q| ist
+        #    exakt nur für Q-unabhängige a, b; hängen sie von Q ab (Reibungs-
+        #    beiwert im laminar-turbulenten Übergang), unterschätzt sie die wahre
+        #    Steigung bis Faktor ~3 → Newton schießt über und pendelt. Daher
+        #    zusätzlich der Differenzenquotient aus dem Komponentenmodell
+        #    (generisch, kein neuer Vertrag); das Maximum ist nie zu flach.
+        r_floor = np.maximum(b_arr * r_floor_frac, 1e-3)  # min. 1e-3 Pa/(m³/s)
+        jac = a_arr + 2.0 * b_arr * np.abs(q)
+        h_fd = 1e-6 * np.maximum(np.abs(q), r_floor_frac)
+        r_now = r_edge - dp_src
+        for e in net.edges:
+            i = e.index
+            if fixed[i]:
+                continue
+            q_h = q[i] + h_fd[i]
+            c = coefficients(e, q_h, it)
+            slope = (c.a * q_h + c.b * q_h * abs(q_h) - c.dp_source - r_now[i]) / h_fd[i]
+            if np.isfinite(slope) and slope > jac[i]:
+                jac[i] = slope
+        jac = np.maximum(jac, r_floor)
+
+        # 4. Impulsprädiktor (Newton-Inkrement der Kantenimpulsgleichung)
         q_star = q + alpha_q * mom_defect / jac
         q_star[fixed] = q_fix[fixed]
 
-        # 3. Druckkorrektur-System (gleiche Jacobi-Steigung → Schur-Komplement)
+        # 5. Druckkorrektur-System (gleiche Jacobi-Steigung → Schur-Komplement)
         d = 1.0 / jac
         d[fixed] = 0.0
         K = (A @ sp.diags(d) @ A.T).tolil()
@@ -148,44 +227,46 @@ def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = Non
         S = sp.diags(scale)
         p_corr = S @ spsolve((S @ K @ S).tocsc(), scale * r)
 
-        # 4. Korrektur & Update
-        dpc = p_corr[[e.node_from for e in net.edges]] - p_corr[[e.node_to for e in net.edges]]
+        # 6. Korrektur & Update (Residuen prüft der nächste Iterationsanfang
+        #    mit den dann neu ausgewerteten Koeffizienten)
+        dpc = p_corr[n_from] - p_corr[n_to]
         q_new = q_star + d * dpc
         q_new[fixed] = q_fix[fixed]
+        step_tol = np.maximum(1e-6 * max(float(np.max(np.abs(q_new))), 1e-9), 2.0 * r_floor_frac)
+        step_ok = bool(np.all(np.abs(q_new - q) <= step_tol))
         p = p + alpha_p * p_corr
         p[pinned] = p_bc[pinned]
         q = q_new
-
-        # 5. Residuen (relativ)
-        q_scale = max(float(np.max(np.abs(q))), 1e-9)
-        mass_vec = (A @ q - sources)[~pinned]
-        mass_res = float(np.max(np.abs(mass_vec))) / q_scale if mass_vec.size else 0.0
-
-        dp_nodes = p[[e.node_from for e in net.edges]] - p[[e.node_to for e in net.edges]]
-        mom_vec = dp_nodes + dp_src - (a_arr * q + b_arr * q * np.abs(q))
-        mom_vec[fixed] = 0.0
-        dp_scale = max(float(np.max(np.abs(dp_src))),
-                       float(np.max(np.abs(a_arr * q + b_arr * q * np.abs(q)))), 1e3)
-        mom_res = float(np.max(np.abs(mom_vec))) / dp_scale
-        history.append((mass_res, mom_res))
-
-        if not np.isfinite(mass_res) or not np.isfinite(mom_res):
-            raise ConvergenceError(
-                f"Hydraulik-Solver divergiert (NaN/Inf in Iteration {it}).", history)
-
-        if mass_res < s.tol_mass_rel and mom_res < s.tol_mom_rel:
-            return HydraulicState(p, q, it, mass_res, mom_res, True, history)
-
-        # Divergenz-Wächter: steigt der Impulsdefekt 5× in Folge, Relaxation
-        # halbieren (bis minimal 0.1)
-        if len(history) > 1 and history[-1][1] > history[-2][1]:
-            rising += 1
-            if rising >= 5 and alpha_q > 0.1:
-                alpha_p, alpha_q, rising = max(alpha_p / 2, 0.1), max(alpha_q / 2, 0.1), 0
-        else:
-            rising = 0
+        updates += 1
 
     raise ConvergenceError(
         f"Hydraulik-Solver nicht konvergiert nach {s.max_iter} Iterationen "
         f"(Massendefekt {mass_res:.2e}, Impulsdefekt {mom_res:.2e}). "
         f"Tipp: alpha_p/alpha_q reduzieren oder Startwerte (q_nom) angeben.", history)
+
+
+def _self_loop_flow(e, seed: float, coefficients) -> float | None:
+    """Volumenstrom einer Eigenschleifen-Kante: Nullstelle der monotonen
+    Kantenkennlinie f(Q) = a·Q + b·Q·|Q| − Δp_Quelle (Δp der Knoten ist 0).
+    Bisektion mit wachsendem Intervall; None, falls kein Vorzeichenwechsel
+    (dann löst die normale Iteration)."""
+    def f(q: float) -> float:
+        c = coefficients(e, q, 0)
+        return c.a * q + c.b * q * abs(q) - c.dp_source
+
+    if f(0.0) == 0.0:
+        return 0.0
+    hi = max(abs(seed), 1e-6)
+    sign = 1.0 if f(0.0) < 0.0 else -1.0             # Nullstelle bei Q > 0 bzw. Q < 0
+    while sign * f(sign * hi) < 0.0:
+        hi *= 2.0
+        if hi > 1e3:                                 # > 3.6e6 m³/h: kein sinnvoller Fall
+            return None
+    lo_q, hi_q = (0.0, hi) if sign > 0 else (-hi, 0.0)
+    for _ in range(200):
+        mid = 0.5 * (lo_q + hi_q)
+        if f(mid) < 0.0:
+            lo_q = mid
+        else:
+            hi_q = mid
+    return 0.5 * (lo_q + hi_q)
