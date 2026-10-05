@@ -39,8 +39,9 @@ class CheckValve(TwoPortComponent):
 ```
 
 Dann in `components/__init__.py` importieren (füllt das Register) und in
-`__all__` aufnehmen. Fertig — YAML-Typ `check_valve` existiert inklusive
-Parametervalidierung.
+`__all__` aufnehmen. Fertig — YAML-/JSON-Typ `check_valve` existiert inklusive
+Parametervalidierung, Editor-Formular und Eintrag im JSON Schema
+(`hydraulik schema`); nichts davon muss von Hand gepflegt werden.
 
 ## Regeln für die Verträge
 
@@ -63,6 +64,11 @@ Parametervalidierung.
   via parse_params gegen PIPE_SEGMENT_PARAMS geprüft)
   (BEMS-Messpunktliste, base._parse_bems). Zusätzlich hängt der
   @register-Dekorator jedem Typ automatisch den Param `description` an.
+  Ein eigenes Listen-Kwarg wie `pipes` zusätzlich als
+  `LIST_PARAMS = {"pipes": PIPE_SEGMENT_PARAMS}` deklarieren — daraus
+  entsteht sein JSON-Schema-Eintrag.
+- Labels (`ts`, BEMS-Felder) sind Zeichenketten: Ganzzahlen werden
+  übernommen, Float/bool abgelehnt (base.parse_label).
 - Solver-Hook für gekoppelte Kanten: implementiert eine Komponente
   `pre_coefficients(q_edges, fluid)`, erhält sie vor jeder Koeffizienten-
   auswertung die aktuellen Flüsse ihrer eigenen Kanten in Bau-Reihenfolge

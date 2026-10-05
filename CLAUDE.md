@@ -6,8 +6,10 @@ mit grafischem Hydraulikschema-Editor (Rechnen im GUI, Human in the Loop).
 Doppelzweck: Rechenmodell UND maschinenlesbare semantische Karte für die
 BEMS-Betriebsdatenanalyse (Aedifion-Datenpunkt-IDs an jeder Komponente).
 Stand: v0.6.0 (Juli 2026) plus Robustheitsrunde 2026-09-10 (Bugfixes,
-Fehlerpfade, Newton-Energiegleichung, Zufallsnetz-Rauchtest, CI, YAML-Import
-beliebiger Form — Details im obersten Block von docs/roadmap.md); validiert
+Fehlerpfade, Newton-Energiegleichung, Zufallsnetz-Rauchtest, CI) und
+Eingabeformat-Härtung 2026-10-05 (YAML 1.2 überall gleich in Solver und
+Editoren, JSON-Ein-/Ausgabe, JSON Schema aus der Registry — Details in den
+obersten Blöcken von docs/roadmap.md); validiert
 gegen zwei unabhängige FH-Burgenland-Referenzlösungen (Verteiler-Übung,
 TWE-Übung Bsp 6) sowie gegen die Skill-Referenz cooling-coil-greybox
 (FläktGroup-Register).
@@ -18,9 +20,11 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (263 Tests)
+pytest                                   # Testsuite (633 Tests; Paritätstests brauchen node)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
-hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]
+hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]   # auch .json
+hydraulik export --json schaltung.yaml [--out schaltung.json]   # geprüft, kanonisches JSON
+hydraulik schema [--luft] [--out hydraulik.schema.json]         # JSON Schema aus der Registry
 hydraulik editor --out hydraulik_editor.html   # Schaltbild-Editor generieren (statisch)
 editor server [--port 8091]              # Startseite / → /hydraulik + /lueftung (Rechnen im GUI)
 hydraulik serve                          # dasselbe (Alias)
@@ -71,8 +75,15 @@ src/hydraulik/
                      (isolierter Umlauf, Drift-Meldung); skipped_thermal
     settings.py      SolverSettings (alle Defaults; t_plausible_min/max für den
                      Plausibilitätshinweis im Bericht)
+  yamlio.py          EINZIGE Parse-Stelle für YAML/JSON: load_document(),
+                     parse_yaml() (ruamel, YAML 1.2 Core Schema strikt, Schlüssel
+                     = Originaltext, nur reine Python-Typen, Duplikate/Tags
+                     gesammelt), parse_json() (strikt), canonical_json()
   yaml_loader.py     load(), load_settings() (typ-/bereichsgeprüft, gesammelt);
-                     LLM-taugliche Fehlermeldungen; toleriert 'layout:'-Block
+                     fluid über FLUID_*_PARAMS; LLM-taugliche Fehlermeldungen;
+                     toleriert 'layout:'-Block
+  schema.py          JSON Schema (Draft 2020-12) nur aus Registry/Param/
+                     LIST_PARAMS/FLUID_*_PARAMS/SolverSettings (`hydraulik schema`)
   editor.py          Katalogexport (Registry+ParamSpec → JSON) + render/build_editor()
   editor_template.html  Single-File-Hydraulikschema-Editor (__CATALOG_JSON__);
                      jede gezogene Linie = conduit (Sensor-Messleitungen = reine
@@ -86,10 +97,14 @@ src/hydraulik/
                      Strömungsrichtungspfeile auf conduits nach dem Rechnen;
                      automatisch mitwachsende Zeichenfläche (updateCanvasSize);
                      conduit-Rohrmodell als Abschnittsliste (pipesForm);
-                     YAML-Import: Server-Parser (PyYAML, jede Form) mit lokalem
-                     Subset-Parser als Fallback ohne Server
+                     YAML-Import: Server-Parser (yamlio) mit lokalem
+                     YAML-1.2-Parser (yaml_core.js) als Fallback ohne Server
+  yaml_core.js       YamlCore: YAML-1.2-Parser/-Serializer beider Editoren
+                     (Platzhalter /*__YAML_CORE_JS__*/), Semantik = yamlio,
+                     lehnt Nicht-Unterstütztes ab statt anders zu lesen
   server.py          hydraulik serve: Editor + POST /solve + POST /normalize[_air]
-                     (YAML → JSON-Dokument + Loader-Hinweise für den Import; nur 127.0.0.1)
+                     (YAML → JSON-Dokument + Loader-Hinweise für den Import; Body
+                     nur als Text, nie als Pfad; nur 127.0.0.1)
   air/               Luftseite (Lüftungsanlage; Kern + GUI fertig, v0.6.0):
     vka/             integrierter VKA-Rechenkern EN 16798-5-1 (aus Skill
                      vka-effizienz-en16798 übernommen; simulate/simulate_room,
@@ -127,7 +142,11 @@ src/hydraulik/
 docs/                architektur.md, numerik.md, erweitern.md, roadmap.md
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               263 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+tests/               633 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+                     test_yamlio.py / test_yaml12_kompat.py: Loader + YAML-1.1-
+                     Altlasten; test_editor_paritaet.py: JS ↔ Python (node,
+                     Korpus tests/data/, Zufallsskalare/-dokumente, Round-Trip);
+                     test_schema.py: Schema ↔ Loader je Parameter; test_json_io.py;
                      test_smoke_random.py: 40 Zufallsnetze (fester Seed) über die Palette;
                      test_thermal_newton.py: Energiegleichung gegen Knotenbilanz-Definition,
                      unabhängiges Fixpunkt-Orakel, geschlossene Lösungen, Invarianzen
@@ -150,6 +169,11 @@ tests/               263 Tests: analytische Referenzen + Validierung gegen Muste
   Kopplungen; klassische TS-Nummern als `ts`-Label, nie als Recheneinheit.
 - Fehlermeldungen deutsch, gesammelt (nie beim ersten Fehler abbrechen),
   mit difflib-Korrekturvorschlägen — sie werden von LLMs konsumiert.
+- **Eingabeformat**: YAML 1.2 Core Schema bzw. JSON, geparst NUR über
+  yamlio (kein `import yaml`/`ruamel` anderswo — Test). Änderungen an der
+  Leseregel immer in yamlio.py UND yaml_core.js; test_editor_paritaet.py
+  hält beide deckungsgleich. Labels (`ts`, BEMS) sind Zeichenketten; neue
+  Listen-Kwargs als LIST_PARAMS deklarieren (sonst fehlen sie im Schema).
 - Tests gegen analytische Referenzen bzw. dokumentierte Musterlösungen,
   nicht gegen ungeprüfte Regressionszahlen.
 

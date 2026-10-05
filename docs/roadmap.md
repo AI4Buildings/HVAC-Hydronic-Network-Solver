@@ -1,5 +1,49 @@
 # Status & Roadmap
 
+## Eingabeformat gehärtet (2026-10-05, unveröffentlicht)
+
+633 Tests, alle grün (Paritätstests brauchen node, sonst übersprungen).
+Anlass: externes Review — PyYAML (YAML 1.1) las `1.4e0` als String und
+`no`/`off` als False; die Editoren hatten eigene Mini-Parser mit anderer
+Semantik. Jetzt:
+
+- **Ein Loader, YAML 1.2** (`yamlio.py`, ruamel.yaml statt PyYAML): Core
+  Schema strikt (auch strenger als ruamels Standard), Schlüssel = Originaltext,
+  nur reine Python-Typen, doppelte Schlüssel/Tags/Merge-Schlüssel gesammelt
+  gemeldet, Syntaxfehler mit Position statt Traceback; Server deutet
+  Request-Bodys nie als Dateipfad.
+- **Altlasten klar gemeldet**: `yes/no/on/off` bei Bool-Parametern mit
+  Hinweis; Labels (`ts`, BEMS) als Zeichenketten (Float/bool → Fehler mit
+  Quoting-Hinweis); inf/nan/Überlauf unzulässig; Ganzzahl-Parameter nehmen
+  `2.0`; `fluid` als Param-Deklaration (bisher Absturz bei `t_C: abc`).
+  Vergleich alt/neu über alle Repo-YAML und Test-YAML-Texte: Modelle
+  identisch; Beispielergebnisse byte-identisch.
+- **Editoren = Solver** (`yaml_core.js`, gemeinsam für beide Editoren):
+  Block- und Flow-Stil, Token-Regeln wie ruamel; Export quotet
+  Missverständliches und schreibt `5.0e-7`; `round6` relativ. Fuzzing über
+  ~166 000 Eingaben ohne Abweichung; Browser-E2E beider Editoren.
+  Nebenbefund behoben: der alte Editor schnitt `"Regelventil #1"` beim
+  Autosave-Restore am `#` ab.
+- **JSON Schema** aus der Registry (`hydraulik schema [--luft]`), Konsistenz
+  zum Loader je Typ/Parameter/Suffix getestet (Mutationstests erkannt).
+- **JSON gleichwertig**: `.json`-Eingabe strikt, `hydraulik export --json`
+  (kanonisch, YAML → JSON → identische Lösung).
+
+Offene Punkte:
+- Der lokale Editor-Parser (statische HTML ohne Server) lehnt Anker/Aliase,
+  Tags, Block-Skalare `|`/`>`, mehrzeilige Werte und Tabulatoren ab (mit
+  Verweis auf `editor server`); `:x` am Wertanfang eines Flow-Mappings liest
+  ruamel je nach Token-Puffer unterschiedlich — der Editor lehnt es ab.
+- Die Editoren übernehmen `settings` nicht (Import/Export verwirft den Block,
+  wie bisher).
+- JSON Schema: `1.0` gilt dort als Ganzzahl, für Labels (ts/BEMS) lehnt der
+  Loader sie ab; NaN ist im Schema nicht ausdrückbar (Loader prüft);
+  Grenzwerte gelten auf Gleitkommagenauigkeit der Einheitenumrechnung.
+- Ganzzahlen > 2^53 verlieren im Editor (JavaScript) Stellen — numerische
+  BEMS-IDs deshalb immer quoten (der Export tut das).
+- Fehler in `conduit.pipes` werden noch vor den übrigen Parameterfehlern
+  gemeldet (nicht gesammelt).
+
 ## Stand nach v0.6.0 (2026-09-10, unveröffentlicht)
 
 263 Tests, alle grün. Bugfix-Runde und Robustheit:
@@ -274,7 +318,7 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (263 Tests, müssen grün sein);
+1. `pip install -e ".[dev]" && pytest` (633 Tests, müssen grün sein; node für die Paritätstests);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/).
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
    dieser Datei lesen — dort steht, was zuletzt gebaut wurde.

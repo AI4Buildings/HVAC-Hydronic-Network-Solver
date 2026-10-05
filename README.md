@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 263 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 633 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 ## Tool starten
@@ -40,8 +40,9 @@ Die Startseite verlinkt den **Hydraulikschema-Editor** (`/hydraulik`) und den
 **Lüftungsschema-Editor** (`/lueftung`); gerechnet wird direkt im GUI
 (lokaler Endpunkt, nur 127.0.0.1). `editor serve`, kurz `editor` oder das
 ältere `hydraulik serve` tun dasselbe; `--port`/`--no-open` optional.
-Daneben gibt es das CLI `hydraulik` (`run` = YAML rechnen, `editor` =
-statische HTML-Datei erzeugen, `serve`).
+Daneben gibt es das CLI `hydraulik` (`run` = YAML/JSON rechnen, `export --json` =
+geprüftes Modell als kanonisches JSON, `schema` = JSON Schema des
+Eingabeformats, `editor` = statische HTML-Datei erzeugen, `serve`).
 
 ## Schnellstart
 
@@ -112,10 +113,12 @@ Ports, fehlende Pflichtparameter, Wertebereiche; klicken wählt die
 betroffene Komponente aus). **Export erzeugt direkt
 rechenbares YAML** inkl. `layout:`-Block (Zeichnungskoordinaten) für den
 Re-Import — die Zeichnung ist damit das Modell, es gibt keinen
-Interpretationsschritt. Der Import akzeptiert unter `editor server` jede
-YAML-Form (Block- oder Inline-Stil; PyYAML auf dem Server, doppelte
-Schlüssel werden gemeldet, Loader-Hinweise erscheinen in der Statuszeile);
-die statische HTML-Datei liest das Inline-Exportformat. Palette, Ports und Formulare werden aus der
+Interpretationsschritt. Editor und Solver lesen YAML identisch (YAML 1.2,
+siehe unten): Unter `editor server` importiert der Server-Parser jede
+YAML-Form samt Loader-Hinweisen in der Statuszeile; die statische HTML-Datei
+nutzt einen lokalen YAML-1.2-Parser (Block- und Flow-Stil) mit derselben
+Semantik, der Anker, Tags und Block-Skalare mit Meldung ablehnt statt sie
+anders zu lesen. Palette, Ports und Formulare werden aus der
 Komponenten-Registry generiert (Single Source of Truth): Nach neuen
 Komponenten einfach den Editor neu erzeugen.
 
@@ -145,6 +148,67 @@ Regeln:
   Mischstelle (Verzweigung).
 - Validierungsfehler werden **gesammelt** als nummerierte Liste gemeldet
   (mit Korrekturvorschlägen), sodass eine Datei in einem Durchgang korrigierbar ist.
+
+### YAML 1.2 – überall gleich gelesen
+
+Solver, CLI, Server und beide Editoren lesen Dateien nach dem **YAML 1.2
+Core Schema** (eine zentrale Ladefunktion `hydraulik.load_document`, im
+Editor `yaml_core.js` mit identischer Semantik — per Paritätstest abgesichert):
+
+| Schreibweise | gelesen als |
+|---|---|
+| `1.4e0`, `14e-1`, `1e3`, `5e-7`, `.5` | Zahl |
+| `08`, `010` | Ganzzahl 8 bzw. 10 (keine Oktalzahl; Oktal `0o17`, Hex `0x1F`) |
+| `true`/`false` (auch `True`, `TRUE`) | Wahrheitswert |
+| `yes`, `no`, `on`, `off`, `y`, `n` | **Zeichenkette** (YAML 1.1 las sie als Wahrheitswert) |
+| `null`, `~`, leer | null |
+| `1_000`, `0b101`, `2026-10-05`, `12:30` | Zeichenkette |
+| `.inf`, `.nan` | gelesen, vom Loader aber abgelehnt (nur endliche Zahlen) |
+
+- **Schlüssel sind immer Zeichenketten im Originaltext**: `no:`, `off:` oder
+  `true:` sind gültige Komponentennamen.
+- Doppelte Schlüssel sind ein Fehler (mit Zeilennummer). Anker/Aliase
+  (`&name`/`*name`) sind erlaubt; YAML-1.1-Merge-Schlüssel `<<` und Tags wie
+  `!!binary`/`!!timestamp` nicht.
+- Bool-Parameter (z.B. `closed` am Kugelhahn) nur mit `true`/`false` —
+  `yes`/`no` meldet der Loader mit dem Hinweis „bitte true/false verwenden".
+- Ganzzahl-Parameter akzeptieren auch `2.0` bzw. `1e3` (wie JSON Schema).
+
+**Quoting-Regeln** (für von Hand oder per LLM geschriebene Dateien):
+
+- **Labels quoten**: `ts: "08"`, BEMS-Felder `id: "…"`. Ungequotet liest
+  YAML 1.2 `ts: 08` als Zahl 8 (Label „8"); `ts: 1.10` ist ein Fehler, weil
+  daraus still „1.1" würde. Ganzzahlen (`ts: 4`) sind erlaubt.
+- Strings, die wie Zahl, Wahrheitswert oder null aussehen, quoten: `"1e3"`,
+  `"true"`, `"null"`.
+- `#` nach einem Leerzeichen beginnt einen Kommentar — Texte mit ` #` oder
+  `: ` quoten: `description: "Kreis #2: Vorlauf"`.
+- Der Editor-Export quotet selbsttätig (missverständliche Strings, Namen,
+  `ts` immer) und schreibt Exponentenzahlen stets mit Punkt und Vorzeichen
+  (`5.0e-7`), sodass auch YAML-1.1-Werkzeuge eine Zahl lesen.
+
+### JSON-Eingabe, JSON-Export und JSON Schema
+
+- **JSON ist gleichwertig**: `hydraulik run schaltung.json`,
+  `h.load("schaltung.json")`. `.json`-Dateien werden strikt gelesen
+  (doppelte Schlüssel, `NaN`/`Infinity` und Kommentare sind Fehler).
+- **Kanonisches JSON**: `hydraulik export --json schaltung.yaml [--out schaltung.json]`
+  prüft das Modell mit dem Loader und schreibt es mit denselben Schlüsseln
+  (Einheiten-Suffixe bleiben) in stabiler Reihenfolge (oberste Ebene fest,
+  Komponenten in Dateireihenfolge mit `type` zuerst; Kommentare entfallen).
+  YAML → JSON → identische Lösung ist für alle Beispiele getestet.
+- **JSON Schema**: `hydraulik schema [--luft] [--out hydraulik.schema.json]`
+  erzeugt ein Schema (Draft 2020-12) ausschließlich aus der
+  Komponenten-Registry — alle Typen mit allen Suffix-Schlüsseln,
+  Pflichtparametern, „genau eine Einheit" (z.B. `dp_kPa` ODER `dp_Pa`),
+  Wertebereichen in der Einheit des Schlüssels, Auswahllisten (`enum`),
+  reservierten Feldern (`ts`, `bems`, `description`, `pipes`, `layout`) und
+  Port-Referenzen `komponente.port`. Nutzbar für Autovervollständigung im
+  Editor (VS Code, YAML-Erweiterung: erste Zeile
+  `# yaml-language-server: $schema=hydraulik.schema.json`) und als Vorgabe
+  für LLM-Ausgaben. Was ein Schema nicht ausdrücken kann (Existenz der Ports,
+  Portanzahl, Betriebsart ↔ Parameter, endliche Zahlen), prüft weiterhin der
+  Loader — im Schema per `description` gekennzeichnet.
 
 
 ## Lüftungsschema-Editor (VKA nach EN 16798-5-1)

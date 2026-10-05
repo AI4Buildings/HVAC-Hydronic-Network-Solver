@@ -152,7 +152,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 263 Tests)
+## 3. Testabdeckung (tests/, 633 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/
@@ -167,6 +167,10 @@ Verbindungsleitung (conduit: ideal ≡ link, C ≡ flow_resistance, Rohrmodus �
 Pipe exakt), Rückschlagklappe (vorwärts/rückwärts/antiparallel), Kugelhahn (offen ≈
 widerstandsfrei, zu = exakte Absperrung), doppelte YAML-Schlüssel, Editor-Server
 (GET/POST /solve, Fehlerpfade, Thermik-Fallback).
+Eingabeformat (siehe architektur.md): YAML-1.2-Typauflösung und YAML-1.1-
+Altlasten, Parität Editor-Parser ↔ Loader (node; Korpus, Zufallsskalare,
+Zufallsdokumente, bitgenauer Export-Round-Trip), JSON Schema ↔ Loader je
+Typ/Parameter/Suffix, JSON-Ein-/Ausgabe (YAML → JSON → identische Lösung).
 Robustheit: Ventil zu (exakte Absperrung, V̇ = 0 als RB), Kennlinien-Floor,
 Ventil-Sweep monoton, absurder Startwert, unbilanzierte Konstantstrom-
 Pumpen (Compile-Zeit-Fehler), Konstantstrom-Pumpe gegen zu, Drift-Meldung

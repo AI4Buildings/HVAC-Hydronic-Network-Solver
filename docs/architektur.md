@@ -73,7 +73,7 @@ entkoppelt; die Solver kennen nur (a, b, dp_source) und thermal_fn.
 ## Datenfluss beim Lösen
 
 ```
-YAML/dict ──load()──> Network ──compile()──> CompiledNetwork
+YAML/JSON ──load_document()──> dict ──load()──> Network ──compile()──> CompiledNetwork
                                               │
                        solve_hydraulics()  ←──┘   (p, Q)        solver/hydraulic.py
                        solve_thermal(hyd)         (T, Q̇)        solver/thermal.py
@@ -82,6 +82,56 @@ YAML/dict ──load()──> Network ──compile()──> CompiledNetwork
 
 Da ρ, μ, cp konstant sind, ist die Hydraulik exakt von der Temperatur
 entkoppelt — die sequentielle Reihenfolge ist keine Näherung.
+
+## Eingabeformat: YAML 1.2, JSON, JSON Schema (yamlio.py, yaml_core.js, schema.py)
+
+**Eine Ladefunktion für alles.** `yamlio.load_document(source)` (dict, Pfad
+oder Text) ist die einzige Stelle, die YAML/JSON parst — Hydraulik-Loader,
+Luft-Loader, Server (`/solve`, `/normalize[_air]`) und CLI nutzen sie (ein
+Test verbietet direkte `yaml`-/`ruamel`-Importe anderswo). Grundlage ist
+ruamel.yaml (`typ="safe"`, `pure=True`) mit eigenem Resolver und
+Constructor:
+
+- **Resolver = YAML 1.2.2 Core Schema** (Kap. 10.3.2), strikter als ruamels
+  Standard (der auch `1_000`, `0b101` und Datumswerte umdeutet). Die
+  regulären Ausdrücke `CORE_*` in yamlio.py und `RE_*` in yaml_core.js sind
+  identisch.
+- **Constructor nur für Core-Typen**: Rückgabe ausschließlich dict, list,
+  str, int, float, bool, None. Mapping-Schlüssel sind der Originaltext des
+  Skalars (`true:` → `"true"`, `08:` → `"08"`) — Namen werden nie zu Zahlen
+  oder Wahrheitswerten, und `**spec` bekommt immer String-Schlüssel.
+  Doppelte Schlüssel, nicht unterstützte Tags und Merge-Schlüssel `<<`
+  werden GESAMMELT gemeldet; Syntaxfehler mit Zeile/Spalte und Kontext.
+- **JSON**: `.json`-Dateien liest `parse_json` strikt (doppelte Schlüssel mit
+  Zeilen, kein NaN/Infinity); `canonical_json` schreibt das Eingabemodell
+  (`hydraulik export --json`).
+- **Server**: Request-Bodys werden nur mit `parse_yaml` gelesen — ein Body
+  wird nie als lokaler Dateipfad gedeutet.
+
+**Werteprüfung** (params.py, components/base.py, yaml_loader.py): Bool-
+Parameter melden YAML-1.1-Wörter (`yes/no/on/off`) mit Hinweis;
+Ganzzahl-Parameter akzeptieren ganzzahlige Floats (deckungsgleich mit JSON
+Schema `integer`); nicht endliche Zahlen und Überläufe sind unzulässig;
+Labels (`ts`, BEMS-Felder) sind Zeichenketten (Ganzzahlen werden übernommen,
+Float/bool sind ein Fehler mit Quoting-Hinweis). Der `fluid`-Block ist wie
+Komponentenparameter deklariert (`FLUID_PRESET_PARAMS` / `FLUID_CUSTOM_PARAMS`).
+
+**Editoren** (yaml_core.js, von editor.py in beide Templates eingesetzt):
+`YamlCore.parse` liest Block- und Flow-Stil mit ruamels Token-Regeln
+(Kommentare nach Strukturzeichen, `:` im Flow, Klammern nur am Wertanfang)
+und lehnt Nicht-Unterstütztes (Anker, Tags, Block-Skalare, mehrzeilige
+Werte, Tabulatoren) mit Verweis auf den Server-Parser ab — es liest nie still
+etwas anderes als yamlio. `YamlCore.scalar` schreibt Zahlen eindeutig
+(`5.0e-7`) und quotet missverständliche Strings. Absicherung:
+`tests/test_editor_paritaet.py` (node) mit Korpus-, Zufallsskalar- und
+Zufallsdokument-Parität sowie bitgenauem Export-Round-Trip.
+
+**JSON Schema** (`hydraulik schema [--luft]`): generiert aus Registry,
+Param-Deklarationen, `LIST_PARAMS` (z.B. conduit.pipes), FLUID_*_PARAMS und
+SolverSettings — nichts wird von Hand gepflegt; `tests/test_schema.py` prüft
+je Typ/Parameter/Suffix, dass Schema und Loader dieselben Werte ablehnen.
+Nicht Ausdrückbares (Port-Existenz, Portanzahl, check_params) bleibt beim
+Loader und ist im Schema per `description` gekennzeichnet.
 
 ## Sensoren & BEMS-Integration (components/sensors.py)
 
@@ -117,9 +167,10 @@ ist Parameter. Im Editor wählt PARAM_MODES die sichtbaren Felder je Modus.
 
 `Param("dp", "pressure", required=True, ...)` deklariert einen Parameter
 einmal; daraus entstehen automatisch:
-- akzeptierte Schlüssel `dp_Pa | dp_kPa | dp_bar | dp_mbar` (YAML **und** Python-API),
+- akzeptierte Schlüssel `dp_Pa | dp_kPa | dp_bar | dp_mbar` (YAML/JSON **und** Python-API),
 - SI-Konvertierung, Bereichs-/Typprüfung,
-- Fehlermeldungen mit gültiger Schlüsselliste und difflib-Vorschlag.
+- Fehlermeldungen mit gültiger Schlüsselliste und difflib-Vorschlag,
+- Editor-Formular (Katalog) und JSON-Schema-Eintrag (Grenzen je Suffix-Einheit).
 
 Neue Einheitengruppen in `UNIT_GROUPS` ergänzen, nie ad hoc konvertieren.
 
