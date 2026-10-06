@@ -3,10 +3,12 @@
 Netze aus monotonen Kennlinien (Δp steigt mit Q) haben genau eine Lösung.
 Komponenten mit nicht-monotoner Kennlinie — derzeit das Idelchik-T-Stück
 über den Regimewechsel Trennen ↔ Vereinigen — können mehrere stationäre
-Lösungen erzeugen. Die Solver-Prüfung 2026-10 fand dafür in 37 von 299
-Zufallsnetzen ausschließlich dynamisch STABILE Mehrfachlösungen: welche sich
-einstellt, hängt vom Anfahrvorgang ab, ein stationärer Solver kann das nicht
-entscheiden. Statt still eine auszuwählen, wird gemeldet.
+Lösungen erzeugen. Die Solver-Prüfung 2026-10 fand dafür in 59 von 310
+Zufallsnetzen mit Idelchik-T-Stück ausschließlich dynamisch STABILE
+Mehrfachlösungen: welche sich einstellt, hängt vom Anfahrvorgang ab, ein
+stationärer Solver kann das nicht entscheiden. Statt still eine auszuwählen,
+wird gemeldet. Konvergiert der Standardstart nicht, wird von den
+alternativen Startwerten aus neu gestartet (solve_hydraulics_checked).
 
 Vorgehen (nur wenn eine Komponente nonmonotone_hydraulics() meldet):
 1. ausgegebene Lösung nachschärfen (Neustart von ihr, Toleranz ×1e-5);
@@ -24,7 +26,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..exceptions import HydraulikError
+from ..exceptions import ConvergenceError, HydraulikError
 from ..network import CompiledNetwork
 from .hydraulic import HydraulicState, solve_hydraulics
 from .settings import SolverSettings
@@ -69,12 +71,56 @@ def _restore_component_state(net: CompiledNetwork, q: np.ndarray) -> None:
         comp.pre_coefficients([float(q[i]) for i in idxs], net.fluid)
 
 
+def _nonmonotone(net: CompiledNetwork) -> list[str]:
+    return sorted(c.name for c in net.components.values() if c.nonmonotone_hydraulics())
+
+
+def _start_vectors(m: int, scale: float, n: int):
+    """Reproduzierbare Startwerte: Beträge log-gleichverteilt 1e-3…1 × scale,
+    Vorzeichen zufällig."""
+    rng = np.random.default_rng(_RNG_SEED)
+    for _ in range(n):
+        yield rng.choice([-1.0, 1.0], m) * scale * 10.0 ** rng.uniform(-3.0, 0.0, m)
+
+
+def solve_hydraulics_checked(net: CompiledNetwork,
+                             settings: SolverSettings) -> HydraulicState:
+    """Hydraulik lösen, bei nicht-monotonen Komponenten mit Eindeutigkeits-
+    prüfung (hyd.alternatives). Konvergiert der Standardstart nicht, wird bei
+    solchen Komponenten von den alternativen Startwerten aus neu gestartet —
+    ihre Kennlinien können Bereiche ohne stabiles Gleichgewicht haben, in
+    denen die Iteration vom Standardstart aus umherirrt, obwohl stabile
+    Lösungen existieren (hyd.restarted = True, Hinweis im Ergebnis)."""
+    try:
+        hyd = solve_hydraulics(net, settings)
+    except ConvergenceError as exc:
+        names = _nonmonotone(net)
+        if not names or settings.uniqueness_starts <= 0 or not net.edges:
+            raise
+        seeds = [abs(e.q_seed) for e in net.edges if e.q_seed]
+        scale = max(max(seeds, default=0.0), settings.q_init) * 10.0
+        hyd = None
+        for start in _start_vectors(len(net.edges), scale, int(settings.uniqueness_starts)):
+            hyd = _solve_from(net, start, settings)
+            if hyd is not None:
+                break
+        if hyd is None:
+            raise ConvergenceError(
+                f"{exc} Auch von {settings.uniqueness_starts} alternativen Startwerten keine "
+                f"stationäre Lösung (nicht-monotone Kennlinie: "
+                f"{', '.join(repr(x) for x in names)}) — möglicherweise existiert kein "
+                f"stabiler Betriebszustand.", exc.residual_history) from exc
+        hyd.restarted = True
+    hyd.alternatives = find_alternative_solutions(net, hyd, settings)
+    return hyd
+
+
 def find_alternative_solutions(net: CompiledNetwork, hyd: HydraulicState,
                                settings: SolverSettings) -> list[AlternativeSolution]:
     n_starts = int(settings.uniqueness_starts)
     if n_starts <= 0 or not hyd.converged or not net.edges:
         return []
-    if not any(c.nonmonotone_hydraulics() for c in net.components.values()):
+    if not _nonmonotone(net):
         return []
     tight = dataclasses.replace(settings,
                                 tol_mass_rel=settings.tol_mass_rel * _TIGHT_FACTOR,
@@ -87,11 +133,8 @@ def find_alternative_solutions(net: CompiledNetwork, hyd: HydraulicState,
         if qmax <= 0.0:
             return []
         tol = max(_DIFF_REL * qmax, _DIFF_ABS)
-        rng = np.random.default_rng(_RNG_SEED)
-        m = len(net.edges)
         found: list[AlternativeSolution] = []
-        for _ in range(n_starts):
-            seeds = rng.choice([-1.0, 1.0], m) * qmax * 10.0 ** rng.uniform(-3.0, 0.0, m)
+        for seeds in _start_vectors(len(net.edges), qmax, n_starts):
             first = _solve_from(net, seeds, settings)
             if first is None:
                 continue

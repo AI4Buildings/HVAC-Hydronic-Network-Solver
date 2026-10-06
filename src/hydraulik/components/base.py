@@ -146,6 +146,12 @@ class Component(ABC):
         """Nennvolumenstrom als Startwert für den Solver (falls bekannt)."""
         return None
 
+    def edge_result_extras(self, label: str, q: float, p_from: float, p_to: float,
+                           fluid) -> dict | None:
+        """Zusätzliche Ergebniswerte je eigener Kante (label wie beim Bau),
+        z.B. statische Anschlussdrücke; None = keine (Default)."""
+        return None
+
     def nonmonotone_hydraulics(self) -> bool:
         """True, wenn die hydraulische Kennlinie nicht monoton ist und das Netz
         dadurch mehrere stationäre Lösungen haben kann (z.B. Idelchik-T-Stück

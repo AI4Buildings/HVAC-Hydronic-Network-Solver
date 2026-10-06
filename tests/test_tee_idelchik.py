@@ -64,9 +64,16 @@ def test_trennung_handrechnung():
     exp_ac = (idelchik.zeta_side(x, r_a, False) * rho * w_c ** 2 / 2
               + rho * (w_s ** 2 - w_c ** 2) / 2)
     by = {s.name: s.readings["dp_kPa"] * 1e3 for s in r.sensors}
-    # kombinierte Kante trägt nur die quasi-ideale Restkante (~0.05 Pa)
-    assert by["pd_ab"] == pytest.approx(exp_ab, abs=0.2)
-    assert by["pd_ac"] == pytest.approx(exp_ac, abs=0.2)
+    # Netz rechnet mit Totaldruck: die Sensoren messen den Idelchik-Verlust
+    # direkt (kombinierte Kante trägt nur die quasi-ideale Restkante ~0.05 Pa)
+    assert by["pd_ab"] == pytest.approx(zeta_st * rho * w_c ** 2 / 2, abs=0.2)
+    assert by["pd_ac"] == pytest.approx(idelchik.zeta_side(x, r_a, False) * rho * w_c ** 2 / 2,
+                                        abs=0.2)
+    # statische Anschlussdrücke (Ergebnis) treffen die Bernoulli-Handrechnung
+    ps = {k: r[f"t1:{k}"].extras["p_static_port_kPa"] * 1e3 for k in "abc"}
+    assert ps["a"] - ps["b"] == pytest.approx(exp_ab, abs=0.2)
+    assert ps["a"] - ps["c"] == pytest.approx(exp_ac, abs=0.2)
+    assert r["t1:c"].extras["v_m_s"] == pytest.approx(w_s, rel=1e-9)
     # Plausibilität: Abzweig verliert deutlich mehr als der gerade Durchgang;
     # im geraden Auslauf kann der Bernoulli-Rückgewinn den ζ-Verlust statisch
     # (fast) kompensieren (Diffusorwirkung, w_st < w_c)
@@ -77,7 +84,8 @@ def test_trennung_handrechnung():
 def test_vereinigung_handrechnung_mit_druckgewinn():
     """Sammlung mit kleinem Abzweiganteil (x = 0.1, r_A = 1): ζ_c.s = −0.65 —
     der Seitenstrang GEWINNT Totaldruck (Injektorwirkung). Der Solver muss
-    konvergieren (nachgeführte Druckquelle) und die Handrechnung treffen."""
+    konvergieren (nachgeführte Druckquelle) und die Handrechnung treffen:
+    im Netz als Totaldruck, an den Anschlüssen statisch."""
     d = 0.032
     doc = {"components": {
                "zu_a": {"type": "inflow", "t_set_C": 50.0, "q_m3h": 1.8},
@@ -106,8 +114,15 @@ def test_vereinigung_handrechnung_mit_druckgewinn():
     exp_ab = (idelchik.zeta_straight(x, True) * rho * w_c ** 2 / 2
               + rho * (w_c ** 2 - w_st ** 2) / 2)
     by = {s.name: s.readings["dp_kPa"] * 1e3 for s in r.sensors}
-    assert by["pd_cb"] == pytest.approx(exp_cb, abs=0.2)
-    assert by["pd_ab"] == pytest.approx(exp_ab, abs=0.2)
+    # Totaldruck im Netz: Sensoren messen ζ·ρw_c²/2 — beim Seitenstrang negativ
+    assert by["pd_cb"] == pytest.approx(zeta_s * rho * w_c ** 2 / 2, abs=0.2)
+    assert by["pd_cb"] < 0.0
+    assert by["pd_ab"] == pytest.approx(idelchik.zeta_straight(x, True) * rho * w_c ** 2 / 2,
+                                        abs=0.2)
+    # statische Anschlussdrücke treffen die Bernoulli-Handrechnung
+    ps = {k: r[f"t1:{k}"].extras["p_static_port_kPa"] * 1e3 for k in "abc"}
+    assert ps["c"] - ps["b"] == pytest.approx(exp_cb, abs=0.2)
+    assert ps["a"] - ps["b"] == pytest.approx(exp_ab, abs=0.2)
 
 
 def test_tee_ohne_durchmesser_bleibt_idealer_knoten():

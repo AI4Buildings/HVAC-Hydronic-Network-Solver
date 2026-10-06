@@ -43,6 +43,8 @@ class HydraulicState:
     residual_history: list[tuple[float, float]] = field(default_factory=list)
     #: weitere stationäre Lösungen (Eindeutigkeitsprüfung, solver/uniqueness.py)
     alternatives: list = field(default_factory=list)
+    #: Standardstart nicht konvergiert, Lösung von alternativem Startwert
+    restarted: bool = False
 
 
 def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = None) -> HydraulicState:

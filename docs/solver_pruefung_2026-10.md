@@ -157,45 +157,54 @@ Förderhöhe im 5-%-Regularisierungswiderstand verloren.
     Übernommen ist auch die überarbeitete Scan-Lesart ζ_c.s(0,55; 1,0) = 6,00
     (vorher 6,60).
   - **Kurzschluss:** Zwei Schenkel am selben Knoten werden beim Kompilieren
-    abgelehnt (neuer generischer Hook `check_topology`). Grund: Der
-    statische Druckrückgewinn wirkt dort wie eine Pumpe; 20 von 68 solchen
-    Netzen hatten eine zweite Lösung.
+    abgelehnt (neuer generischer Hook `check_topology`). Die Aufteilung über
+    die beiden Schenkel bestimmt dann allein die Tabellenkennlinie, oft nicht
+    eindeutig; praktisch immer ein Zeichenfehler.
   - **Wirkung:** Alle 137 vorher nicht konvergierenden Netze mit
     Idelchik-T-Stück lösen (≤ 96 Iterationen).
 
 ### Verbleibende offene Punkte (Entscheidung)
 
-- **Mehrdeutigkeit bei Idelchik-T-Stücken (Warnhinweis umgesetzt,
-  Modellentscheidung offen).**
-  - *Mechanismus:* Dieselben Portdrücke lassen Trennen und Vereinigen zu;
-    die Kennlinie ist über den Regimewechsel nicht umkehrbar eindeutig.
-    Eine Pumpwirkung im Sinne einer Netto-Leistungsabgabe des T-Stücks liegt
-    in keinem Fall vor.
+- **Mehrdeutigkeit bei Idelchik-T-Stücken: Totaldruck-Modell und
+  Warnhinweis umgesetzt.**
+  - *Mechanismus:* Dieselben Portdrücke lassen verschiedene
+    Strömungsbilder zu; die Kennlinie ist über den Regimewechsel nicht
+    umkehrbar eindeutig. Eine Netto-Leistungsabgabe des T-Stücks liegt in
+    keinem Fall vor.
   - *Stabilitätstest:* 44 auffällige Netze, je 17 Startwerte, jede Lösung
     nachgeschärft und unabhängig nachgerechnet; lineare Maschendynamik mit
     voller Jacobi-Matrix. Ergebnis: 7 nur numerisches Rauschen, 37 echt
     mehrdeutig. In allen 37 sind alle Lösungen stabil (29× 2, 8× 3), also
     in keinem Fall genau eine. Die Kontrollgruppe ohne T-Stück (51 Netze)
-    ist ausnahmslos eindeutig.
-  - *Bernoulli:* Ohne die Umrechnung sind 32 der 37 eindeutig. Die
-    statische Umrechnung erzeugt die Mehrwertigkeit also zum größten Teil:
-    Der Zulaufschenkel erhält seine kinetische Energie, ohne dass das Netz
-    sie bezahlt.
-  - *Umgesetzt (solver/uniqueness.py):* Bei Komponenten mit
-    `nonmonotone_hydraulics()` laufen 8 reproduzierbare Zusatzstarts mit
-    Nachschärfen; zusätzliche Lösungen ergeben den Hinweis „Hydraulik nicht
-    eindeutig“ und `alternatives` im Ergebnis, im Editor einen Dialog.
-    - 8 Starts erkennen 37/37; 83 von 310 Zufallsnetzen mit Idelchik-T-Stück
-      werden gemeldet, ohne Fehlalarm.
+    ist ausnahmslos eindeutig. Mehrere stabile Lösungen sind ein
+    Anfangswertproblem; sie werden gemeldet, nicht ausgewählt.
+  - *Totaldruck statt statischer Umrechnung:* Das T-Stück rechnet im Netz
+    jetzt wie alle Bauteile mit dem Totaldruckverlust. Die statischen
+    Anschlussdrücke sind nur noch Ergebnis (`p_static_port_kPa`).
+    - Die Bernoulli-Umrechnung war die einzige im Netz: Der Zulaufschenkel
+      erhielt seine kinetische Energie, ohne dass das Netz sie bezahlte.
+    - Wirkung auf alle 310 Zufallsnetze mit Idelchik-T-Stück: mehrdeutig
+      83 → 59 (beseitigt 70, neu 45).
+    - Die Prognose „32 von 37 beseitigt“ betraf nur die Netze, die mit
+      Bernoulli mehrdeutig waren. Der Term +ρw²/2 des Austrittsschenkels
+      wirkte stabilisierend und überdeckte nicht-monotone Tabellenbereiche.
+      Die verbleibende Mehrwertigkeit stammt aus den Tabellen (negatives
+      ζ_c.s, U-förmige Durchgangstabelle).
+    - Alle 119 Lösungen der 59 Netze sind stabil.
+    - 3 Netze konvergieren nur von alternativen Startwerten; dafür gibt es
+      den automatischen Neustart.
+  - *Umgesetzt (solver/uniqueness.py, `solve_hydraulics_checked`):* Bei
+    Komponenten mit `nonmonotone_hydraulics()` laufen 8 reproduzierbare
+    Zusatzstarts mit Nachschärfen; zusätzliche Lösungen ergeben den Hinweis
+    „Hydraulik nicht eindeutig“ und `alternatives` im Ergebnis, im Editor
+    einen Dialog. Konvergiert der Standardstart nicht, wird von denselben
+    Startwerten neu gestartet, mit Hinweis.
+    - 8 Starts erkennen alle bekannten Fälle; es gibt keinen Fehlalarm.
     - Die Smoke-Netze mit Verteiler-Strang-Sammler-Struktur sind alle
       eindeutig.
     - Quasi-Kurzschlüsse zweier Schenkel über widerstandsfreie Bauteile
-      verdoppeln die Häufigkeit (37 % gegenüber 18 %), sind aber weder
-      notwendig noch hinreichend; ein Topologie-Check ersetzt die Prüfung
-      daher nicht.
-  - *Offen:* Ob das T-Stück im Netz mit Totaldruckverlusten gekoppelt
-    werden soll (statische Portdrücke nur noch nachgerechnet). Das würde 32
-    der 37 Fälle an der Ursache beheben.
+      erhöhen die Häufigkeit, sind aber weder notwendig noch hinreichend;
+      ein Topologie-Check ersetzt die Prüfung daher nicht.
 - **Sammler-Konvention (Idelchik 7-10).** Die überarbeiteten Quellnotizen
   lesen c als geraden Zulauf (Q_st = Q_c + Q_s). Sie vermerken selbst, dass
   dies der gedruckten (1 − Q_s/Q_c)²-Umrechnung widerspricht und „vor einer

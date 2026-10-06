@@ -338,13 +338,12 @@ class Network:
         from .solver.hydraulic import solve_hydraulics
         from .solver.settings import SolverSettings
         from .solver.thermal import skipped_thermal, solve_thermal
-        from .solver.uniqueness import find_alternative_solutions
+        from .solver.uniqueness import solve_hydraulics_checked
         from .results import build_result
 
         settings = settings or SolverSettings()
         compiled = self.compile()
-        hyd = solve_hydraulics(compiled, settings)
-        hyd.alternatives = find_alternative_solutions(compiled, hyd, settings)
+        hyd = solve_hydraulics_checked(compiled, settings)
         if thermal:
             th = solve_thermal(compiled, hyd, settings)
         else:

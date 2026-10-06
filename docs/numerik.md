@@ -99,9 +99,24 @@ gekoppelten Kanten erhalten vor jeder Koeffizientenauswertung ihre aktuellen
 Kantenflüsse. Der kombinierte Strang (max |Q|) bleibt verlustfrei,
 Abzweig-/Durchgangskante tragen die vollen Pfadbeiwerte (Vereinigung/Trennung
 automatisch aus der Flussrichtung; Abszissen wie im Buch: Seitenpfad Q_s/Q_c,
-gerader Pfad der Trennung Q_st/Q_c, der Vereinigung Q_s/Q_c). Die ζ sind
-TOTALDRUCK-Beiwerte — je Pfad wird die Bernoulli-Differenz auf statische
-Knotendrücke umgerechnet: p_ein − p_aus = ζ·ρw_c²/2 + ρ(w_aus² − w_ein²)/2.
+gerader Pfad der Trennung Q_st/Q_c, der Vereinigung Q_s/Q_c).
+
+**Totaldruck im Netz.** Je Pfad wirkt der Idelchik-TOTALDRUCKverlust
+ζ·ρw_c²/2 — wie bei allen anderen Bauteilen: Rohre, Ventile, Register rechnen
+ihren Druckabfall als Totaldruckverlust, Knoten kennen keine Geschwindigkeit
+(Querschnittswechsel an Knoten werden nirgends mit Bernoulli bilanziert).
+Die frühere Umrechnung auf statische Knotendrücke, p_ein − p_aus = ζ·ρw_c²/2
++ ρ(w_aus² − w_ein²)/2, war die einzige im Netz: der Zulaufschenkel bekam
+seine kinetische Energie geschenkt. Der statische Druck an jedem Anschluss
+(p_Knoten − ρw_Schenkel²/2, z.B. der Druckrückgewinn im geraden Auslauf)
+ist Ergebnis (`extras["p_static_port_kPa"]`, Hook `edge_result_extras`);
+Drucksensoren zeigen den Knotendruck. Wirkung (310 Zufallsnetze mit
+Idelchik-T-Stück): mehrdeutig 83 → 59; beseitigt 70, neu 45 — der Bernoulli-
+Term des AUSTRITTSschenkels (+ρw²/2, mit dem eigenen Strom steigend) hatte
+nicht-monotone Tabellenbereiche teilweise überdeckt; die verbleibende
+Mehrwertigkeit stammt aus den Tabellen (negatives ζ_c.s, U-förmige
+Durchgangstabelle). 3 Netze konvergieren nur von alternativen Startwerten
+(Neustart, s. Eindeutigkeitsprüfung).
 
 **Regimewechsel (stetig).** Jeder Wechsel — Trennen ↔ Vereinigen, kombinierter
 Strang wechselt — liegt bei Strom 0 eines Schenkels, also unter dessen
@@ -129,9 +144,10 @@ auf der quasi-idealen Restkante (1 Pa bei 10 m³/h) — Newton sagte riesige
 Ströme voraus, der Hauptstrom sprang zwischen den Schenkeln.
 
 **Kurzschluss.** Zwei Schenkel am selben Knoten werden beim Kompilieren
-abgelehnt (Hook `check_topology`): der statische Druckrückgewinn im T-Stück
-wird am Knoten nicht zurückgefordert, im Kurzschluss wirkt das T-Stück wie
-eine Pumpe (Kampagne: 20 von 68 solchen Netzen mit zweiter Lösung).
+abgelehnt (Hook `check_topology`): die Aufteilung über die beiden Schenkel
+bestimmt dann allein die Tabellenkennlinie, oft nicht eindeutig (Totaldruck-
+Modell: 17 von 69 solchen Kampagnennetzen) — praktisch immer ein
+Zeichenfehler.
 
 Validierung: tests/test_tee_idelchik.py (Handrechnung Trennung x = 0.4 und
 Vereinigung x = 0.1 mit ζ = −0.65 auf 0.2 Pa genau; Stetigkeit an jedem
@@ -142,27 +158,28 @@ konvergierenden Netze mit Idelchik-T-Stück lösen (≤ 96 Iterationen).
 
 **Mehrdeutigkeit → Eindeutigkeitsprüfung** (solver/uniqueness.py). Netze mit
 Idelchik-T-Stück können mehrere stationäre Lösungen haben: dieselben
-Portdrücke lassen Trennen UND Vereinigen zu (Kennlinie nicht umkehrbar
-eindeutig). Stabilitätstest an 37 echt mehrdeutigen Kampagnennetzen (lineare
-Maschendynamik L·dQ/dt = Δp − G(Q), volle Jacobi-Matrix inkl. Schenkel-
-kopplung, Urteil für jede Trägheitsverteilung): ALLE gefundenen Lösungen
-stabil (29× 2, 8× 3) — keine lässt sich physikalisch ausschließen; welche
-sich einstellt, hängt vom Anfahrvorgang ab (Anfangswertproblem). Ohne
-Bernoulli-Umrechnung wären 32 der 37 eindeutig.
-Daher: Meldet eine Komponente `nonmonotone_hydraulics()` (Idelchik-T-Stück),
-löst `find_alternative_solutions` die Hydraulik zusätzlich von
-`uniqueness_starts` (Default 8) reproduzierbaren Startwerten (Beträge
-log-gleichverteilt 1e-3…1·V̇max, Vorzeichen zufällig), schärft jede Lösung
-und die ausgegebene nach (Toleranzen ×1e-5) und meldet Lösungen mit
-max|ΔQ| > max(1e-4·V̇max, 1e-6 m³/s) — Toleranzreste schwach bestimmter
-Maschen bleiben danach ≤ 4e-5 m³/h, echte Mehrfachlösungen ≥ 5 l/h. Ergebnis:
-Hinweis „Hydraulik nicht eindeutig“ mit den größten Abweichungen,
-`SolutionResult.alternatives` (alle Volumenströme je Alternative), im Editor
-Dialog. Die ausgegebene Lösung bleibt unverändert. Kampagne: 8 Starts
-erkennen 37/37 (4 Starts: 34/37), 83 von 310 Zufallsnetzen mit Idelchik-T-
-Stück gemeldet, kein Fehlalarm; die 13 Smoke-Netze mit Verteiler-Strang-
-Sammler-Struktur sind alle eindeutig. Aufwand ≈ 135 ms je Netz, nur bei
-nicht-monotonen Komponenten.
+Portdrücke lassen verschiedene Strömungsbilder zu (Kennlinie nicht
+umkehrbar eindeutig). Stabilitätstest (lineare Maschendynamik
+L·dQ/dt = Δp − G(Q), volle Jacobi-Matrix inkl. Schenkelkopplung, Urteil für
+jede Trägheitsverteilung): in allen mehrdeutigen Netzen sind ALLE gefundenen
+Lösungen stabil (Totaldruck-Modell: 119 Lösungen in 59 Netzen) — keine lässt
+sich physikalisch ausschließen; welche sich einstellt, hängt vom
+Anfahrvorgang ab (Anfangswertproblem). Daher: `solve_hydraulics_checked`
+(einziger Einstieg für Network.solve und Server) löst bei Komponenten mit
+`nonmonotone_hydraulics()` die Hydraulik zusätzlich von `uniqueness_starts`
+(Default 8) reproduzierbaren Startwerten (Beträge log-gleichverteilt
+1e-3…1·V̇max, Vorzeichen zufällig), schärft jede Lösung und die ausgegebene
+nach (Toleranzen ×1e-5) und meldet Lösungen mit max|ΔQ| > max(1e-4·V̇max,
+1e-6 m³/s) — Toleranzreste schwach bestimmter Maschen bleiben danach
+≤ 4e-5 m³/h, echte Mehrfachlösungen ≥ 5 l/h. Konvergiert schon der
+Standardstart nicht, wird von denselben Startwerten aus neu gestartet (in
+Bereichen ohne stabiles Gleichgewicht irrt die Iteration sonst umher, obwohl
+stabile Lösungen existieren). Ergebnis: Hinweis „Hydraulik nicht eindeutig“
+mit den größten Abweichungen, `SolutionResult.alternatives`, im Editor ein
+Dialog; die ausgegebene Lösung bleibt unverändert. Kampagne: 8 Starts
+erkennen alle bekannten Fälle (4 Starts: 34/37), kein Fehlalarm; die 13
+Smoke-Netze mit Verteiler-Strang-Sammler-Struktur sind eindeutig. Aufwand
+≈ 135 ms je Netz, nur bei nicht-monotonen Komponenten.
 
 Konvergenzkriterien (relativ): Massendefekt / max|Q| < 1e-8, Impulsdefekt /
 Druckmaßstab < 1e-6 (beide mit den Koeffizienten des geprüften Zustands) und
@@ -253,7 +270,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 834 Tests)
+## 3. Testabdeckung (tests/, 835 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/

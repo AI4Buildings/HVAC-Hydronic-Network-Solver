@@ -92,9 +92,18 @@ class Tee(Component):
     den kombinierten Strang) — die Regime-Erkennung (welcher Strang führt
     den Gesamtstrom; Sammlung oder Verteilung) folgt in jeder Iteration den
     aktuellen Volumenströmen. Abszissen wie im Buch: Seitenpfad Q_s/Q_c,
-    gerader Pfad bei Trennung Q_st/Q_c, bei Vereinigung Q_s/Q_c. Die
-    statische Druckdifferenz je Pfad enthält die Bernoulli-Umrechnung
-    (p = p_t − ρw²/2 je Strang). Der kombinierte Strang selbst ist
+    gerader Pfad bei Trennung Q_st/Q_c, bei Vereinigung Q_s/Q_c.
+
+    Totaldruck im Netz: Je Pfad wirkt der Idelchik-TOTALDRUCKverlust
+    ζ·ρw_c²/2 — wie bei allen anderen Bauteilen, die ihren Druckabfall als
+    Totaldruckverlust rechnen und an Knoten keine Geschwindigkeit kennen. Die
+    frühere Bernoulli-Umrechnung auf statische Knotendrücke war die einzige
+    im Netz: der Zulaufschenkel bekam seine kinetische Energie geschenkt,
+    die Kennlinie wurde mehrwertig (Solver-Prüfung 2026-10: 32 von 37
+    mehrdeutigen Zufallsnetzen nur dadurch). Der statische Druck an jedem
+    Anschluss (p_Knoten − ρw_Schenkel²/2, z.B. der Druckrückgewinn im
+    geraden Auslauf) ist Ergebnis: extras "p_static_port_kPa", "v_m_s".
+    Der kombinierte Strang selbst ist
     verlustfrei — die Pfadbeiwerte liegen auf Abzweig- und Durchgangskante.
     Führt der ABZWEIG den Gesamtstrom (Hosenrohr-Konfiguration), werden
     beide geraden Äste näherungsweise als Seitenpfade behandelt.
@@ -144,16 +153,17 @@ class Tee(Component):
 
     def nonmonotone_hydraulics(self) -> bool:
         """Idelchik-Kennlinie ist über den Regimewechsel nicht umkehrbar
-        eindeutig: dieselben Portdrücke lassen Trennen UND Vereinigen zu
-        (Solver-Prüfung 2026-10: 37 von 299 Zufallsnetzen mit mehreren, jeweils
+        eindeutig (negative ζ der Vereinigung, U-förmige Durchgangstabelle):
+        dieselben Portdrücke lassen verschiedene Strömungsbilder zu (Solver-
+        Prüfung 2026-10: 59 von 310 Zufallsnetzen mit mehreren, jeweils
         dynamisch stabilen Lösungen)."""
         return self.d_run is not None
 
     def check_topology(self, port_nodes):
         """Mit Idelchik-Druckverlust dürfen keine zwei Schenkel am selben Knoten
-        liegen: der statische Druckrückgewinn (Bernoulli) wird am Knoten nicht
-        zurückgefordert — im Kurzschluss wirkt das T-Stück wie eine Pumpe, die
-        Lösung ist oft nicht eindeutig (Zufallsnetz-Kampagne: 20 von 68 Netzen)."""
+        liegen: das T-Stück ist dann kurzgeschlossen, die Aufteilung über die
+        beiden Schenkel bestimmt allein die Tabellenkennlinie (oft nicht
+        eindeutig) — praktisch immer ein Zeichenfehler."""
         if self.d_run is None:
             return None
         errors = []
@@ -163,13 +173,23 @@ class Tee(Component):
                 if port_nodes[p1][0] == port_nodes[p2][0]:
                     errors.append(
                         f"T-Stück '{self.name}': Schenkel '{p1}' und '{p2}' liegen am selben "
-                        f"Knoten ('{port_nodes[p1][1]}') – das T-Stück ist kurzgeschlossen. Mit "
-                        f"Idelchik-Druckverlust (d_run/d_branch) ist die Lösung dann nicht "
-                        f"eindeutig: der statische Druckrückgewinn im T-Stück wirkt im "
-                        f"Kurzschluss wie eine Pumpe. Abhilfe: Verbindungen von "
+                        f"Knoten ('{port_nodes[p1][1]}') – das T-Stück ist kurzgeschlossen; die "
+                        f"Aufteilung über die beiden Schenkel bestimmt dann allein die "
+                        f"Idelchik-Kennlinie (d_run/d_branch), oft nicht eindeutig. Abhilfe: "
+                        f"Verbindungen von "
                         f"'{self.name}.{p1}' und '{self.name}.{p2}' prüfen oder d_run_mm/"
                         f"d_branch_mm weglassen (idealer Knoten).")
         return errors
+
+    def edge_result_extras(self, label: str, q: float, p_from: float, p_to: float,
+                           fluid: Fluid) -> dict | None:
+        """Ergebnis je Schenkel (Kante Anschluss → Knoten): Geschwindigkeit und
+        statischer Druck am Anschluss p_Knoten − ρw²/2 (Netz rechnet mit
+        Totaldruck)."""
+        if self.d_run is None or label not in ("a", "b", "c"):
+            return None
+        w = abs(q) / self._areas()["abc".index(label)]
+        return {"v_m_s": w, "p_static_port_kPa": (p_from - fluid.rho * w * w / 2.0) / 1e3}
 
     def pre_coefficients(self, q_edges: list[float], fluid: Fluid) -> None:
         """Solver-Hook: aktuelle Flüsse der eigenen Kanten (a, b, c → Knoten)."""
@@ -187,7 +207,7 @@ class Tee(Component):
 
     def _regime_pressures(self, q: list[float], rho: float) -> list[float]:
         """S_i = p_Port,i − p_Knoten nach Idelchik im Regime des Zustands q
-        (Knoten = statischer Druck des kombinierten Strangs, dort S = 0)."""
+        (Totaldruck; Knoten = Druck des kombinierten Strangs, dort S = 0)."""
         from . import idelchik
         absq = [abs(v) for v in q]
         q_c = max(absq)
@@ -209,10 +229,8 @@ class Tee(Component):
                     zeta = idelchik.zeta_straight(x if converging else absq[k] / q_c,
                                                   converging)
             w_c = q_c / areas[comb]
-            w_k = absq[k] / areas[k]
-            w_in, w_out = (w_k, w_c) if converging else (w_c, w_k)
-            # statischer Abfall entlang der Strömung: Δp_t + ρ(w_aus² − w_ein²)/2
-            drop = zeta * rho * w_c * w_c / 2.0 + rho * (w_out * w_out - w_in * w_in) / 2.0
+            # Totaldruckabfall entlang der Strömung (ζ auf den kombinierten Strang)
+            drop = zeta * rho * w_c * w_c / 2.0
             S[k] = drop if converging else -drop
         return S
 

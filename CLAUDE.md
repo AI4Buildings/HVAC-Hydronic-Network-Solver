@@ -22,7 +22,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (834 Tests; Paritätstests brauchen node)
+pytest                                   # Testsuite (835 Tests; Paritätstests brauchen node)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]   # auch .json
 hydraulik export --json schaltung.yaml [--out schaltung.json]   # geprüft, kanonisches JSON
@@ -63,7 +63,9 @@ src/hydraulik/
                      Druckverlust (d_run+d_branch; Regime aus Strömungsrichtung;
                      unter x = 0.1 stetige Überblendung zwischen den Regimen,
                      Tangenten-Linearisierung; Kurzschluss zweier Schenkel
-                     → Validierungsfehler über Hook check_topology)
+                     → Validierungsfehler über Hook check_topology; im Netz
+                     TOTALDRUCK wie alle Bauteile — statische Anschlussdrücke
+                     nur als Ergebnis (edge_result_extras: p_static_port_kPa))
     storage/separators/connectors (link)/conduit (Verbindungsleitung = Linie
     im Editor: ideal|C-Wert|Auslegungspunkt|Rohrmodell; Rohrmodell wahlweise
     als pipes-Liste beliebig vieler Abschnitte in Reihe, je Abschnitt
@@ -80,8 +82,11 @@ src/hydraulik/
                      (isolierter Umlauf, Drift-Meldung); skipped_thermal
     settings.py      SolverSettings (alle Defaults; t_plausible_min/max für den
                      Plausibilitätshinweis im Bericht; uniqueness_starts)
-    uniqueness.py    Eindeutigkeitsprüfung: bei Komponenten mit
-                     nonmonotone_hydraulics() (Idelchik-T-Stück) Zusatzstarts +
+    uniqueness.py    solve_hydraulics_checked (EINZIGER Hydraulik-Einstieg für
+                     Network.solve/Server): bei Komponenten mit
+                     nonmonotone_hydraulics() (Idelchik-T-Stück) Neustart von
+                     alternativen Startwerten, falls der Standardstart nicht
+                     konvergiert; Zusatzstarts +
                      Nachschärfen → Hinweis „Hydraulik nicht eindeutig“ +
                      SolutionResult.alternatives (Editor: Dialog); stabile
                      Mehrfachlösungen sind ein Anfangswertproblem → melden,
@@ -157,7 +162,7 @@ docs/                architektur.md, numerik.md, erweitern.md, roadmap.md,
                      solver_pruefung_2026-10.md (Prüfbericht, offene Punkte)
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               834 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+tests/               835 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
                      test_yamlio.py / test_yaml12_kompat.py: Loader + YAML-1.1-
                      Altlasten; test_editor_paritaet.py: JS ↔ Python (node,
                      Korpus tests/data/, Zufallsskalare/-dokumente, Round-Trip);

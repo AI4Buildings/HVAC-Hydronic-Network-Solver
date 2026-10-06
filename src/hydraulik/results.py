@@ -275,6 +275,13 @@ def _plausibility_notices(net: CompiledNetwork, hyd: HydraulicState, th: Thermal
 def _alternative_notices(net: CompiledNetwork, hyd: HydraulicState,
                          notices: list[str]) -> list[dict]:
     """Hinweis + strukturierte Alternativen der Eindeutigkeitsprüfung."""
+    if getattr(hyd, "restarted", False):
+        names = sorted({e.component.name for e in net.edges
+                        if e.component.nonmonotone_hydraulics()})
+        notices.append(
+            "Hydraulik vom Standardstartwert nicht konvergiert; die Lösung stammt von einem "
+            f"alternativen Startwert (nicht-monotone Kennlinie: "
+            f"{', '.join(repr(x) for x in names)}).")
     alts = getattr(hyd, "alternatives", None) or []
     if not alts:
         return []
@@ -314,6 +321,10 @@ def build_result(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
         # bei C-Wert-/Ideal-Modus (length = None) wäre der Default-Durchmesser irreführend
         if d_inner and getattr(e.component, "length", True) is not None:
             extras["v_m_s"] = abs(q) / (math.pi * d_inner ** 2 / 4.0)
+        more = e.component.edge_result_extras(e.label, q, float(hyd.p[e.node_from]),
+                                              float(hyd.p[e.node_to]), fluid)
+        if more:
+            extras.update(more)
         comps.append(ComponentResult(
             name=e.name, type_name=e.component.type_name,
             q_m3h=q * 3600.0, m_dot_kg_s=q * fluid.rho, dp_kPa=dp / 1e3,
