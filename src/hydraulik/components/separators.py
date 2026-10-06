@@ -275,14 +275,20 @@ class Tee(Component):
             b_ref = rho / (2.0 * min(self._areas()) ** 2)
             a = abs(blend["slope"]) + 2.0 * b_ref * blend["d"]
             return EdgeCoefficients(a=a, dp_source=a * qk - S[k])
-        # Tangente dS/dQ (Ausgleich über den größten anderen Schenkel)
-        h = 1e-6 * abs(qk)
+        # Tangente dS/dQ (Ausgleich über den größten anderen Schenkel).
+        # Schrittweite und Mindeststeifigkeit relativ zum größten Schenkelstrom:
+        # während der Iteration können ZWEI Schenkel exakt 0 führen (Kontinuität
+        # am T-Stück-Knoten erst bei Konvergenz erfüllt) — die Überblendung
+        # erfasst nur einen, der zweite hätte sonst h = 0
+        q_ref = max(abs(v) for v in q)
+        h = 1e-6 * max(abs(qk), 1e-6 * q_ref)
         q_h = list(q)
         m = max((x for x in range(3) if x != k), key=lambda x: abs(q[x]))
         q_h[k] += h
         q_h[m] -= h
         slope = (self._pressures(q_h, rho)[0][k] - S[k]) / h
-        a = max(slope, 0.25 * abs(S[k] / qk), 2.0 * self._B_IDLE * abs(qk))
+        sec = abs(S[k] / qk) if qk != 0.0 else 0.0
+        a = max(slope, 0.25 * sec, 2.0 * self._B_IDLE * max(abs(qk), 1e-3 * q_ref))
         return EdgeCoefficients(a=a, dp_source=a * qk - S[k])
 
     def build(self, b: NetworkBuilder) -> None:

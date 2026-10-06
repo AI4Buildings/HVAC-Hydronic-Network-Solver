@@ -244,3 +244,19 @@ def test_kurzgeschlossene_schenkel_werden_abgelehnt():
     with pytest.raises(h.NetworkValidationError, match="Schenkel 'b' und 'c' liegen am selben"):
         h.load(doc({"d_run_mm": 32.0, "d_branch_mm": 25.0})).solve(thermal=False)
     assert h.load(doc({})).solve(thermal=False).converged
+
+
+@pytest.mark.parametrize("q_legs", [(0.0, 0.0, 1e-3), (0.0, 1e-3, 0.0), (2e-3, 0.0, 0.0),
+                                    (0.0, 0.0, -1e-3), (1e-3, -1e-3, 0.0)])
+def test_schenkelkoeffizienten_bei_zwei_stromlosen_schenkeln(q_legs):
+    """Während der Iteration können zwei Schenkel exakt 0 führen (Kontinuität
+    am T-Stück-Knoten erst bei Konvergenz erfüllt). Die Koeffizienten müssen
+    endlich bleiben und eine positive Steigung haben (vorher
+    ZeroDivisionError, CI-Smoke-Test Seed 31 unter Python 3.11/3.12)."""
+    tee = _tee()
+    fluid = h.water_at(50.0)
+    tee.pre_coefficients(list(q_legs), fluid)
+    for k in range(3):
+        c = tee._leg_coefficients(k, q_legs[k], fluid)
+        assert all(math.isfinite(v) for v in (c.a, c.b, c.dp_source))
+        assert c.a + 2.0 * c.b * abs(q_legs[k]) > 0.0

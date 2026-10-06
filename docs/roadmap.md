@@ -2,7 +2,7 @@
 
 ## Solver-Prüfung (2026-10-06, zwei Runden, in main)
 
-835 Tests, alle grün. Ausführlich: docs/solver_pruefung_2026-10.md
+840 Tests, alle grün. Ausführlich: docs/solver_pruefung_2026-10.md
 (Code-Review, geschlossene Lösungen, 3300 Zufallsnetze mit unabhängiger
 Nachrechnung).
 
@@ -358,7 +358,7 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (835 Tests, müssen grün sein; node für die Paritätstests);
+1. `pip install -e ".[dev]" && pytest` (840 Tests, müssen grün sein; node für die Paritätstests);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/).
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
    dieser Datei lesen — dort steht, was zuletzt gebaut wurde.
