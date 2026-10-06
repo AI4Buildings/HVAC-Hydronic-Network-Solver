@@ -94,27 +94,36 @@ def T_from_hx(h_val, x_val):
     )
 
 
+#: Untergrenze der T-Suche in T_h_phi/Ts. Abweichung vom MATLAB-Original
+#: (Solver-Prüfung 2026-10, L12): MATLAB sucht auf [0, 100] °C — Taupunkte
+#: unter 0 °C wurden auf 0 geklemmt (Ts(2 g/kg) = 0 statt −7,7 °C), ein
+#: Sprühbefeuchter mit −5 °C Eintritt lieferte 2,4-fache Sättigung. ps(T)
+#: deckt den Eisbereich ab (stetig bei 0 °C).
+T_LO = -60.0
+
+
 def T_h_phi(h_val, phi_val, p_atm):
     """Temperature [°C] from h and phi — from T_h_phi.m.
 
-    Solves h = 1.0*T + x(T,phi)*(2500+1.85*T) for T on [0,100] °C, matching the
-    MATLAB fminbnd objective.
+    Solves h = 1.0*T + x(T,phi)*(2500+1.85*T) for T on [T_LO, 100] °C (MATLAB
+    fminbnd objective; MATLAB bound 0 °C).
     """
     def obj(T):
         xT = R_RATIO * phi_val * ps(T) / (p_atm - phi_val * ps(T))
         return (h_val - (CP_AIR * T + xT * (H_EVAP_0 + CP_VAP * T))) ** 2
-    res = minimize_scalar(obj, bounds=(0.0, 100.0), method="bounded")
+    res = minimize_scalar(obj, bounds=(T_LO, 100.0), method="bounded")
     return float(res.x)
 
 
 def Ts(x_val, p_atm):
     """Dew-point / saturation temperature [°C] from x — from Ts.m.
 
-    Solves x = xs(T) for T on [0,100] °C (MATLAB fminbnd objective).
+    Solves x = xs(T) for T on [T_LO, 100] °C (MATLAB fminbnd objective;
+    MATLAB bound 0 °C).
     """
     def obj(T):
         return (x_val - xs(T, p_atm)) ** 2
-    res = minimize_scalar(obj, bounds=(0.0, 100.0), method="bounded")
+    res = minimize_scalar(obj, bounds=(T_LO, 100.0), method="bounded")
     return float(res.x)
 
 

@@ -115,17 +115,27 @@ def wheel(T_oda, x_oda, T_eta, x_eta, T_aul, T_abl, V_sup, V_eta, V_nom,
     v_hr_N_para = c["v_hr_nom"]
     v_hr_eff = V_sup / V_nom
 
+    # ε·ṁ_zu ≤ ṁ_ab: der kleinere Strom begrenzt den Übertrag (L3, s.
+    # heat_rec_wheel._eff_factors); gleiche Dichte → Volumenstromverhältnis
+    eta_cap = min(1.0, V_eta / V_sup) if V_sup > 0 else 1.0
     f = _eff_factors(c, V_sup, V_eta, v_hr_eff, n_rot_max, n_rot_max, f_ODA_min,
                      v_hr_N_para, T_aul, T_abl, T_eta, x_eta, T_oda, x_oda,
-                     V_eta, V_sup, sp.p_atm, heat_rec_type)
+                     V_eta, V_sup, sp.p_atm, heat_rec_type, eta_cap=eta_cap)
     eta_hr, eta_xr, n_rot, f_n, f_n_x = energy_control(
         c, n_rot_max, f["f_q"], f["f_v"], f["f_dx_x"], f["f_q_x"], f["f_v_x"],
         T_oda, x_oda, T_eta, x_eta, sp.T_min, sp.T_max,
         sp.x_min_Tmin, sp.x_max_Tmin, sp.x_min_Tmax, sp.x_max_Tmax,
         sp.h_min_Tmin, sp.h_min_Tmax, Bef_n_WRG, Bef_ZUL, h_H2O,
-        KR_n_WRG, KR_Entf, dT_VentuKanal_ZUL, sp.p_atm)
+        KR_n_WRG, KR_Entf, dT_VentuKanal_ZUL, sp.p_atm, eta_cap=eta_cap)
     T_out = T_oda + eta_hr * (T_eta - T_oda)
     x_out = x_oda + eta_xr * (x_eta - x_oda)
+    # Übersättigung am Rotoraustritt ausschließen (L3): der überschüssige
+    # Wasserdampf verbleibt in der Abluft (die Fortluftbilanz folgt aus x_out)
+    x_sat = float(ma.xs(T_out, sp.p_atm))
+    if x_out > x_sat:
+        x_out = x_sat
+        if x_eta != x_oda:
+            eta_xr = (x_out - x_oda) / (x_eta - x_oda)
     return T_out, x_out, eta_hr, eta_xr, n_rot
 
 
@@ -182,11 +192,12 @@ def preheater(T_in, x_in, m_dot, sp: Setpoints, dT_corr, eta_bef, h_H2O,
 
     # too humid (above band), below T_min, no cooler downstream -> heat to T_min
     # (humidity cannot be corrected without a cooler; MATLAB VHR lines 1977-1980).
-    # MATLAB quirk: this branch raises T but does NOT assign Q_dot_VHR, so the
-    # reported heat load stays 0 -- replicated here for faithfulness.
+    # Abweichung vom MATLAB-Original (Solver-Prüfung 2026-10, L6): MATLAB hebt
+    # hier T an, weist Q_dot_VHR aber nicht zu (Leistung 0 trotz Heizen) —
+    # jetzt die tatsächliche Leistung m·Δh.
     if T_in < (sp.T_min + dT_corr) and x_in > sp.x_max_Tmax and not KR_after:
         T_out = max(T_in, sp.T_min + dT_corr)
-        return T_out, x_in, 0.0
+        return T_out, x_in, m_dot * (ma.h(T_out, x_in) - h_in)
 
     # else inactive
     return T_in, x_in, 0.0
@@ -250,11 +261,20 @@ def cooler(T_in, x_in, m_dot, sp: Setpoints, dT_corr, KR_Entf=1,
         T_out = min(T_in, Tlim_max); x_out = x_in
         return T_out, x_out, m_dot * (h_in - ma.h(T_out, x_out))
 
-    # branch 5: left band region, temp above min -> cool to phi_min line
-    if T_in > Tlim_min and (sp.x_min_Tmax < x_in and x_in >= sp.x_min_Tmin):
-        T_phi = _T_for_x_at_phi(x_in, sp.phi_min, p)
-        T_out = min(T_in, T_phi + dT_corr); x_out = x_in
-        return T_out, x_out, m_dot * (h_in - ma.h(T_out, x_out))
+    # branch 5: left band region, temp above min -> cool to phi_min line.
+    # Abweichung vom MATLAB-Original (Solver-Prüfung 2026-10, L2): MATLAB
+    # prüft x_min_Tmax < x_in — dort liegt T_phi > T_max ≥ T_in, der Zweig
+    # war wirkungslos und heiße, trockene Luft (x zwischen den φ_min-Ecken)
+    # wurde nicht gekühlt. Mit Befeuchter stromab hebt dieser die Feuchte;
+    # gekühlt wird dann nur, was über T_max liegt (Sprüh: bereits Zweig 3).
+    if T_in > Tlim_min and sp.x_min_Tmin <= x_in <= sp.x_min_Tmax:
+        if SprBef_n_KR == 0 and DBef_n_KR == 0:
+            T_phi = _T_for_x_at_phi(x_in, sp.phi_min, p)
+            T_out = min(T_in, T_phi + dT_corr); x_out = x_in
+            return T_out, x_out, m_dot * (h_in - ma.h(T_out, x_out))
+        if T_in > Tlim_max:
+            T_out = Tlim_max; x_out = x_in
+            return T_out, x_out, m_dot * (h_in - ma.h(T_out, x_out))
 
     # branch 6: humidity below band, no humidifier after -> cool to T_max
     if (SprBef_n_KR == 0 and DBef_n_KR == 0
@@ -301,8 +321,13 @@ def spray_humidifier(T_in, x_in, m_dot, sp: Setpoints, dT_corr, eta_bef,
             dx = sp.x_min_Tmin - x_in
         x_s = dx / eta_bef + x_in
         if ma.xs(ma.T_h_phi(h_in + h_H2O * dx, 1.0, p), p) >= x_s:
-            T_out = ma.T_from_hx(h_in + h_H2O * dx, sp.x_min_Tmin)
+            # Abweichung vom MATLAB-Original (Solver-Prüfung 2026-10, L1):
+            # MATLAB wertet T_aus bei x_min_Tmin statt beim tatsächlichen
+            # x_aus = x_in + dx aus — auf dem φ_min-Ast (h_min_Tmin < h_in)
+            # erwärmte sich die Luft bei adiabater Befeuchtung (bis 7 kW
+            # Enthalpie aus dem Nichts, Zuluft außerhalb des Sollbands)
             x_out = x_in + dx
+            T_out = ma.T_from_hx(h_in + h_H2O * dx, x_out)
         else:
             x_s_bad = ma.xs(ma.T_h_phi(h_in + h_H2O * dx, 1.0, p), p)
             x_out = x_in + (x_s_bad - x_in) * eta_bef
@@ -366,8 +391,11 @@ def plate_recovery(T_oda, x_oda, T_eta, V_sup, V_exh,
     RWZ_ABL_N = RWZ_ZUL_N * (V_ZUL_WT_N / V_ABL_WT_N)
     crossflow = (RWZ_ZUL_N <= 0.632 and RWZ_ABL_N <= 0.632)
     if crossflow:
-        # MATLAB: -log(1 - log(1-RWZ*C)/-1*C)  (left-to-right precedence)
-        NTU_N = -np.log(1 - np.log(1 - RWZ_ZUL_N * Cstar_N) / -1 * Cstar_N)
+        # Umkehrung von RWZ = (1 − exp(−C*(1 − exp(−NTU))))/C*. Abweichung vom
+        # MATLAB-Original (Solver-Prüfung 2026-10, L12): MATLAB rechnet
+        # -log(1 - log(1-RWZ*C)/-1*C) — Links-nach-rechts-Rangfolge multipliziert
+        # mit C* statt zu dividieren (für C* = 1 identisch)
+        NTU_N = -np.log(1 + np.log(1 - RWZ_ZUL_N * Cstar_N) / Cstar_N)
     elif Cstar_N == 1:
         NTU_N = RWZ_ZUL_N / (1 - RWZ_ZUL_N)
     else:
@@ -436,10 +464,13 @@ def steam_humidifier(T_in, x_in, m_dot, sp: Setpoints, dT_corr, h_H2O):
                 dx_Bef = x_out - x_in
         else:
             # cannot reach setpoint -> humidify to saturation at T_in.
-            # MATLAB does NOT update dx_Bef here (kept faithful for Q).
+            # Abweichung vom MATLAB-Original (Solver-Prüfung 2026-10, L10):
+            # MATLAB aktualisiert dx_Bef hier nicht — Wassermenge und Leistung
+            # passten nicht zur Zustandsänderung (3,88 statt 2,42 g/s)
             dx = ma.xs(T_in, p) - x_in
             x_out = ma.xs(T_in, p)
             T_out = ma.T_from_hx(h_in + h_H2O * dx, x_out)
+            dx_Bef = dx
         m_water = dx_Bef * m_dot
         return T_out, x_out, m_water, m_water * h_H2O
 
@@ -551,9 +582,11 @@ def adiabatic_cooler(T_abl, x_abl, T_zul_at_vent, x_zul_at_vent, sp: Setpoints,
             <= sp.x_min_Tmax
             and ma.phi(T_zul_at_vent, x_zul_at_vent, p) < sp.phi_min):
         _, x_s = _sat_point()
-        # MATLAB quirk: x_nAK base reads the (still-zero) output column, not the
-        # inlet -> base is 0, not x_abl (faithful to lines 878).
-        x_nAK = 0.0 + eta_bef * (x_s - x_abl)
+        # Abweichung vom MATLAB-Original (Solver-Prüfung 2026-10, L8): MATLAB
+        # liest als Basis die (noch leere) Ausgabespalte, also 0 statt x_abl —
+        # die "adiabate Kühlung" trocknete und erhitzte die Abluft
+        # (26 °C/9,6 g/kg → 42,7 °C/3,0 g/kg). Basis ist der Eintritt.
+        x_nAK = x_abl + eta_bef * (x_s - x_abl)
         T_nAK = ma.T_from_hx(h_abl, x_nAK)
         T_phi = _T_for_x_at_phi(x_zul_at_vent, sp.phi_min, p)
         T_out = max((T_phi - T_zul_at_vent) / 0.6 + T_zul_at_vent + dT_corr,

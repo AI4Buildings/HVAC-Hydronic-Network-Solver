@@ -40,6 +40,15 @@ def _nominal_UA(RWZ_N, V_air_N, V_M_N, rho_M, cp_M):
     return NTU_N * C_air, C_air, C_M
 
 
+def _prev(i):
+    """MATLAB 'find(...) - 1' in 0-basierter Zählung: der Gitterpunkt VOR dem
+    ersten Treffer; liegt schon der erste Gitterpunkt über der Schwelle, ist
+    das MATLAB-Ergebnis 0 = aus (None). Abweichung vom bisherigen Port
+    (Solver-Prüfung 2026-10, L12): 'i - 1' ergab dort −1, also in Python den
+    LETZTEN Gitterpunkt (voller Mediumstrom) bzw. TypeError bei None."""
+    return None if i is None or i == 0 else i - 1
+
+
 def _select_index(T_in, x_in, T_nn, sp, Bef_n_WRG, Bef_ZUL, KR_n_WRG, KR_Entf,
                   h_H2O, dTk):
     """Energy-optimal medium-flow index (0-based) or None (inactive).
@@ -65,11 +74,11 @@ def _select_index(T_in, x_in, T_nn, sp, Bef_n_WRG, Bef_ZUL, KR_n_WRG, KR_Entf,
         lo_pt = lo if lo_point is None else lo_point
         hi_pt = hi if hi_point is None else hi_point
         if T_in < lo and mx > lo:
-            return (fl(lo_pt) - 1) if point else fl(lo_p)
+            return _prev(fl(lo_pt)) if point else fl(lo_p)
         elif T_in < lo and mx <= lo:
             return argmax_first(T_nn)
         elif T_in > hi and mn < hi:
-            return (fh(hi_pt) - 1) if point else fh(hi_p)
+            return _prev(fh(hi_pt)) if point else fh(hi_p)
         elif T_in > hi and mn >= hi:
             return argmin_first(T_nn)
         else:
@@ -85,12 +94,12 @@ def _select_index(T_in, x_in, T_nn, sp, Bef_n_WRG, Bef_ZUL, KR_n_WRG, KR_Entf,
             return pattern(T_vBef_min, T_vBef_max)
         elif Bef_n_WRG == 1 and Bef_ZUL == 2:        # A2 steam after WRG
             if T_in < T_vBef_min and mx > T_vBef_min:
-                return (fl(T_vBef_min) - 1) if point else fl(T_vBef_min)
+                return _prev(fl(T_vBef_min)) if point else fl(T_vBef_min)
             elif T_in < T_vBef_min and mx <= T_vBef_min:
                 return argmax_first(T_nn)
             elif T_in > T_vBef_max and mn < T_vBef_max:
                 if point:
-                    return fh(T_vBef_max) - 1
+                    return _prev(fh(T_vBef_max))
                 if mn < T_vBef_min:   # closer to T_vBef_min -> less humidification
                     return find_last(T_nn >= T_vBef_min)
                 return argmin_first(T_nn)
@@ -105,11 +114,11 @@ def _select_index(T_in, x_in, T_nn, sp, Bef_n_WRG, Bef_ZUL, KR_n_WRG, KR_Entf,
     if sp.x_min_Tmin <= x_in <= sp.x_min_Tmax:
         T_phimin = _T_for_x_at_phi(x_in, sp.phi_min, p) + dTk
         if T_in < Tlo and mx > Tlo:
-            return (fl(Tlo) - 1) if point else fl(Tlo)
+            return _prev(fl(Tlo)) if point else fl(Tlo)
         elif T_in < Tlo and mx <= Tlo:
             return argmax_first(T_nn)
         elif T_in > T_phimin and mn < T_phimin:
-            return (fh(Thi) - 1) if point else fh(T_phimin)
+            return _prev(fh(Thi)) if point else fh(T_phimin)
         elif T_in > T_phimin and mn >= T_phimin:
             return argmin_first(T_nn)
         else:
@@ -123,11 +132,11 @@ def _select_index(T_in, x_in, T_nn, sp, Bef_n_WRG, Bef_ZUL, KR_n_WRG, KR_Entf,
     if sp.x_max_Tmin <= x_in <= sp.x_max_Tmax:
         T_phimax = _T_for_x_at_phi(x_in, sp.phi_max, p) + dTk
         if T_in < T_phimax and mx > T_phimax:
-            return (fl(Tlo) - 1) if point else fl(T_phimax)
+            return _prev(fl(Tlo)) if point else fl(T_phimax)
         elif T_in < T_phimax and mx <= T_phimax:
             return argmax_first(T_nn)
         elif T_in > Thi and mn < Thi:
-            return (fh(Thi) - 1) if point else fh(Thi)
+            return _prev(fh(Thi)) if point else fh(Thi)
         elif T_in > Thi and mn >= Thi:
             return argmin_first(T_nn)
         else:

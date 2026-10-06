@@ -74,7 +74,7 @@ class WheelResult:
 def _eff_factors(c, q_V_SUP, q_V_ETA, v_hr_eff, n_rot, n_rot_max, f_ODA_min,
                  v_hr_N_para, T_e, T_ETA_dis_out, T_ETA_hr_in, x_ETA_hr_in,
                  T_ODA_preh, x_ODA_preh, q_V_ETA_ahu, q_V_SUP_ahu, p_atm,
-                 heat_rec_type):
+                 heat_rec_type, eta_cap=1.0):
     """Compute the sensible and latent effectiveness correction factors.
 
     Faithful port of the factor block (lines ~115-230 of the .m file) for a
@@ -105,8 +105,11 @@ def _eff_factors(c, q_V_SUP, q_V_ETA, v_hr_eff, n_rot, n_rot_max, f_ODA_min,
     # Physikalische Grenze (Abweichung vom MATLAB-Original): die empirischen
     # Korrekturfaktoren (insb. f_q bei stark unbalancierten Volumenströmen)
     # können ε > 1 liefern — die Zuluft würde wärmer als die Abluftquelle
-    # (2. Hauptsatz). Übertragungsgrade daher auf ≤ 1 begrenzen.
-    eta_hr = min(1.0, eta_hr_nom * f_q * f_v * f_n)
+    # (2. Hauptsatz). Übertragungsgrade daher auf ≤ eta_cap begrenzen; der
+    # Aufrufer übergibt min(1, ṁ_ab/ṁ_zu) der WRG-Ströme (Solver-Prüfung
+    # 2026-10, L3: bei weniger Abluft als Zuluft gab der kleinere Strom
+    # sonst mehr ab, als er hat — Fortluft unter der Außenluftfeuchte).
+    eta_hr = min(eta_cap, eta_hr_nom * f_q * f_v * f_n)
 
     # --- latent: condensation potential -------------------------------------
     # choose evap/cond streams by sign of (T_e - T_ETA_dis_out)
@@ -153,7 +156,7 @@ def _eff_factors(c, q_V_SUP, q_V_ETA, v_hr_eff, n_rot, n_rot_max, f_ODA_min,
     else:
         f_n_x = max(0.0, c["C12"] - c["C13"] * ((n_rot / n_rot_max) * 20.0 + c["C14"]) ** c["e2"])
 
-    eta_xr = min(1.0, eta_xr_nom * f_dx_x * f_q_x * f_v_x * f_n_x)
+    eta_xr = min(eta_cap, eta_xr_nom * f_dx_x * f_q_x * f_v_x * f_n_x)
 
     return dict(f_q=f_q, f_v=f_v, f_n=f_n, eta_hr=eta_hr,
                 f_dx_x=f_dx_x, f_q_x=f_q_x, f_v_x=f_v_x, f_n_x=f_n_x, eta_xr=eta_xr)
@@ -166,7 +169,7 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
                    x_SUP_hr_req_min_Tmax, x_SUP_hr_req_max_Tmax,
                    h_ZUL_Soll_phi_min_T_min, h_ZUL_Soll_phi_min_T_max,
                    Bef_n_WRG, Bef_ZUL, h_H2O, KR_n_WRG, KR_Entf,
-                   dT_VentuKanal_ZUL, p_atm):
+                   dT_VentuKanal_ZUL, p_atm, eta_cap=1.0):
     """Energy-optimized rotor speed control (WRG_Ctrl='Energy').
 
     Faithful port of the 'Energy' branch of heat_rec_wheel_calc_V5.m. Sweeps
@@ -181,9 +184,9 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
     n_rot_opt = np.linspace(0.0, n_rot_max, 1001)
     f_n_opt = np.maximum(0.0, c["C3"] - c["C4"] * (n_rot_opt / n_rot_max + c["C5"]) ** c["e1"])
     f_n_x_opt = np.maximum(0.0, c["C12"] - c["C13"] * ((n_rot_opt / n_rot_max) * 20.0 + c["C14"]) ** c["e2"])
-    # physikalische Grenze ε ≤ 1 (wie in _eff_factors; s. Kommentar dort)
-    eta_hr_opt = np.minimum(1.0, c["eta_hr_nom"] * f_q * f_v * f_n_opt)
-    eta_xr_opt = np.minimum(1.0, c["eta_xr_nom"] * f_dx_x * f_q_x * f_v_x * f_n_x_opt)
+    # physikalische Grenze ε ≤ eta_cap (wie in _eff_factors; s. Kommentar dort)
+    eta_hr_opt = np.minimum(eta_cap, c["eta_hr_nom"] * f_q * f_v * f_n_opt)
+    eta_xr_opt = np.minimum(eta_cap, c["eta_xr_nom"] * f_dx_x * f_q_x * f_v_x * f_n_x_opt)
 
     T_out = T_ODA_preh + eta_hr_opt * (T_ETA_hr_in - T_ODA_preh)
     x_out = x_ODA_preh + eta_xr_opt * (x_ETA_hr_in - x_ODA_preh)
@@ -195,6 +198,9 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
     def pack_off():
         return (0.0, 0.0, 0.0, 0.0, 0.0)
 
+    # MATLAB "find(...) - 1" mit Index 0 = aus: f == 0 (schon der erste
+    # Gitterpunkt trifft) bzw. kein Treffer → None (aus). Der bisherige Port
+    # setzte f − 1 = −1, also VOLLE Drehzahl (Solver-Prüfung 2026-10, L12).
     # ----------------------------------------------------------------- Case 1
     # Spray humidifier downstream of wheel (Bef_ZUL==1), outdoor too dry
     if Bef_n_WRG == 1 and Bef_ZUL == 1 and x_ODA_preh < x_SUP_hr_req_min_Tmin:
@@ -209,7 +215,7 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
                 idx = argmax_last(T_out)
             else:
                 f = find_first(T_out > T_vBef_max)
-                idx = (f - 1) if f is not None else None
+                idx = (f - 1) if f else None
         elif T_ODA_preh < T_vBef_min[0] and np.max(T_out) <= T_vBef_min[imax]:
             idx = argmax_last(T_out)
         elif T_ODA_preh > T_vBef_max[0] and np.min(T_out) < T_vBef_max[imin]:
@@ -217,7 +223,7 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
                 idx = argmin_last(T_out)
             else:
                 f = find_first(T_out < T_vBef_min)
-                idx = (f - 1) if f is not None else None
+                idx = (f - 1) if f else None
         elif T_ODA_preh > T_vBef_max[0] and np.min(T_out) >= T_vBef_max[imin]:
             idx = argmin_first(T_out)
         else:
@@ -252,7 +258,7 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
             idx = argmin_first(en_check_max)
             if KR_n_WRG == 0:
                 if T_SUP_hr_req_min == T_SUP_hr_req_max and x_SUP_hr_req_min_Tmin == x_SUP_hr_req_max_Tmax:
-                    f = find_first(T_out > T_vBef_min); idx = (f - 1) if f is not None else None
+                    f = find_first(T_out > T_vBef_min); idx = (f - 1) if f else None
                 else:
                     idx = find_first(T_out >= T_vBef_min)
         elif T_ODA_preh < T_vBef_min[0] and np.max(T_out) <= T_vBef_min[imax]:
@@ -263,7 +269,7 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
             idx = argmin_first(en_check_max)
             if KR_n_WRG == 0:
                 if T_SUP_hr_req_min == T_SUP_hr_req_max and x_SUP_hr_req_min_Tmin == x_SUP_hr_req_max_Tmax:
-                    f = find_first(T_out < T_vBef_max); idx = (f - 1) if f is not None else None
+                    f = find_first(T_out < T_vBef_max); idx = (f - 1) if f else None
                 else:
                     idx = find_first(T_out <= T_vBef_max)
         elif T_ODA_preh > T_vBef_max[0] and np.min(T_out) >= T_vBef_max[imin]:
@@ -298,6 +304,21 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
     def x_in_band(lo, hi):
         return find_all((x_out <= hi) & (x_out >= lo))
 
+    def pick(sub, nn, prefer_max, fallback):
+        # Abweichung vom MATLAB-Original (Solver-Prüfung 2026-10, L2): MATLAB
+        # schaltet den Rotor ab (index_opt = 0), wenn keine Drehzahl Temperatur-
+        # ziel UND Feuchteband zugleich erreicht — auch dort, wo Rückgewinnung
+        # klar hilft (heiße, trockene Außenluft: Zuluft 35,6 °C, Rotor aus).
+        # Jetzt: bestmögliche Temperatur innerhalb des Feuchtebands, und hält
+        # keine Drehzahl die Feuchte im Band, reine Temperaturregelung (wie im
+        # Zweig "Außenfeuchte außerhalb des Bands").
+        if sub.size:
+            return int(np.min(sub))
+        if nn.size:
+            vals = T_out[nn]
+            return int(nn[np.argmax(vals) if prefer_max else np.argmin(vals)])
+        return fallback
+
     idx = None  # None -> off (MATLAB index_opt=0 sentinel)
     if np.max(T_out) > (T_SUP_hr_req_min + dTk) and T_ODA_preh < T_SUP_hr_req_min:
         f = find_first(T_out >= (T_SUP_hr_req_min + dTk))
@@ -308,7 +329,7 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
             else:
                 nn = x_in_band(x_SUP_hr_req_min_Tmin, x_SUP_hr_req_max_Tmin)
                 sub = nn[T_out[nn] >= (T_SUP_hr_req_min + dTk)] if nn.size else nn
-                idx = int(np.min(sub)) if sub.size else None
+                idx = pick(sub, nn, True, find_first(T_out >= (T_SUP_hr_req_min + dTk)))
         else:
             idx = find_first(T_out >= (T_SUP_hr_req_min + dTk))
     elif np.max(T_out) < (T_SUP_hr_req_min + dTk) and T_ODA_preh < T_SUP_hr_req_min:
@@ -320,7 +341,7 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
             else:
                 nn = x_in_band(x_SUP_hr_req_min_Tmin, x_SUP_hr_req_max_Tmin)
                 sub = nn[T_out[nn] == np.max(T_out[nn])] if nn.size else nn
-                idx = int(np.min(sub)) if sub.size else None
+                idx = pick(sub, nn, True, argmax_first(T_out))
         else:
             idx = argmax_first(T_out)
     elif np.min(T_out) < (T_SUP_hr_req_max + dTk) and T_ODA_preh > T_SUP_hr_req_max:
@@ -332,7 +353,7 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
             else:
                 nn = x_in_band(x_SUP_hr_req_min_Tmax, x_SUP_hr_req_max_Tmax)
                 sub = nn[T_out[nn] <= (T_SUP_hr_req_max + dTk)] if nn.size else nn
-                idx = int(np.min(sub)) if sub.size else None
+                idx = pick(sub, nn, False, find_first(T_out <= (T_SUP_hr_req_max + dTk)))
         else:
             idx = find_first(T_out <= (T_SUP_hr_req_max + dTk))
     elif np.min(T_out) > (T_SUP_hr_req_max + dTk) and T_ODA_preh > T_SUP_hr_req_max:
@@ -344,7 +365,7 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
             else:
                 nn = x_in_band(x_SUP_hr_req_min_Tmax, x_SUP_hr_req_max_Tmax)
                 sub = nn[T_out[nn] == np.min(T_out[nn])] if nn.size else nn
-                idx = int(np.min(sub)) if sub.size else None
+                idx = pick(sub, nn, False, argmin_first(T_out))
         else:
             idx = argmin_first(T_out)
     elif T_ODA_preh > (T_SUP_hr_req_max + dTk) and T_ETA_hr_in > (T_SUP_hr_req_max + dTk):
@@ -357,7 +378,7 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
                 else:
                     nn = x_in_band(x_SUP_hr_req_min_Tmax, x_SUP_hr_req_max_Tmax)
                     sub = nn[T_out[nn] == np.min(T_out[nn])] if nn.size else nn
-                    idx = int(np.min(sub)) if sub.size else None
+                    idx = pick(sub, nn, False, argmin_first(T_out))
             else:
                 idx = argmin_first(T_out)
         else:

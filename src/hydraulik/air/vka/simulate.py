@@ -43,6 +43,10 @@ def build_config(spec: dict) -> PlantConfig:
       adiab_exhaust  bool   (only ROT_HYG/ROT_NH)
       recirculation_m3h  Umluft-Bypass flow [m3/h]
       SFP, f_rec, V_nom_m3h, eta_bef, T_H2O
+      SFP_exh_frac   share of SFP for the exhaust fan (default 0.5); used for
+                     P_el and, where the exhaust fan heats the exhaust ahead of
+                     the WRG (KVS), for the split of the fan heat
+      exhaust_fan_before_wrg  bool (default: True for KVS)
       eta_hr_N, eta_xr_N         (rotor reference effectiveness, 0=norm)
       RWZ_N, V_M_KVS_N, V_WT_N   (KVS/plate design)
       order          explicit zul_order (else derived)
@@ -69,7 +73,8 @@ def build_config(spec: dict) -> PlantConfig:
         has_adiab_exhaust=bool(spec.get("adiab_exhaust", False)),
         has_uml=float(spec.get("recirculation_m3h", 0)) > 0,
         V_UML_m3h=float(spec.get("recirculation_m3h", 0)),
-        exhaust_fan_before_wrg=(wrg == "KVS"),
+        exhaust_fan_before_wrg=bool(spec.get("exhaust_fan_before_wrg", wrg == "KVS")),
+        SFP_exh_frac=float(spec.get("SFP_exh_frac", 0.5)),
         eta_bef=float(spec.get("eta_bef", 0.9)),
         T_H2O=float(spec.get("T_H2O", 100.0 if bef_type == 2 else 15.0)),
         V_nom_m3h=float(spec.get("V_nom_m3h", 10000.0)),
@@ -341,8 +346,10 @@ def _aggregate(steps, sp, spec, V_sup, V_exh, dt_h):
         return sum(st[k] for st in steps)
     E = {c: round(s("Q_" + c) * dt_h, 2) for c in ("FS", "VHR", "NHR", "KR", "WRG", "Bef")}
     heating = round((E["FS"] + E["VHR"] + E["NHR"]) , 2)
-    SFP = float(spec.get("SFP", 1250.0))
-    fan_kWh = round((SFP / 1000.0) * (V_sup / 3600.0 + V_exh / 3600.0) * n * dt_h, 2)
+    SFP = float(spec.get("SFP", 1250.0))           # Summe ZUL+ABL
+    f_ex = float(spec.get("SFP_exh_frac", 0.5))
+    fan_kWh = round((SFP / 1000.0) * ((1.0 - f_ex) * V_sup / 3600.0 + f_ex * V_exh / 3600.0)
+                    * n * dt_h, 2)
     water_l = round(s("m_dot_Bef") * 3600.0 * dt_h, 1)   # ~1 kg = 1 liter
     in_T = sum(1 for st in steps if sp.T_min - 1e-3 <= st["T_sup"] <= sp.T_max + 1e-3)
     in_p = sum(1 for st in steps

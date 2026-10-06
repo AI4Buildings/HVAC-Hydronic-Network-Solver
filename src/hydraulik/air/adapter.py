@@ -124,11 +124,16 @@ def _station_map(plant: AirPlant, zul_pairs: list, abl_pairs: list, cfg: dict,
     t_eta = _f0(out, "T_eta_wheel_C")
     x_eta = _f0(out, "x_eta_wheel_gkg")
     t_cur, x_cur = abl_t, x_abl
+    wrg_seen = False
     for comp, in_ref in abl_pairs:
         put(in_ref, t_cur, x_cur, v_ex)
-        if comp.type_name == "ventilator_luft" and t_eta is not None:
+        if comp.type_name == "ventilator_luft" and t_eta is not None and not wrg_seen:
+            # Abluftventilator VOR der WRG: Zustand = WRG-Eintritt des Kerns.
+            # Danach (Fortluftseite) ändert er den angezeigten Zustand nicht —
+            # früher sprang die Fortluftstation auf den Raumzustand zurück.
             t_cur, x_cur = t_eta, x_eta
         elif comp.type_name == "wrg":
+            wrg_seen = True
             q_wrg = _f0(out, "Q_recovery_WRG_kW") or 0.0
             base_t = t_eta if t_eta is not None else t_cur
             base_x = x_eta if x_eta is not None else x_cur
@@ -163,6 +168,29 @@ def _one(plant: AirPlant, type_name: str, required: bool = False):
     return found[0] if found else None
 
 
+def _run_kernel(cfg: dict, aul, abl, zul, v_sup: float, v_exh):
+    """Rechenkern je Regelungsart aufrufen; liefert (Ausgabe, T_Soll_Mitte)."""
+    if zul.regelung == "raum":
+        out = simulate_room(cfg, aul.t, aul.rh, T_room=abl.t,
+                            room_rh_min=zul.raum_rh_min, room_rh_max=zul.raum_rh_max,
+                            T_sup_min=zul.t_min, T_sup_max=zul.t_max,
+                            moisture_g_h=zul.feuchtelast, V_sup_m3h=v_sup,
+                            V_exh_m3h=v_exh)
+        return out, 0.5 * (zul.t_min + zul.t_max)
+    if abl.rh is None:
+        raise NetworkValidationError(
+            ["abluft_raum: 'rh' (rel. Feuchte) fehlt — bei Regelung "
+             "'fest'/'band' ist die Abluftfeuchte Pflicht."])
+    if zul.regelung == "fest":
+        t_lo = t_hi = zul.t
+        rh_lo = rh_hi = zul.rh
+    else:
+        t_lo, t_hi, rh_lo, rh_hi = zul.t_min, zul.t_max, zul.rh_min, zul.rh_max
+    out = simulate(cfg, aul.t, aul.rh, abl.t, abl.rh, t_lo, t_hi, rh_lo, rh_hi,
+                   V_sup_m3h=v_sup, V_exh_m3h=v_exh)
+    return out, 0.5 * (t_lo + t_hi)
+
+
 def solve_air(source) -> dict:
     plant = source if isinstance(source, AirPlant) else load_air(source)
     aul = _one(plant, "aussenluft", required=True)
@@ -195,13 +223,30 @@ def solve_air(source) -> dict:
     uml = _one(plant, "umluft")
     fans = [c for c in plant.components.values() if c.type_name == "ventilator_luft"]
     present = {c.type_name for c in zul_chain}
+    # Aktive Komponenten wirken nur im Zuluftstrang (Rechenkern); im
+    # Abluftstrang gezeichnet wurden sie bisher halb angewandt (z.B. Befeuchter
+    # global gesetzt, aber nie gerechnet — änderte trotzdem die VHR/NHR-
+    # Aufteilung). Jetzt: klarer Fehler.
+    errors = [f"'{c.name}' ({c.type_name}) liegt im Abluftstrang — aktive "
+              f"Komponenten wirken nur im Zuluftstrang (zwischen Außenluft und "
+              f"Zuluft); bitte dort einzeichnen."
+              for c in abl_chain
+              if c.type_name in TOKEN and c.type_name not in ("ventilator_luft", "wrg")]
+    if errors:
+        raise NetworkValidationError(errors)
+    zul_fans = [c for c in zul_chain if c.type_name == "ventilator_luft"]
+    abl_fans = [c for c in abl_chain if c.type_name == "ventilator_luft"]
+    wrg_pos_abl = abl_chain.index(wrg)
     cfg = {
         "wrg": wrg.typ,
         "components": [tok for name, tok in (("vorheizer", "VHR"), ("kuehler", "KR"),
                                              ("nachheizer", "NHR")) if name in present],
         "humidifier": bef.typ if bef is not None else "none",
         "frost": frost.modus if frost is not None else "none",
-        "V_nom_m3h": wrg.v_nom * 3600.0,
+        # Auslegungsvolumenstrom: ohne Angabe der Zuluftvolumenstrom (früher
+        # fest 4500 m³/h — bei 1359 m³/h lagen die Übertragungsgrade 16–21 %
+        # über den angegebenen Referenzwerten)
+        "V_nom_m3h": (wrg.v_nom if wrg.v_nom is not None else zul.v) * 3600.0,
         "adiab_exhaust": bool(wrg.adiab_exhaust),
     }
     if frost is not None:
@@ -216,8 +261,16 @@ def solve_air(source) -> dict:
         cfg["V_M_KVS_N"] = wrg.v_m_kvs * 3600.0
     if uml is not None:
         cfg["recirculation_m3h"] = uml.v * 3600.0
-    if fans:
-        cfg["SFP"] = sum(f.sfp for f in fans)
+    # Ventilatoren: SFP = Summe beider Stränge (Kern-Konvention), Anteil des
+    # Abluftventilators für P_el und — beim KVS mit Abluftventilator vor der
+    # WRG — für die Aufteilung der Motorwärme. Ohne gezeichneten Ventilator
+    # SFP = 0 (früher Kern-Default 1250 W/(m³/s): Ventilatorwärme ohne Ventilator).
+    sfp_zul = sum(f.sfp for f in zul_fans)
+    sfp_abl = sum(f.sfp for f in abl_fans)
+    cfg["SFP"] = sfp_zul + sfp_abl
+    cfg["SFP_exh_frac"] = sfp_abl / (sfp_zul + sfp_abl) if (sfp_zul + sfp_abl) > 0 else 0.0
+    if wrg.typ == "KVS":
+        cfg["exhaust_fan_before_wrg"] = any(abl_chain.index(f) < wrg_pos_abl for f in abl_fans)
     if order:
         cfg["order"] = order
 
@@ -230,40 +283,37 @@ def solve_air(source) -> dict:
              "(abluft_raum.v und fortluft.v) — bitte nur bei 'abluft_raum' angeben."])
     v_abl = abl.v if abl.v is not None else fol.v
     v_exh = v_abl * 3600.0 if v_abl is not None else None
+    errors = []
+    if v_exh is not None and v_exh <= 0.0:
+        errors.append("abluft_raum: Abluft-Volumenstrom muss > 0 sein (ohne Abluft "
+                      "arbeitet keine WRG; Anlage aus = Zuluft-Volumenstrom 0).")
+    if uml is not None:
+        v_lim = min(v_sup, v_exh if v_exh is not None else v_sup)
+        if uml.v * 3600.0 > v_lim + 1e-9:
+            errors.append(f"Umluft-Volumenstrom {uml.v * 3600.0:.0f} m³/h größer als Zu- bzw. "
+                          f"Abluft-Volumenstrom ({v_lim:.0f} m³/h) — Außenluftanteil wäre "
+                          f"negativ.")
+    if errors:
+        raise NetworkValidationError(errors)
 
     hinweise: list[str] = []
-    if v_exh is not None and v_sup > 0:
-        ratio = v_exh / v_sup
+    v_exh_eff = v_exh if v_exh is not None else v_sup
+    if v_sup > 0:
+        ratio = v_exh_eff / v_sup
         if ratio > 1.3 or ratio < 0.77:
             hinweise.append(
                 f"Volumenstromverhältnis Abluft/Zuluft = {ratio:.2f} — außerhalb "
                 "des typischen Gültigkeitsbereichs der WRG-Kennlinienkorrektur "
-                "(≈ ±30 %); Übertragungsgrade werden physikalisch auf ≤ 1 begrenzt.")
+                "(≈ ±30 %); Übertragungsgrade werden physikalisch auf "
+                "≤ min(1, V̇_Abluft/V̇_Zuluft) der WRG-Ströme begrenzt.")
     if fan_moved:
         hinweise.append("Ventilatorwärme wird am Stranganfang bilanziert "
                         "(Modellkonvention des Rechenkerns); die gezeichnete "
                         "Ventilatorposition ist dokumentarisch.")
-    if zul.regelung == "raum":
-        t_set_mean = 0.5 * (zul.t_min + zul.t_max)
-        out = simulate_room(cfg, aul.t, aul.rh, T_room=abl.t,
-                            room_rh_min=zul.raum_rh_min, room_rh_max=zul.raum_rh_max,
-                            T_sup_min=zul.t_min, T_sup_max=zul.t_max,
-                            moisture_g_h=zul.feuchtelast, V_sup_m3h=v_sup,
-                            V_exh_m3h=v_exh)
-    else:
-        if abl.rh is None:
-            raise NetworkValidationError(
-                ["abluft_raum: 'rh' (rel. Feuchte) fehlt — bei Regelung "
-                 "'fest'/'band' ist die Abluftfeuchte Pflicht."])
-        if zul.regelung == "fest":
-            t_lo = t_hi = zul.t
-            rh_lo = rh_hi = zul.rh
-        else:
-            t_lo, t_hi, rh_lo, rh_hi = zul.t_min, zul.t_max, zul.rh_min, zul.rh_max
-        t_set_mean = 0.5 * (t_lo + t_hi)
-        out = simulate(cfg, aul.t, aul.rh, abl.t, abl.rh,
-                       t_lo, t_hi, rh_lo, rh_hi,
-                       V_sup_m3h=v_sup, V_exh_m3h=v_exh)
+    try:
+        out, t_set_mean = _run_kernel(cfg, aul, abl, zul, v_sup, v_exh)
+    except ValueError as exc:                          # Sollband/Eingaben des Kerns
+        raise NetworkValidationError([f"Lüftungskern: {exc}"]) from exc
 
     def f(key, idx=0):
         v = out.get(key)
@@ -293,7 +343,12 @@ def solve_air(source) -> dict:
 
     # Ergebnisse je gezeichneter Komponente (für Tooltips/Bericht)
     per_comp: dict[str, dict] = {}
-    fan_p_total = (cfg.get("SFP", 0.0) * v_sup / 3600.0) / 1e3   # kW, ZUL+ABL gesamt
+    # elektrische Leistung je Strang mit dessen Volumenstrom (früher SFP-Summe
+    # × V̇_Zuluft — bei V̇_Abluft ≠ V̇_Zuluft falsch)
+    fan_v = {f.name: v_sup for f in zul_fans} | {f.name: v_exh_eff for f in abl_fans}
+    fan_p = {name: c_sfp * fan_v[name] / 3.6e6
+             for name, c_sfp in ((f.name, f.sfp) for f in zul_fans + abl_fans)}
+    fan_p_total = sum(fan_p.values())                               # kW
     for c in plant.components.values():
         r: dict = {}
         t = c.type_name
@@ -313,13 +368,24 @@ def solve_air(source) -> dict:
             r["eta_hr"] = f("eta_hr")
             r["eta_xr"] = f("eta_xr")
             r["n_rot"] = f("n_rot")
-        elif t == "ventilator_luft" and fans:
-            r["p_el_kW"] = round(fan_p_total * c.sfp / sum(x.sfp for x in fans), 6)
+        elif t == "ventilator_luft" and c.name in fan_p:
+            r["p_el_kW"] = round(fan_p[c.name], 6)
         elif t == "zuluft":
             r.update({"t_C": f("T_sup_C"), "x_gkg": f("x_sup_gkg"),
                       "phi_pct": f("phi_sup_pct"), "v_m3h": round(v_sup, 3)})
         if r:
             per_comp[c.name] = r
+
+    # Übersättigte Stationszustände (x > x_s(T)): das Modell bilanziert die WRG
+    # trocken bzw. klemmt φ auf 100 % — real Nebel/Kondensat, Rückgewinnung
+    # eher unterschätzt
+    sat = sorted({ref.split(".", 1)[0] for ref, st in stationen.items()
+                  if st["x_gkg"] > float(ma.xs(st["t_C"], 1e5)) * 1e3 * 1.001})
+    if sat:
+        hinweise.append(
+            "Übersättigter Luftzustand (x > x_s, angezeigt φ = 100 %) an: "
+            + ", ".join(sat[:6]) + " — das Modell bilanziert hier trocken (keine "
+            "Kondensation); real Nebel/Kondensat, Fortluft wärmer als angezeigt.")
 
     payload = {
         "ok": True,

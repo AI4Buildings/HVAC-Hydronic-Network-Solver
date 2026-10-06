@@ -53,7 +53,7 @@ def test_adapter_deckt_sich_mit_direktem_kernaufruf():
     assert any("Stranganfang" in h for h in r["hinweise"])
     ref = simulate({"wrg": "ROT_SORP", "components": ["VHR", "KR", "NHR"],
                     "humidifier": "steam", "eta_hr_N": 0.778, "eta_xr_N": 0.807,
-                    "SFP": 3430, "V_nom_m3h": 4500.0,
+                    "SFP": 3430, "V_nom_m3h": 1359.0,   # ohne v_nom: Zuluftvolumenstrom
                     "order": ["Vent_ZUL", "WRG", "VHR", "Bef", "KR", "NHR"]},
                    30.0, 50.0, 24.0, 53.0, 18, 22, 40, 55, V_sup_m3h=1359)
     assert r["leistungen"]["kuehlen_kW"] == pytest.approx(float(ref["Q_cool_KR_kW"][0]), abs=1e-5)
@@ -200,7 +200,7 @@ def test_kvs_und_plattentauscher_auslegung():
     assert r_gut["leistungen"]["heizen_gesamt_kW"] < r_norm["leistungen"]["heizen_gesamt_kW"] - 2.0
     ref = simulate({"wrg": "PLATE", "components": ["VHR", "KR", "NHR"],
                     "humidifier": "steam", "RWZ_N": 0.85, "SFP": 3430,
-                    "V_nom_m3h": 4500.0,
+                    "V_nom_m3h": 1359.0,   # ohne v_nom: Zuluftvolumenstrom
                     "order": ["Vent_ZUL", "WRG", "VHR", "Bef", "KR", "NHR"]},
                    -5.0, 80.0, 22.0, 40.0, 18, 22, 40, 55, V_sup_m3h=1359)
     assert r_gut["leistungen"]["heizen_gesamt_kW"] == pytest.approx(
@@ -212,7 +212,7 @@ def test_kvs_und_plattentauscher_auslegung():
     assert r_kvs10["leistungen"]["wrg_kW"] < r_kvs["leistungen"]["wrg_kW"]
     ref10 = simulate({"wrg": "KVS", "components": ["VHR", "KR", "NHR"],
                       "humidifier": "steam", "RWZ_N": 0.70, "V_M_KVS_N": 10.0,
-                      "SFP": 3430, "V_nom_m3h": 4500.0,
+                      "SFP": 3430, "V_nom_m3h": 1359.0,   # ohne v_nom: Zuluftvolumenstrom
                       "order": ["Vent_ZUL", "WRG", "VHR", "Bef", "KR", "NHR"]},
                      -5.0, 80.0, 22.0, 40.0, 18, 22, 40, 55, V_sup_m3h=1359)
     assert r_kvs10["leistungen"]["heizen_gesamt_kW"] == pytest.approx(
@@ -258,13 +258,9 @@ def test_abluft_volumenstrom_eingabe():
     assert "abluft_raum" in str(exc.value)
 
 
-def test_gea_vollklima_winterfall():
-    """Editor-Vorlage 'GEA Vollklima Energetikum': Winter-Auslegungsfall der
-    Gerätedokumentation GEA CAIRplus SX 096.064 IVBV (Nr. 165225_463):
-    AUL −15 °C/90 %, ABL 22 °C/45 %, 4500/4500 m³/h, Zuluft 24,6 °C/53,6 %.
-    Referenzwerte lt. Datenblatt: Rotor-Austritt 13,8 °C/6,1 g/kg,
-    Dampfbefeuchter ~22–23 kg/h (max. 23), VHR-Bilanzpunkt ~15,3 kW."""
-    doc = {
+def _gea_doc():
+    """Editor-Vorlage 'GEA Vollklima Energetikum' (Winter-Auslegungsfall)."""
+    return {
         "components": {
             "aul1": {"type": "aussenluft", "t_C": -15, "rh": 90},
             "fil1": {"type": "filter_luft"},
@@ -291,7 +287,15 @@ def test_gea_vollklima_winterfall():
             ["wrg1.abl_out", "ven_abl1.in"], ["ven_abl1.out", "fol1.in"],
         ],
     }
-    r = solve_air(doc)
+
+
+def test_gea_vollklima_winterfall():
+    """Editor-Vorlage 'GEA Vollklima Energetikum': Winter-Auslegungsfall der
+    Gerätedokumentation GEA CAIRplus SX 096.064 IVBV (Nr. 165225_463):
+    AUL −15 °C/90 %, ABL 22 °C/45 %, 4500/4500 m³/h, Zuluft 24,6 °C/53,6 %.
+    Referenzwerte lt. Datenblatt: Rotor-Austritt 13,8 °C/6,1 g/kg,
+    Dampfbefeuchter ~22–23 kg/h (max. 23), VHR-Bilanzpunkt ~15,3 kW."""
+    r = solve_air(_gea_doc())
     st = r["stationen"]
     assert st["wrg1.zul_out"]["t_C"] == pytest.approx(13.8, abs=0.5)
     assert st["wrg1.zul_out"]["x_gkg"] == pytest.approx(6.1, abs=0.3)

@@ -27,8 +27,12 @@ from .kvs import kvs_recovery
 @dataclass
 class PlantConfig:
     heat_rec_type: str          # 'ROT_SORP' | 'ROT_HYG' | 'ROT_NH' (rotor)
-    SFP: float                  # W/(m3/s), supply & exhaust fan
+    SFP: float                  # W/(m3/s), supply & exhaust fan (sum)
     f_rec: float = 0.6          # fan motor heat recovery fraction
+    # share of SFP belonging to the exhaust fan. Only used where that fan's heat
+    # enters the exhaust before the WRG (exhaust_fan_before_wrg, KVS plant);
+    # otherwise all fan heat goes to the supply (reference-tool convention).
+    SFP_exh_frac: float = 0.5
     has_VHR: bool = False       # pre-heater present
     has_KR: bool = True         # cooling register present
     has_spray: bool = False     # supply humidifier present (type via bef_type)
@@ -113,16 +117,20 @@ def run_plant(cfg: PlantConfig, sp: Setpoints, ops: list[OperatingPoint]):
         x_abl = op.x_ABL if op.x_ABL is not None else ma.x(op.T_ABL, op.phi_ABL / 100.0, cfg.p_atm)
         dT_corr = 0.0  # channel losses neglected (WV off)
 
-        # supply fan (always first)
-        T1, x1, m_dot, Q_fan, dTv = fan(op.T_AUL, x_aul, V, cfg.SFP, cfg.f_rec,
+        # supply fan (always first). Abweichung vom MATLAB-Port (Solver-Prüfung
+        # 2026-10, L7): bei separat bilanziertem Abluftventilator (KVS) ging
+        # die volle Summen-SFP in BEIDE Ströme — Wärmeeintrag 120 % von P_el.
+        # Jetzt teilt SFP_exh_frac die Summe auf Zu- und Abluftventilator auf.
+        sfp_zul = cfg.SFP * (1.0 - cfg.SFP_exh_frac) if cfg.exhaust_fan_before_wrg else cfg.SFP
+        T1, x1, m_dot, Q_fan, dTv = fan(op.T_AUL, x_aul, V, sfp_zul, cfg.f_rec,
                                         T_set_mean, cfg.p_atm)
 
         # exhaust state entering the WRG
         rho = cfg.p_atm / (287.0 * (273.0 + T_set_mean))
         m_dot_abl = V_exh / 3600.0 * rho
         if cfg.exhaust_fan_before_wrg:        # KVS plant: ABL fan upstream
-            dT_eta_fan = (cfg.f_rec * (cfg.SFP / 1000.0) * (V_exh / 3600.0)
-                          / m_dot_abl) if m_dot_abl > 0 else 0.0
+            dT_eta_fan = (cfg.f_rec * (cfg.SFP * cfg.SFP_exh_frac / 1000.0)
+                          * (V_exh / 3600.0) / m_dot_abl) if m_dot_abl > 0 else 0.0
             T_eta, x_eta = op.T_ABL + dT_eta_fan, x_abl
         elif cfg.has_adiab_exhaust and cfg.heat_rec_type in ("ROT_HYG", "ROT_NH"):
             T_eta, x_eta, _ = adiabatic_cooler(op.T_ABL, x_abl, T1, x1, sp,
@@ -146,7 +154,12 @@ def run_plant(cfg: PlantConfig, sp: Setpoints, ops: list[OperatingPoint]):
         # downstream see the full flow (faithful to the V_dot_*_calc rules).
         m_dot_UML = (cfg.V_UML_m3h / 3600.0 * rho) if cfg.has_uml else 0.0
         uml_seen = False
-        for comp in order[1:]:
+        # Der Zuluftventilator ist oben bereits bilanziert; sein Token wird
+        # übersprungen, WO es auch steht (früher order[1:]: fehlte das Token,
+        # entfiel stattdessen die erste echte Komponente, z.B. die WRG — L4)
+        for comp in order:
+            if comp == "Vent_ZUL":
+                continue
             flow = m_dot if (uml_seen or not cfg.has_uml) else max(0.0, m_dot - m_dot_UML)
             if comp == "UML_Byp":
                 if m_dot > 0 and (m_dot - m_dot_UML) >= 0:
@@ -197,9 +210,14 @@ def run_plant(cfg: PlantConfig, sp: Setpoints, ops: list[OperatingPoint]):
             elif comp == "VHR":
                 vi = order.index("VHR")
                 KR_after_vhr = "KR" in order[vi + 1:]
+                # stromab-Flags aus der Reihenfolge (wie KR_after); früher
+                # galten Befeuchter/NHR als "danach", auch wenn sie davor lagen
+                # (Solver-Prüfung 2026-10, L11)
                 T, x, Q["VHR"] = preheater(T, x, flow, sp, dT_corr, cfg.eta_bef,
-                                           h_H2O, Bef_after=cfg.has_spray,
-                                           Bef_ZUL=Bef_ZUL, NHR_after=cfg.has_NHR,
+                                           h_H2O,
+                                           Bef_after=cfg.has_spray and "Bef" in order[vi + 1:],
+                                           Bef_ZUL=Bef_ZUL,
+                                           NHR_after=cfg.has_NHR and "NHR" in order[vi + 1:],
                                            KR_after=KR_after_vhr)
             elif comp == "KR":
                 ci = order.index("KR")
