@@ -145,11 +145,15 @@ class MixingValve3Way(Component):
 
     Zerfällt in zwei Kv-Kanten a→ab und b→ab mit komplementärer Öffnung;
     die Mischtemperatur entsteht automatisch am ab-Knoten (ideale Mischung).
+    Kennlinie je Pfad: Default wie bei üblichen Mischventilen A–AB
+    gleichprozentig, B–AB linear (beidseitig gleichprozentig bräche der
+    Gesamt-Kv bei Mittelstellung auf 0.2·Kvs ein).
     """
 
     kvs: float
     opening: float
     characteristic: str
+    characteristic_b: str
     rangeability: float
 
     PARAMS = (
@@ -157,26 +161,30 @@ class MixingValve3Way(Component):
         Param("opening", "none", default=1.0, minv=0.0, maxv=1.0,
               help="Stellung des A-Pfads (1 = A voll offen, B zu)"),
         Param("characteristic", "str", default="equal_percentage",
-              choices=("equal_percentage", "linear")),
+              choices=("equal_percentage", "linear"), help="Kennlinie des Regelpfads A–AB"),
+        Param("characteristic_b", "str", default="linear",
+              choices=("equal_percentage", "linear"),
+              help="Kennlinie des Beimischpfads B–AB (Default linear, Herstellerkonvention)"),
         Param("rangeability", "none", default=100.0, minv=2.0),
     )
 
     def port_names(self) -> tuple[str, ...]:
         return ("a", "b", "ab")
 
-    def _coeff(self, opening: float):
+    def _coeff(self, opening: float, characteristic: str):
         def fn(q: float, fluid: Fluid) -> EdgeCoefficients:
-            kv = valve_kv(self.kvs, opening, self.characteristic, self.rangeability)
+            kv = valve_kv(self.kvs, opening, characteristic, self.rangeability)
             return EdgeCoefficients(b=kv_to_b(kv, fluid.rho))
         return fn
 
-    def _path(self, b: NetworkBuilder, port: str, opening: float) -> None:
+    def _path(self, b: NetworkBuilder, port: str, opening: float, characteristic: str) -> None:
         if opening == 0.0:
             # Endlage: dieser Pfad sperrt exakt (Q = 0 als Randbedingung)
-            b.edge(b.port(port), b.port("ab"), self._coeff(0.0), fixed_q=0.0, label=port)
+            b.edge(b.port(port), b.port("ab"), self._coeff(0.0, characteristic),
+                   fixed_q=0.0, label=port)
         else:
-            b.edge(b.port(port), b.port("ab"), self._coeff(opening), label=port)
+            b.edge(b.port(port), b.port("ab"), self._coeff(opening, characteristic), label=port)
 
     def build(self, b: NetworkBuilder) -> None:
-        self._path(b, "a", self.opening)
-        self._path(b, "b", 1.0 - self.opening)
+        self._path(b, "a", self.opening, self.characteristic)
+        self._path(b, "b", 1.0 - self.opening, self.characteristic_b)

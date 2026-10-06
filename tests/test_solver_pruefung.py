@@ -345,3 +345,29 @@ def test_psychrometrie_im_gueltigkeitsbereich_unveraendert():
     from hydraulik.components.coils import p_ws
     for t in (-30.0, 0.0, 20.0, 60.0):
         assert p_ws(t) == pytest.approx(611.2 * math.exp(17.62 * t / (243.12 + t)), rel=1e-15)
+
+
+# --- B3: 3-Wege-Mischventil, Kennlinie je Pfad -----------------------------------
+
+def _mv_kv_total(**kw):
+    """Gesamt-Kv (A‖B) aus der Simulation: beide Eingänge auf gleichem Druck."""
+    net = h.Network(fluid=W50)
+    net.add(h.Inflow("pa", t_set_C=60, p_kPa=100)); net.add(h.Inflow("pb", t_set_C=30, p_kPa=100))
+    net.add(h.MixingValve3Way("mv", kvs_m3h=4.0, **kw)); net.add(h.Outflow("ab", p_kPa=0))
+    net.connect("pa.port", "mv.a"); net.connect("pb.port", "mv.b"); net.connect("mv.ab", "ab.port")
+    r = net.solve(thermal=False)
+    q = r["mv:a"].q_m3h + r["mv:b"].q_m3h
+    return q / math.sqrt(1.0 * 1000 / W50.rho)        # Kv = V̇ / √(Δp[bar]·1000/ρ)
+
+
+def test_mischventil_standard_a_gleichprozentig_b_linear():
+    """Herstellerkonvention (z.B. Siemens VXG, Belimo R3): A–AB gleichprozentig,
+    B–AB linear → Gesamt-Kv bei Mittelstellung Kvs·(R^-0.5 + 0.5)."""
+    kv = _mv_kv_total(opening=0.5)
+    assert kv == pytest.approx(4.0 * (100 ** -0.5 + 0.5), rel=1e-6)
+    # ausdrücklich beidseitig gleichprozentig: der starke Einbruch bleibt wählbar
+    kv_eq = _mv_kv_total(opening=0.5, characteristic_b="equal_percentage")
+    assert kv_eq == pytest.approx(4.0 * 2 * 100 ** -0.5, rel=1e-6)
+    # linear/linear: konstanter Gesamt-Kv
+    kv_lin = _mv_kv_total(opening=0.3, characteristic="linear", characteristic_b="linear")
+    assert kv_lin == pytest.approx(4.0, rel=1e-6)
