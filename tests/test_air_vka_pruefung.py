@@ -272,3 +272,25 @@ def test_rotor_auslegung_default_zuluftvolumenstrom():
     d["components"]["wrg1"].pop("v_nom_m3h", None)
     r = solve_air(d)
     assert r["plant"]["V_nom_m3h"] == pytest.approx(1359.0)
+
+
+# --- Übersättigung: Umluftmischung und Kühler ----------------------------------
+
+def test_kuehler_heizt_nie():
+    """Übersättigter Eintritt (Nebel, x > x_s(T)): der Entfeuchtungszweig
+    lag über T_ein — der Kühler 'entfeuchtete' durch Heizen (negative Last)."""
+    T_in, x_in = 3.0, 12.0e-3                        # > x_max (10,2 g/kg), x_s(3 °C) ≈ 4,7
+    T, x, Q = cooler(T_in, x_in, 1.0, SP, 0.0)
+    assert Q >= 0.0 and T <= T_in + 1e-12
+
+
+def test_umluftmischung_nicht_uebersaettigt_und_lasten_positiv():
+    """Feuchte Umluft (26 °C/100 %) in Frostluft (−15 °C): die Mischung wäre
+    übersättigt; der Überschuss kondensiert bei gleicher Enthalpie."""
+    spec = {"wrg": "KVS", "components": ["VHR", "KR", "NHR"], "frost": "bypass",
+            "recirculation_m3h": 2000}
+    o = simulate(spec, -15, 100, 26, 100, 20, 22, 40, 55, V_sup_m3h=5000, V_exh_m3h=5000)
+    ch = o["chain"][0]
+    T, x = ch["T"]["UML_Byp"], ch["x_gkg"]["UML_Byp"] / 1000.0
+    assert x <= float(ma.xs(T, 1e5)) + 1e-12
+    assert float(o["Q_cool_KR_kW"][0]) >= 0.0 and float(o["Q_heat_total_kW"][0]) >= 0.0

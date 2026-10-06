@@ -165,6 +165,14 @@ def run_plant(cfg: PlantConfig, sp: Setpoints, ops: list[OperatingPoint]):
                 if m_dot > 0 and (m_dot - m_dot_UML) >= 0:
                     T = (T * (m_dot - m_dot_UML) + op.T_ABL * m_dot_UML) / m_dot
                     x = (x * (m_dot - m_dot_UML) + x_abl * m_dot_UML) / m_dot
+                    # übersättigte Mischung (feuchte Umluft in Frostluft) =
+                    # Nebel: Überschuss kondensiert bei gleicher Enthalpie aus
+                    # (Abweichung vom MATLAB-Original, Solver-Prüfung 2026-10:
+                    # sonst "entfeuchtete" der Kühler den Nebel durch Heizen,
+                    # negative Kühllast)
+                    if x > ma.xs(T, cfg.p_atm):
+                        T = ma.T_h_phi(ma.h(T, x), 1.0, cfg.p_atm)
+                        x = float(ma.xs(T, cfg.p_atm))
                 uml_seen = True
             elif comp == "FS":
                 if cfg.fs_type == 2:          # bypass: VHR takes over frost duty

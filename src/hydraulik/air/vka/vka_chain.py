@@ -219,7 +219,12 @@ def cooler(T_in, x_in, m_dot, sp: Setpoints, dT_corr, KR_Entf=1,
     Tlim_max = sp.T_max + dT_corr
     Tlim_min = sp.T_min + dT_corr
 
-    # branch 2: abs humidity above upper band (+tol) -> dehumidify
+    # branch 2: abs humidity above upper band (+tol) -> dehumidify.
+    # Ein Kühler heizt nie: liegt der Entfeuchtungs-Taupunkt über T_in
+    # (übersättigter Eintritt, Nebel), bleibt er inaktiv (Abweichung vom
+    # MATLAB-Original, Solver-Prüfung 2026-10 — sonst negative Kühllast)
+    if x_in > (sp.x_max_Tmax + dx_Entf_tol) and ma.Ts(sp.x_max_Tmax, p) > T_in:
+        return T_in, x_in, 0.0
     if x_in > (sp.x_max_Tmax + dx_Entf_tol):
         dx_Entf = 0.0
         if KR_Entf == 1:
