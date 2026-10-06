@@ -2,7 +2,7 @@
 
 ## Solver-Prüfung (2026-10-06, zwei Runden, in main)
 
-827 Tests, alle grün. Ausführlich: docs/solver_pruefung_2026-10.md
+834 Tests, alle grün. Ausführlich: docs/solver_pruefung_2026-10.md
 (Code-Review, geschlossene Lösungen, 3300 Zufallsnetze mit unabhängiger
 Nachrechnung).
 
@@ -29,9 +29,13 @@ Nachrechnung).
     Skill-Kopie ist identisch gepatcht
 - **Wirkung:** Nichtkonvergenzen in der Kampagne 163 → 1 (pathologisch:
   ~5·10¹² Pa).
+- **Eindeutigkeitsprüfung:** Idelchik-T-Stücke können mehrere, jeweils
+  stabile stationäre Lösungen erzeugen (Anfangswertproblem). Der Solver
+  sucht sie mit 8 Zusatzstarts und meldet „Hydraulik nicht eindeutig“
+  inklusive `alternatives`; im Editor erscheint ein Dialog.
 - **Offen (Modellentscheidung):**
-  - Mehrdeutigkeit in Maschen durch zwei T-Stück-Schenkel (Bernoulli-
-    Rückgewinn ohne Knoten-Gegenbuchung)
+  - T-Stück im Netz mit Totaldruckverlusten koppeln (Bernoulli nur noch zur
+    Anzeige), das beseitigt 32 von 37 Mehrdeutigkeiten an der Ursache
   - Sammler-Konvention c laut Quellnotiz noch fachlich freizugeben
 
 ## Eingabeformat gehärtet (2026-10-05, unveröffentlicht)
@@ -352,7 +356,7 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (827 Tests, müssen grün sein; node für die Paritätstests);
+1. `pip install -e ".[dev]" && pytest` (834 Tests, müssen grün sein; node für die Paritätstests);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/).
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
    dieser Datei lesen — dort steht, was zuletzt gebaut wurde.

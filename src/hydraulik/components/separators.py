@@ -142,6 +142,13 @@ class Tee(Component):
     def port_names(self) -> tuple[str, ...]:
         return ("a", "b", "c")
 
+    def nonmonotone_hydraulics(self) -> bool:
+        """Idelchik-Kennlinie ist über den Regimewechsel nicht umkehrbar
+        eindeutig: dieselben Portdrücke lassen Trennen UND Vereinigen zu
+        (Solver-Prüfung 2026-10: 37 von 299 Zufallsnetzen mit mehreren, jeweils
+        dynamisch stabilen Lösungen)."""
+        return self.d_run is not None
+
     def check_topology(self, port_nodes):
         """Mit Idelchik-Druckverlust dürfen keine zwei Schenkel am selben Knoten
         liegen: der statische Druckrückgewinn (Bernoulli) wird am Knoten nicht

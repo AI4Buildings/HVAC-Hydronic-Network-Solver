@@ -140,17 +140,29 @@ Vorzeichenwechsel des Abzweigs monoton; Tabellenquelle dokumentiert in
 docs/idelchik_t_stueck_*.md). Zufallsnetz-Kampagne: alle 137 vorher nicht
 konvergierenden Netze mit Idelchik-T-Stück lösen (≤ 96 Iterationen).
 
-Bekannte Grenze: Netze mit Maschen durch zwei Schenkel können weiterhin
-mehrere Lösungen haben (Kampagne: 14,9 % der gelösten Netze mit Idelchik-
-T-Stück bei getrennten Schenkeln liefern bei anderen Startwerten eine zweite
-Lösung). Zwei Ursachen: (1) der Bernoulli-Rückgewinn ohne Gegenbuchung am
-Knoten — Netzknoten kennen nur den statischen Druck, die Beschleunigung aus
-dem Knoten in einen Schenkel kostet nichts; ohne Bernoulli-Umrechnung
-(reine Totaldruckverluste) sinkt die Quote auf 5,5 %; (2) nicht-monotones
-ζ(x) (negative ζ_c.s der Vereinigung, U-förmige Durchgangstabelle der
-Trennung). Ob die statische Umrechnung beibehalten wird, ist eine
-Modellentscheidung (Handrechnungsvalidierung und Quellnotizen setzen sie
-voraus) — offen, siehe docs/solver_pruefung_2026-10.md.
+**Mehrdeutigkeit → Eindeutigkeitsprüfung** (solver/uniqueness.py). Netze mit
+Idelchik-T-Stück können mehrere stationäre Lösungen haben: dieselben
+Portdrücke lassen Trennen UND Vereinigen zu (Kennlinie nicht umkehrbar
+eindeutig). Stabilitätstest an 37 echt mehrdeutigen Kampagnennetzen (lineare
+Maschendynamik L·dQ/dt = Δp − G(Q), volle Jacobi-Matrix inkl. Schenkel-
+kopplung, Urteil für jede Trägheitsverteilung): ALLE gefundenen Lösungen
+stabil (29× 2, 8× 3) — keine lässt sich physikalisch ausschließen; welche
+sich einstellt, hängt vom Anfahrvorgang ab (Anfangswertproblem). Ohne
+Bernoulli-Umrechnung wären 32 der 37 eindeutig.
+Daher: Meldet eine Komponente `nonmonotone_hydraulics()` (Idelchik-T-Stück),
+löst `find_alternative_solutions` die Hydraulik zusätzlich von
+`uniqueness_starts` (Default 8) reproduzierbaren Startwerten (Beträge
+log-gleichverteilt 1e-3…1·V̇max, Vorzeichen zufällig), schärft jede Lösung
+und die ausgegebene nach (Toleranzen ×1e-5) und meldet Lösungen mit
+max|ΔQ| > max(1e-4·V̇max, 1e-6 m³/s) — Toleranzreste schwach bestimmter
+Maschen bleiben danach ≤ 4e-5 m³/h, echte Mehrfachlösungen ≥ 5 l/h. Ergebnis:
+Hinweis „Hydraulik nicht eindeutig“ mit den größten Abweichungen,
+`SolutionResult.alternatives` (alle Volumenströme je Alternative), im Editor
+Dialog. Die ausgegebene Lösung bleibt unverändert. Kampagne: 8 Starts
+erkennen 37/37 (4 Starts: 34/37), 83 von 310 Zufallsnetzen mit Idelchik-T-
+Stück gemeldet, kein Fehlalarm; die 13 Smoke-Netze mit Verteiler-Strang-
+Sammler-Struktur sind alle eindeutig. Aufwand ≈ 135 ms je Netz, nur bei
+nicht-monotonen Komponenten.
 
 Konvergenzkriterien (relativ): Massendefekt / max|Q| < 1e-8, Impulsdefekt /
 Druckmaßstab < 1e-6 (beide mit den Koeffizienten des geprüften Zustands) und
@@ -241,7 +253,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 827 Tests)
+## 3. Testabdeckung (tests/, 834 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/

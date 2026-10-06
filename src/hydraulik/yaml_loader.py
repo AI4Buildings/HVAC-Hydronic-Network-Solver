@@ -81,6 +81,8 @@ def load(source: str | Path | dict) -> Network:
 _SETTINGS_POSITIVE = frozenset({"max_iter", "max_iter_thermal", "tol_mass_rel", "tol_mom_rel",
                                 "q_init", "q_eps_frac", "tol_t", "m_dot_eps"})
 _SETTINGS_UNIT_INTERVAL = frozenset({"alpha_p", "alpha_q"})
+#: Solver-Einstellungen ≥ 0 (0 = Funktion aus)
+_SETTINGS_NONNEG = frozenset({"uniqueness_starts"})
 
 
 def load_settings(source: str | Path | dict) -> SolverSettings:
@@ -121,6 +123,10 @@ def load_settings(source: str | Path | dict) -> SolverSettings:
             continue
         if key in _SETTINGS_POSITIVE and val <= 0:
             errors.append(f"Solver-Einstellung '{key}' = {val!r} muss größer als 0 sein.")
+            continue
+        if key in _SETTINGS_NONNEG and val < 0:
+            errors.append(f"Solver-Einstellung '{key}' = {val!r} darf nicht negativ sein "
+                          f"(0 = aus).")
             continue
         if key in _SETTINGS_UNIT_INTERVAL and not 0.0 < val <= 1.0:
             errors.append(f"Solver-Einstellung '{key}' = {val!r} muss im Bereich 0 < α ≤ 1 liegen.")

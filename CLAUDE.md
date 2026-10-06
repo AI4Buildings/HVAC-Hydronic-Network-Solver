@@ -22,7 +22,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (827 Tests; Paritätstests brauchen node)
+pytest                                   # Testsuite (834 Tests; Paritätstests brauchen node)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]   # auch .json
 hydraulik export --json schaltung.yaml [--out schaltung.json]   # geprüft, kanonisches JSON
@@ -79,7 +79,13 @@ src/hydraulik/
                      → Δ-Verdopplung (Klemmen), > 1e6 K = keine stationäre Lösung
                      (isolierter Umlauf, Drift-Meldung); skipped_thermal
     settings.py      SolverSettings (alle Defaults; t_plausible_min/max für den
-                     Plausibilitätshinweis im Bericht)
+                     Plausibilitätshinweis im Bericht; uniqueness_starts)
+    uniqueness.py    Eindeutigkeitsprüfung: bei Komponenten mit
+                     nonmonotone_hydraulics() (Idelchik-T-Stück) Zusatzstarts +
+                     Nachschärfen → Hinweis „Hydraulik nicht eindeutig“ +
+                     SolutionResult.alternatives (Editor: Dialog); stabile
+                     Mehrfachlösungen sind ein Anfangswertproblem → melden,
+                     nie still auswählen
   yamlio.py          EINZIGE Parse-Stelle für YAML/JSON: load_document(),
                      parse_yaml() (ruamel, YAML 1.2 Core Schema strikt, Schlüssel
                      = Originaltext, nur reine Python-Typen, Duplikate/Tags
@@ -151,7 +157,7 @@ docs/                architektur.md, numerik.md, erweitern.md, roadmap.md,
                      solver_pruefung_2026-10.md (Prüfbericht, offene Punkte)
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               827 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+tests/               834 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
                      test_yamlio.py / test_yaml12_kompat.py: Loader + YAML-1.1-
                      Altlasten; test_editor_paritaet.py: JS ↔ Python (node,
                      Korpus tests/data/, Zufallsskalare/-dokumente, Round-Trip);
@@ -161,7 +167,8 @@ tests/               827 Tests: analytische Referenzen + Validierung gegen Muste
                      unabhängiges Fixpunkt-Orakel, geschlossene Lösungen, Invarianzen;
                      test_solver_pruefung.py: Befunde der Solver-Prüfung (B1–B16);
                      test_air_vka_matlab.py: VKA-Kern gegen MATLAB/PDF-Referenz;
-                     test_air_vka_pruefung.py: Lüftungsbefunde L1–L12 (Invarianten)
+                     test_air_vka_pruefung.py: Lüftungsbefunde L1–L12 (Invarianten);
+                     test_eindeutigkeit.py: Mehrdeutigkeit melden (Kampagnennetz 3128)
 .github/workflows/   CI: pytest auf Python 3.10–3.12 bei Push/PR
 ```
 

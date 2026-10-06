@@ -75,6 +75,9 @@ class SolutionResult:
     notices: list[str]
     teilstrecken: list[TSSegment] = field(default_factory=list)
     sensors: list[SensorReading] = field(default_factory=list)
+    #: weitere stationäre Lösungen (Eindeutigkeitsprüfung): je Eintrag
+    #: {"q_m3h": {Kante: V̇}, "dq_max_m3h": größte Abweichung zur Ausgabe}
+    alternatives: list[dict] = field(default_factory=list)
 
     def __getitem__(self, name: str) -> ComponentResult:
         for c in self.components:
@@ -96,6 +99,7 @@ class SolutionResult:
             "nodes": [{**vars(n)} for n in self.nodes],
             "teilstrecken": [{**vars(s)} for s in self.teilstrecken],
             "sensors": [{**vars(s)} for s in self.sensors],
+            "alternatives": [dict(a) for a in self.alternatives],
         }
 
     def to_csv(self, path: str) -> None:
@@ -268,6 +272,33 @@ def _plausibility_notices(net: CompiledNetwork, hyd: HydraulicState, th: Thermal
                 f"und Parameter prüfen.")
 
 
+def _alternative_notices(net: CompiledNetwork, hyd: HydraulicState,
+                         notices: list[str]) -> list[dict]:
+    """Hinweis + strukturierte Alternativen der Eindeutigkeitsprüfung."""
+    alts = getattr(hyd, "alternatives", None) or []
+    if not alts:
+        return []
+    names = sorted({e.component.name for e in net.edges if e.component.nonmonotone_hydraulics()})
+    out, parts = [], []
+    for k, a in enumerate(alts, start=2):
+        d = sorted(net.edges, key=lambda e: -abs(float(a.q[e.index] - hyd.q[e.index])))[:3]
+        parts.append(f"Lösung {k}: " + ", ".join(
+            f"'{e.name}' {a.q[e.index] * 3600:.3g} statt {hyd.q[e.index] * 3600:.3g} m³/h"
+            for e in d))
+        out.append({"q_m3h": {e.name: float(a.q[e.index]) * 3600 for e in net.edges},
+                    "dq_max_m3h": float(a.dq_max) * 3600})
+    n = len(alts)
+    notices.append(
+        f"Hydraulik nicht eindeutig: {n} weitere stationäre Lösung{'en' if n > 1 else ''} "
+        f"erfüll{'en' if n > 1 else 't'} alle Gleichungen ebenso (nicht-monotone Kennlinie: "
+        f"{', '.join(repr(x) for x in names)}). Welche sich einstellt, hängt vom Anfahrvorgang "
+        f"ab und ist mit einer stationären Rechnung nicht entscheidbar; ausgegeben ist die "
+        f"Lösung zum Standardstartwert. " + "; ".join(parts) + ". Alle Lösungen unter "
+        f"'alternatives'. Ergebnis nur unter Vorbehalt verwenden; zum Vergleich das T-Stück "
+        f"ohne d_run/d_branch (idealer Knoten) rechnen.")
+    return out
+
+
 def build_result(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
                  settings: SolverSettings) -> SolutionResult:
     comps: list[ComponentResult] = []
@@ -309,6 +340,7 @@ def build_result(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
             + " ist nicht eindeutig bestimmt: geschlossener Umlauf ohne Wärmeübertrag nach "
             f"außen (z.B. Erzeuger aus bzw. an der Leistungsgrenze, keine Verluste) — "
             f"angezeigt ist die Lösung zum Startwert t_init = {settings.t_init:g} °C.")
+    alternatives = _alternative_notices(net, hyd, notices)
     # Komponenten-eigene Plausibilitätshinweise (duck-typed result_notices)
     for e in net.edges:
         fn = getattr(e.component, "result_notices", None)
@@ -334,4 +366,4 @@ def build_result(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
         mass_residual=hyd.mass_residual, momentum_residual=hyd.momentum_residual,
         energy_imbalance_W=th.energy_imbalance,
         fluid_name=fluid.name, nodes=nodes, components=comps, notices=notices,
-        teilstrecken=segments, sensors=sensors)
+        teilstrecken=segments, sensors=sensors, alternatives=alternatives)

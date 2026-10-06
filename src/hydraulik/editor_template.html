@@ -951,9 +951,23 @@ async function solveNow() {
   }
   lastResult = data;
   const extra = (data.notices || []).length ? `  (${data.notices.length} Hinweis(e))` : "";
+  // Mehrdeutige Hydraulik (Eindeutigkeitsprüfung, z.B. Idelchik-T-Stück):
+  // nicht nur zählen, sondern sichtbar melden — die angezeigten Werte sind
+  // eine von mehreren stationären Lösungen
+  const ambiguous = (data.alternatives || []).length > 0;
   setStatus(`Ergebnis: ${data.converged ? "konvergiert ✓" : "NICHT konvergiert!"} – ` +
             `Energiebilanz ${fmt(data.residuals.energy_imbalance_W, 2)} W${extra}. ` +
+            (ambiguous ? "⚠ Hydraulik NICHT eindeutig – siehe Dialog. " : "") +
             `Werte per Mouse-Over an Komponenten und Leitungen.`);
+  if (ambiguous) {
+    document.getElementById("dlg-title").textContent =
+      `Hydraulik nicht eindeutig – ${data.alternatives.length + 1} stationäre Lösungen`;
+    dlgText.value = (data.notices || []).join("\n\n");
+    document.getElementById("dlg-ok").style.display = "none";
+    document.getElementById("dlg-save").style.display = "none";
+    document.getElementById("dlg-file").style.display = "none";
+    dlg.showModal();
+  }
   render();
 }
 document.getElementById("btn-solve").onclick = solveNow;

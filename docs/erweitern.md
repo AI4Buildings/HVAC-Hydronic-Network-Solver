@@ -73,6 +73,13 @@ Parametervalidierung, Editor-Formular und Eintrag im JSON Schema
   `pre_coefficients(q_edges, fluid)`, erhält sie vor jeder Koeffizienten-
   auswertung die aktuellen Flüsse ihrer eigenen Kanten in Bau-Reihenfolge
   (Beispiel: T-Stück mit Idelchik-ζ aus dem Volumenstromverhältnis).
+- Weitere Hooks (alle optional): `check_topology(port_nodes)` → Fehlerliste
+  nach dem Port-Merge (z.B. kurzgeschlossene Schenkel); `result_notices(q,
+  fluid)` → Plausibilitätshinweise nach dem Lösen; `nonmonotone_hydraulics()`
+  → True, wenn die Kennlinie nicht monoton ist (mehrere stationäre Lösungen
+  möglich) — dann prüft der Solver die Eindeutigkeit (solver/uniqueness.py).
+  Neue Komponenten mit Tabellen-/Regime-Kennlinien: Kennlinie stetig machen,
+  Tangente als Linearterm melden und `nonmonotone_hydraulics` setzen.
 - Editor: Betriebsarten-Felder deklariert PARAM_MODES in
   editor_template.html (nur relevante Felder je Modus sichtbar).
 - Reserviertes Kwarg im Detail: `ts=<label>` wird von der Basisklasse VOR der

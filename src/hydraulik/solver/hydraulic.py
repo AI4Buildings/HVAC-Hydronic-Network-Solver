@@ -41,6 +41,8 @@ class HydraulicState:
     momentum_residual: float
     converged: bool
     residual_history: list[tuple[float, float]] = field(default_factory=list)
+    #: weitere stationäre Lösungen (Eindeutigkeitsprüfung, solver/uniqueness.py)
+    alternatives: list = field(default_factory=list)
 
 
 def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = None) -> HydraulicState:

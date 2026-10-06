@@ -23,6 +23,7 @@ from .exceptions import ConvergenceError, HydraulikError, NetworkValidationError
 from .results import build_result
 from .solver.hydraulic import solve_hydraulics
 from .solver.thermal import skipped_thermal, solve_thermal
+from .solver.uniqueness import find_alternative_solutions
 from .yaml_loader import load, load_settings
 from .yamlio import parse_yaml
 
@@ -37,6 +38,7 @@ def solve_payload(yaml_text: str) -> dict:
     settings = load_settings(doc)
     compiled = net.compile()
     hyd = solve_hydraulics(compiled, settings)
+    hyd.alternatives = find_alternative_solutions(compiled, hyd, settings)
     try:
         th = solve_thermal(compiled, hyd, settings)
     except ConvergenceError as exc:

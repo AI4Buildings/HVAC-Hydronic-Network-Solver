@@ -24,7 +24,7 @@ from .editor import port_spec
 from .fluids import FLUID_CUSTOM_PARAMS, FLUID_PRESET_PARAMS
 from .params import UNIT_GROUPS, Param
 from .solver.settings import SolverSettings
-from .yaml_loader import _SETTINGS_POSITIVE, _SETTINGS_UNIT_INTERVAL
+from .yaml_loader import _SETTINGS_NONNEG, _SETTINGS_POSITIVE, _SETTINGS_UNIT_INTERVAL
 
 DRAFT = "https://json-schema.org/draft/2020-12/schema"
 LOADER = "prüft der Loader"
@@ -171,6 +171,8 @@ def _settings_schema() -> dict:
         if f.name in _SETTINGS_UNIT_INTERVAL:
             s["exclusiveMinimum"] = 0
             s["maximum"] = 1
+        if f.name in _SETTINGS_NONNEG:
+            s["minimum"] = 0
         s["description"] = f"Solver-Einstellung (Default {f.default!r})"
         props[f.name] = s
     return {"description": "Optionale Solver-Einstellungen (Defaults in SolverSettings).",

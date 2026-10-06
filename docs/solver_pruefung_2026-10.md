@@ -165,17 +165,37 @@ Förderhöhe im 5-%-Regularisierungswiderstand verloren.
 
 ### Verbleibende offene Punkte (Entscheidung)
 
-- **Mehrdeutigkeit in Maschen durch zwei T-Stück-Schenkel.** 14,9 % der
-  gelösten Netze mit Idelchik-T-Stück (getrennte Schenkel) liefern bei
-  anderen Startwerten eine zweite Lösung.
-  - Ursache 1: Bernoulli-Rückgewinn ohne Gegenbuchung am Netzknoten. Knoten
-    kennen nur den statischen Druck, die Beschleunigung in einen Schenkel
-    kostet nichts. Ohne Bernoulli-Umrechnung (reine Totaldruckverluste)
-    sinkt die Quote auf 5,5 %.
-  - Ursache 2: nicht-monotones ζ(x) (negative ζ_c.s, U-förmige
-    Durchgangstabelle).
-  - Entscheidung nötig: die statische Umrechnung beibehalten (Quellnotizen,
-    Handrechnungsvalidierung) oder auf Totaldruck-Knoten umstellen.
+- **Mehrdeutigkeit bei Idelchik-T-Stücken (Warnhinweis umgesetzt,
+  Modellentscheidung offen).**
+  - *Mechanismus:* Dieselben Portdrücke lassen Trennen und Vereinigen zu;
+    die Kennlinie ist über den Regimewechsel nicht umkehrbar eindeutig.
+    Eine Pumpwirkung im Sinne einer Netto-Leistungsabgabe des T-Stücks liegt
+    in keinem Fall vor.
+  - *Stabilitätstest:* 44 auffällige Netze, je 17 Startwerte, jede Lösung
+    nachgeschärft und unabhängig nachgerechnet; lineare Maschendynamik mit
+    voller Jacobi-Matrix. Ergebnis: 7 nur numerisches Rauschen, 37 echt
+    mehrdeutig. In allen 37 sind alle Lösungen stabil (29× 2, 8× 3), also
+    in keinem Fall genau eine. Die Kontrollgruppe ohne T-Stück (51 Netze)
+    ist ausnahmslos eindeutig.
+  - *Bernoulli:* Ohne die Umrechnung sind 32 der 37 eindeutig. Die
+    statische Umrechnung erzeugt die Mehrwertigkeit also zum größten Teil:
+    Der Zulaufschenkel erhält seine kinetische Energie, ohne dass das Netz
+    sie bezahlt.
+  - *Umgesetzt (solver/uniqueness.py):* Bei Komponenten mit
+    `nonmonotone_hydraulics()` laufen 8 reproduzierbare Zusatzstarts mit
+    Nachschärfen; zusätzliche Lösungen ergeben den Hinweis „Hydraulik nicht
+    eindeutig“ und `alternatives` im Ergebnis, im Editor einen Dialog.
+    - 8 Starts erkennen 37/37; 83 von 310 Zufallsnetzen mit Idelchik-T-Stück
+      werden gemeldet, ohne Fehlalarm.
+    - Die Smoke-Netze mit Verteiler-Strang-Sammler-Struktur sind alle
+      eindeutig.
+    - Quasi-Kurzschlüsse zweier Schenkel über widerstandsfreie Bauteile
+      verdoppeln die Häufigkeit (37 % gegenüber 18 %), sind aber weder
+      notwendig noch hinreichend; ein Topologie-Check ersetzt die Prüfung
+      daher nicht.
+  - *Offen:* Ob das T-Stück im Netz mit Totaldruckverlusten gekoppelt
+    werden soll (statische Portdrücke nur noch nachgerechnet). Das würde 32
+    der 37 Fälle an der Ursache beheben.
 - **Sammler-Konvention (Idelchik 7-10).** Die überarbeiteten Quellnotizen
   lesen c als geraden Zulauf (Q_st = Q_c + Q_s). Sie vermerken selbst, dass
   dies der gedruckten (1 − Q_s/Q_c)²-Umrechnung widerspricht und „vor einer

@@ -146,6 +146,13 @@ class Component(ABC):
         """Nennvolumenstrom als Startwert für den Solver (falls bekannt)."""
         return None
 
+    def nonmonotone_hydraulics(self) -> bool:
+        """True, wenn die hydraulische Kennlinie nicht monoton ist und das Netz
+        dadurch mehrere stationäre Lösungen haben kann (z.B. Idelchik-T-Stück
+        über den Regimewechsel). Dann prüft der Solver die Eindeutigkeit mit
+        zusätzlichen Startwerten (SolverSettings.uniqueness_starts)."""
+        return False
+
     def check_topology(self, port_nodes: dict[str, tuple[int, str]]) -> list[str] | None:
         """Prüfung der Einbindung nach dem Port-Merge: port_nodes bildet jeden
         eigenen Port auf (Knotenindex, Knotenbezeichnung) ab. Liste von

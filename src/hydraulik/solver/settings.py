@@ -17,6 +17,11 @@ class SolverSettings:
     q_eps_frac: float = 1e-3      # R-Floor: Anteil des Seed-Volumenstroms
     p_ref: float = 150e3          # Referenz-/Startdruck [Pa Überdruck] – alle Drücke
                                   # sind gauge; 1.5 bar(ü) ≈ typischer Anlagenfülldruck
+    # Eindeutigkeitsprüfung: nur bei Komponenten mit nicht-monotoner Kennlinie
+    # (Idelchik-T-Stück) wird die Hydraulik zusätzlich von so vielen
+    # reproduzierbaren Startwerten aus gelöst; weitere Lösungen → Hinweis.
+    # 0 = aus.
+    uniqueness_starts: int = 8
 
     # Thermik
     t_init: float = 20.0          # Starttemperatur [°C]
