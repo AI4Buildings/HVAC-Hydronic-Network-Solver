@@ -20,6 +20,8 @@ Modellierung:
 """
 from __future__ import annotations
 
+import math
+
 from ..fluids import Fluid
 from ..params import Param
 from .base import Component, EdgeCoefficients, NetworkBuilder, TwoPortComponent
@@ -33,9 +35,56 @@ _Q_NOM_PARAM = Param(
 class _TapSensor(Component):
     """Basis: Fühler ohne Kante — jeder Port verschmilzt mit der Messstelle."""
 
+    measurement_tap = True
+
     def build(self, b: NetworkBuilder) -> None:
+        self._partners = {}
         for p in self.port_names():
             b.port(p)
+            self._partners[p] = [(c, pn) for c, pn in b.partners(p) if not c.measurement_tap]
+
+
+def _port_flow(net, hyd, comp, port: str, node_of) -> float:
+    """Betrag des Volumenstroms durch den Anschluss comp.port [m³/s]."""
+    n = node_of(f"{comp.name}.{port}")
+    q = 0.0
+    for e in net.edges:
+        if e.component is comp and e.node_from != e.node_to:
+            if e.node_to == n:
+                q += float(hyd.q[e.index])
+            elif e.node_from == n:
+                q -= float(hyd.q[e.index])
+    return abs(q)
+
+
+def static_pressure(net, hyd, node_of, ref: str, partners, d_inner) -> tuple[float, float | None]:
+    """Statischer Überdruck an der Messstelle [Pa] und dynamischer Anteil
+    ρw²/2 [Pa] (None, wenn kein Querschnitt bekannt — dann statisch = Knoten-
+    druck). Knotendrücke sind Totaldrücke; die Geschwindigkeit stammt aus dem
+    Anschluss, an dem die Messleitung hängt (erster Partner mit bekanntem
+    Querschnitt), oder aus d_inner mit dem Volumenstrom dieses Anschlusses."""
+    p_node = float(hyd.p[node_of(ref)])
+    loc = None
+    if d_inner is not None:
+        if partners:
+            loc = (partners[0][0], partners[0][1], math.pi * d_inner ** 2 / 4.0)
+    else:
+        for comp, port in partners:
+            area = comp.port_flow_area(port)
+            if area:
+                loc = (comp, port, area)
+                break
+    if loc is None:
+        return p_node, None
+    comp, port, area = loc
+    w = _port_flow(net, hyd, comp, port, node_of) / area
+    p_dyn = net.fluid.rho * w * w / 2.0
+    return p_node - p_dyn, p_dyn
+
+
+_D_TAP = Param("d_inner", "diameter", minv=1e-3,
+               help="Innendurchmesser an der Messstelle für den dynamischen Anteil ρw²/2 "
+                    "(leer: aus der angeschlossenen Leitung)")
 
 
 @register("temperature_sensor")
@@ -53,30 +102,55 @@ class TemperatureSensor(_TapSensor):
 
 @register("pressure_sensor")
 class PressureSensor(_TapSensor):
-    """Drucksensor: liest den Knotendruck (Überdruck/gauge) der Messstelle."""
+    """Drucksensor: statischer Überdruck (gauge) an der Messstelle, wie ein
+    realer Transmitter an der Wandanbohrung: p_Knoten − ρw²/2 (Knotendrücke
+    sind Totaldrücke). w aus dem Querschnitt der Leitung, an der die
+    Messleitung hängt, bzw. aus d_inner; ohne bekannten Querschnitt
+    (Behälter, Sammler, ideale Verbindung) gilt der Knotendruck."""
 
-    PARAMS = ()
+    d_inner: float | None
+
+    PARAMS = (_D_TAP,)
 
     def port_names(self) -> tuple[str, ...]:
         return ("port",)
 
     def measure(self, net, hyd, th, node_of) -> dict:
-        return {"p_kPa": float(hyd.p[node_of(f"{self.name}.port")]) / 1e3}
+        p, p_dyn = static_pressure(net, hyd, node_of, f"{self.name}.port",
+                                   self._partners.get("port", []), self.d_inner)
+        out = {"p_kPa": p / 1e3}
+        if p_dyn is not None:
+            out["p_dyn_kPa"] = p_dyn / 1e3
+        return out
 
 
 @register("pressure_diff_sensor")
 class PressureDiffSensor(_TapSensor):
-    """Differenzdrucksensor: Δp = p(plus) − p(minus) zwischen zwei Messstellen
-    (z.B. über einer Pumpe, einem Ventil oder als Schmutzfänger-Überwachung)."""
+    """Differenzdrucksensor: Δp = p(plus) − p(minus) der STATISCHEN Drücke an
+    zwei Messstellen (z.B. über einer Pumpe, einem Ventil oder als
+    Schmutzfänger-Überwachung); dynamischer Anteil je Seite wie beim
+    Drucksensor (bei gleicher Nennweite beidseits identisch mit der
+    Totaldruckdifferenz)."""
 
-    PARAMS = ()
+    d_inner_plus: float | None
+    d_inner_minus: float | None
+
+    PARAMS = (
+        Param("d_inner_plus", "diameter", minv=1e-3,
+              help="Innendurchmesser an der Messstelle plus (leer: aus der Leitung)"),
+        Param("d_inner_minus", "diameter", minv=1e-3,
+              help="Innendurchmesser an der Messstelle minus (leer: aus der Leitung)"),
+    )
 
     def port_names(self) -> tuple[str, ...]:
         return ("plus", "minus")
 
     def measure(self, net, hyd, th, node_of) -> dict:
-        dp = hyd.p[node_of(f"{self.name}.plus")] - hyd.p[node_of(f"{self.name}.minus")]
-        return {"dp_kPa": float(dp) / 1e3}
+        p_plus, _ = static_pressure(net, hyd, node_of, f"{self.name}.plus",
+                                    self._partners.get("plus", []), self.d_inner_plus)
+        p_minus, _ = static_pressure(net, hyd, node_of, f"{self.name}.minus",
+                                     self._partners.get("minus", []), self.d_inner_minus)
+        return {"dp_kPa": (p_plus - p_minus) / 1e3}
 
 
 @register("flow_sensor")

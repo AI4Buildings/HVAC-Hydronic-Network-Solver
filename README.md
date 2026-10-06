@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 840 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 847 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 ## Tool starten
@@ -293,8 +293,8 @@ bereit:
 | `balancing_valve` | in, out | `kvs_m3h`, `opening` (Voreinstellung) |
 | `ball_valve` | in, out | Kugelhahn (Absperrarmatur): Default offen und druckverlustfrei (1 Pa Referenzverlust bei `q_nom_m3h`, wie `link`); optional realer `kvs_m3h`; `closed: true` = Revisionsfall, sperrt exakt (V̇ = 0) |
 | `temperature_sensor` | port | Temperaturfühler (Messstelle anzapfen, keine Kante): liest ϑ des Knotens |
-| `pressure_sensor` | port | Drucksensor: liest p (Überdruck) des Knotens |
-| `pressure_diff_sensor` | plus, minus | Differenzdrucksensor: Δp = p(plus) − p(minus), z.B. über Pumpe/Ventil |
+| `pressure_sensor` | port | Drucksensor: statischer Überdruck an der Messstelle (p_Knoten − ρw²/2, `p_dyn_kPa`); optional `d_inner_mm` |
+| `pressure_diff_sensor` | plus, minus | Differenzdrucksensor: Δp der statischen Drücke p(plus) − p(minus), z.B. über Pumpe/Ventil; optional `d_inner_plus_mm`/`d_inner_minus_mm` |
 | `flow_sensor` | in, out | Volumenstromsensor in der Leitung (quasi-ideal, 1 Pa bei `q_nom_m3h`) |
 | `energy_meter` | in, out, t_ref | Wärmemengenzähler: Durchflussteil in der Leitung + Fühler `t_ref` in der Gegenleitung; misst V̇, beide ϑ und Q̇ = ṁ·cp·(ϑ_ref − ϑ_Leitung) (Einbau im RL → Q̇ > 0 = Kreisabgabe); die 5 realen Datenpunkte als `bems`-Einträge |
 | `check_valve` | in, out | Rückschlagklappe: `kvs_m3h` (Durchlassrichtung in→out); sperrt rückwärts (Restleckage kvs/1000, über `block_factor` einstellbar) |
@@ -304,15 +304,15 @@ bereit:
 | `heating_coil` / `cooling_coil` | in, out | ε-NTU mit Teillast-UA nach Gl. 4.2 (`ua_ref_W_K`, `n` Default 0.4, Referenzen `q_w_ref_m3h`/`m_dot_air_ref_kg_s`; ohne Referenzen UA konstant); `m_dot_air_kg_s`, `t_air_in_C`, `arrangement`; ODER feste Leistung `q_prescribed_kW` (dann kein UA nötig); Hydraulik: `kv_m3h` ODER `c_Pa_m3h2`. Kühlregister zusätzlich Greybox MIT Kondensation: `ua_star_wet_kg_s` + `rh_air_in` (0…1) → Q̇ = max(trocken, nass), Kondensatrate/Luftaustritt in extras |
 | `heat_pump` / `chiller` | in, out | `mode: prescribed_q\|target_t_out`, `q_dot_kW` bzw. `t_out_set_C` + `q_max_kW`, `dp_nom_kPa`, `q_nom_m3h` |
 | `buffer_storage` | p1…pN | `n_ports`, `ua_W_K`, `t_amb_C` (ideal durchmischt) |
-| `inflow` (Zulauf) | port | `t_set_C` + ENTWEDER `q_m3h` (Zulauf-V̇) ODER `p_kPa` (Überdruck gauge) |
-| `outflow` (Austritt) | port | ENTWEDER `p_kPa` (Überdruck gauge; Auslauf ins Freie: 0) ODER `q_m3h` (Entnahme-V̇); Austrittstemperatur ist Ergebnis |
+| `inflow` (Zulauf) | port | `t_set_C` + ENTWEDER `q_m3h` (Zulauf-V̇) ODER `p_kPa` (statischer Überdruck gauge, optional `d_inner_mm`) |
+| `outflow` (Austritt) | port | ENTWEDER `p_kPa` (statischer Überdruck gauge; Auslauf ins Freie: 0; optional `d_inner_mm`) ODER `q_m3h` (Entnahme-V̇); Austrittstemperatur ist Ergebnis |
 | `ideal_storage` | in, out | `t_set_C` (Vorlauf fest; Rücklauf und Leistung sind Ergebnis); optional `q_m3h` (eingeprägter Volumenstrom, Δp ist Ergebnis) und/oder `p_out_kPa` (Überdruck am Austritt = Druckanker); `dp_nom_kPa` + `q_nom_m3h` |
 | `conduit` (Verbindungsleitung) | in, out | universelle Leitung (im Editor als Linie): ohne Angabe ideal; `c_Pa_m3h2` ODER `dp_kPa`+`q_m3h` ODER Rohrmodell — ein Abschnitt via `length_m` (+ `d_inner_mm`, …) ODER beliebig viele Abschnitte in Reihe via `pipes: [{length_m, d_inner_mm, roughness_mm, zeta}, …]` (im Editor: Abschnittsliste mit +/−); Wärmeverlust `u_linear_W_mK`/`t_amb_C` über die Gesamtlänge |
 | `link` | in, out | `q_nom_m3h`. Widerstandsfreie Verbindung (Δp ≈ 1 Pa), die zwei Knoten **thermisch trennt** — für Anschlüsse entlang eines Sammlers, damit Zapfstellen nicht stromab eingemischtes Wasser „sehen" |
 | `hydraulic_separator` | prim_in, prim_out, sec_in, sec_out | `q_nom_m3h`, `dp_nom_Pa`, `ua_W_K` |
 | `manifold` | main, s1…sN | `n_ports` |
 | `tee` | a, b, c | T-Stück 90° (a–b gerader Strang, c Abzweig): Default idealer Knoten; mit `d_run_mm` + `d_branch_mm` Druckverlust nach Idelchik (Diagramme 7-10/7-21, ζ = f(V̇-Verhältnis, Flächenverhältnis), Vereinigung UND Trennung automatisch aus der Strömungsrichtung, stetig über die Regimewechsel; im Netz Totaldruckverlust wie bei allen Bauteilen, statische Anschlussdrücke als Ergebnis `p_static_port_kPa`; zwei Schenkel am selben Knoten werden abgelehnt; mehrdeutige Lösungen werden gemeldet) |
-| `open_end` | port | `bc: pressure\|flow`, `p_kPa` bzw. `q_m3h`, `t_supply_C` |
+| `open_end` | port | `bc: pressure\|flow`, `p_kPa` (statisch, optional `d_inner_mm`) bzw. `q_m3h`, `t_supply_C` |
 | `cap` | port | dichtes Endstück (Blindstopfen): V̇ = 0 — zum Verschließen von Anschlüssen bei Teilbereichstests; keine Parameter |
 
 Alle wärmeübertragenden Komponenten akzeptieren `q_prescribed_kW`
@@ -355,6 +355,26 @@ kleinsten Kv auf Kvs/R.
   Verdampfung/Kondensation ist nur das Druckniveau relativ zur Atmosphäre
   relevant; Randbedingungen und Ergebnisse sind einheitlich als Überdruck zu
   lesen (Auslauf ins Freie: `p_kPa: 0`).
+- **Druckbegriff – statisch vs. total.** Alle Bauteile rechnen ihren
+  Druckabfall als Totaldruckverlust; die **Knotendrücke** im Ergebnis sind
+  daher **Totaldrücke**. Was man misst bzw. vorgibt, ist dagegen der
+  **statische** Überdruck: p_statisch = p_Knoten − ρw²/2.
+  - **Druckrandbedingungen** (`inflow`/`outflow`/`open_end` mit `p_kPa`)
+    sind der statische Überdruck am Anschluss. Sitzt der Rand am Ende genau
+    einer Leitung mit bekanntem Querschnitt (Rohr, Verbindungsleitung im
+    Rohrmodell, Idelchik-T-Stück) oder ist `d_inner_mm` angegeben, liegt der
+    Netzknoten um ρw²/2 darüber (Übergangskante `<name>:dyn` im Ergebnis).
+    An einem Knotenpunkt mehrerer Bauteile ist die Geschwindigkeit am Rand
+    nicht definiert; dort gilt der Wert als Knotendruck (mit Hinweis), ebenso
+    ohne bekannten Querschnitt (Behälter, ideale Verbindung).
+  - **Drucksensoren** zeigen den statischen Überdruck an der Messstelle,
+    `p_dyn_kPa` ist der abgezogene dynamische Anteil. w stammt aus dem
+    Querschnitt des Anschlusses, an dem die Messleitung hängt, oder aus
+    `d_inner_mm`. **Differenzdrucksensoren** zeigen die statische Differenz;
+    bei gleicher Nennweite beidseits ist sie gleich der Totaldruckdifferenz.
+  - Der Druckanker `p_out` eines Speichers ist der Behälterdruck; im Behälter
+    ruht das Wasser, statisch = total.
+  - Größenordnung von ρw²/2 bei Wasser: 0,5 kPa bei 1 m/s, 2 kPa bei 2 m/s.
 - **Geschlossene Kreise** ohne Druckvorgabe erhalten automatisch einen
   Referenzdruck (150 kPa(ü) ≈ typischer Anlagenfülldruck, einstellbar über
   `p_ref`) – nur Druckdifferenzen sind dann physikalisch relevant; ein

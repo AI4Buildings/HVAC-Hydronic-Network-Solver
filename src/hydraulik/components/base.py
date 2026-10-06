@@ -46,6 +46,9 @@ class NetworkBuilder(Protocol):
     def node_heat_loss(self, el: str, ua: float, t_amb: float) -> None: ...
     def pressure_bc(self, el: str, p: float, t_supply: float) -> None: ...
     def flow_bc(self, el: str, q: float, t_supply: float) -> None: ...
+    def partners(self, port_name: str) -> list[tuple["Component", str]]: ...
+    def same_node_ports(self, port_name: str) -> list[tuple["Component", str]]: ...
+    def notice(self, text: str) -> None: ...
 
 
 def parse_label(field: str, raw, errors: list[str]) -> str | None:
@@ -144,6 +147,17 @@ class Component(ABC):
 
     def q_seed(self) -> float | None:
         """Nennvolumenstrom als Startwert für den Solver (falls bekannt)."""
+        return None
+
+    #: reine Messanschlüsse (Fühler ohne eigene Kante): führen keinen Durchfluss
+    #: und zählen bei der Bestimmung des Anschlussquerschnitts nicht mit
+    measurement_tap: bool = False
+
+    def port_flow_area(self, port: str) -> float | None:
+        """Strömungsquerschnitt [m²] am Anschluss, falls das Bauteil ihn kennt
+        (Rohr, Verbindungsleitung im Rohrmodell, Idelchik-T-Stück) — daraus
+        bestimmen Drucksensoren und Druckrandbedingungen den dynamischen
+        Anteil ρw²/2 (Knotendrücke sind Totaldrücke). None = unbekannt."""
         return None
 
     def edge_result_extras(self, label: str, q: float, p_from: float, p_to: float,

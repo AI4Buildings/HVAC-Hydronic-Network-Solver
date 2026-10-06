@@ -139,7 +139,8 @@ class SolutionResult:
             h2 = f"{'Sensor':<20}{'Typ':<24}{'Messwerte':<38}{'BEMS (Key / ID)'}"
             lines.append(h2)
             lines.append("-" * 100)
-            unit = {"t_C": "°C", "p_kPa": "kPa (ü)", "dp_kPa": "kPa", "q_m3h": "m³/h",
+            unit = {"t_C": "°C", "p_kPa": "kPa (ü, statisch)", "p_dyn_kPa": "kPa (dyn.)",
+                    "dp_kPa": "kPa (statisch)", "q_m3h": "m³/h",
                     "m_dot_kg_s": "kg/s", "t_leitung_C": "°C", "t_ref_C": "°C",
                     "q_dot_kW": "kW"}
             for s in self.sensors:

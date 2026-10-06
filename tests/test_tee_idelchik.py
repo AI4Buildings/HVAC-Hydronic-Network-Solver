@@ -64,11 +64,17 @@ def test_trennung_handrechnung():
     exp_ac = (idelchik.zeta_side(x, r_a, False) * rho * w_c ** 2 / 2
               + rho * (w_s ** 2 - w_c ** 2) / 2)
     by = {s.name: s.readings["dp_kPa"] * 1e3 for s in r.sensors}
-    # Netz rechnet mit Totaldruck: die Sensoren messen den Idelchik-Verlust
-    # direkt (kombinierte Kante trägt nur die quasi-ideale Restkante ~0.05 Pa)
-    assert by["pd_ab"] == pytest.approx(zeta_st * rho * w_c ** 2 / 2, abs=0.2)
-    assert by["pd_ac"] == pytest.approx(idelchik.zeta_side(x, r_a, False) * rho * w_c ** 2 / 2,
-                                        abs=0.2)
+    # Differenzdrucksensoren messen STATISCH (Geschwindigkeit aus den T-Stück-
+    # Schenkeln) = Bernoulli-Handrechnung (kombinierte Kante trägt nur die
+    # quasi-ideale Restkante ~0.05 Pa)
+    assert by["pd_ab"] == pytest.approx(exp_ab, abs=0.2)
+    assert by["pd_ac"] == pytest.approx(exp_ac, abs=0.2)
+    # im Netz Totaldruck: Knotendruckdifferenz = Idelchik-Verlust
+    tot = {k: r[f"t1:{k}"].extras["p_static_port_kPa"] * 1e3
+           + rho * r[f"t1:{k}"].extras["v_m_s"] ** 2 / 2 for k in "abc"}
+    assert tot["a"] - tot["b"] == pytest.approx(zeta_st * rho * w_c ** 2 / 2, abs=0.2)
+    assert tot["a"] - tot["c"] == pytest.approx(
+        idelchik.zeta_side(x, r_a, False) * rho * w_c ** 2 / 2, abs=0.2)
     # statische Anschlussdrücke (Ergebnis) treffen die Bernoulli-Handrechnung
     ps = {k: r[f"t1:{k}"].extras["p_static_port_kPa"] * 1e3 for k in "abc"}
     assert ps["a"] - ps["b"] == pytest.approx(exp_ab, abs=0.2)
@@ -114,11 +120,16 @@ def test_vereinigung_handrechnung_mit_druckgewinn():
     exp_ab = (idelchik.zeta_straight(x, True) * rho * w_c ** 2 / 2
               + rho * (w_c ** 2 - w_st ** 2) / 2)
     by = {s.name: s.readings["dp_kPa"] * 1e3 for s in r.sensors}
-    # Totaldruck im Netz: Sensoren messen ζ·ρw_c²/2 — beim Seitenstrang negativ
-    assert by["pd_cb"] == pytest.approx(zeta_s * rho * w_c ** 2 / 2, abs=0.2)
-    assert by["pd_cb"] < 0.0
-    assert by["pd_ab"] == pytest.approx(idelchik.zeta_straight(x, True) * rho * w_c ** 2 / 2,
-                                        abs=0.2)
+    # Sensoren messen statisch = Bernoulli-Handrechnung
+    assert by["pd_cb"] == pytest.approx(exp_cb, abs=0.2)
+    assert by["pd_ab"] == pytest.approx(exp_ab, abs=0.2)
+    # im Netz Totaldruck: Knotendruckdifferenz = ζ·ρw_c²/2 (Seitenstrang negativ)
+    tot = {k: r[f"t1:{k}"].extras["p_static_port_kPa"] * 1e3
+           + rho * r[f"t1:{k}"].extras["v_m_s"] ** 2 / 2 for k in "abc"}
+    assert tot["c"] - tot["b"] == pytest.approx(zeta_s * rho * w_c ** 2 / 2, abs=0.2)
+    assert tot["c"] - tot["b"] < 0.0
+    assert tot["a"] - tot["b"] == pytest.approx(
+        idelchik.zeta_straight(x, True) * rho * w_c ** 2 / 2, abs=0.2)
     # statische Anschlussdrücke treffen die Bernoulli-Handrechnung
     ps = {k: r[f"t1:{k}"].extras["p_static_port_kPa"] * 1e3 for k in "abc"}
     assert ps["c"] - ps["b"] == pytest.approx(exp_cb, abs=0.2)

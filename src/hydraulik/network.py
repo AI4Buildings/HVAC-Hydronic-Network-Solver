@@ -100,9 +100,15 @@ class _RawEdge:
 class _Builder:
     """NetworkBuilder-Implementierung für genau eine Komponente."""
 
-    def __init__(self, comp: Component, uf: _UnionFind):
+    def __init__(self, comp: Component, uf: _UnionFind,
+                 partner_map: dict[str, list[tuple[Component, str]]] | None = None,
+                 notices: list[str] | None = None,
+                 node_ports: dict[str, list[tuple[Component, str]]] | None = None):
         self.comp = comp
         self.uf = uf
+        self._partner_map = partner_map or {}
+        self._node_ports = node_ports or {}
+        self._notices = notices if notices is not None else []
         self.raw_edges: list[_RawEdge] = []
         self.heat_losses: list[tuple[str, float, float]] = []
         self.pressure_bcs: list[tuple[str, float, float]] = []
@@ -134,6 +140,22 @@ class _Builder:
 
     def flow_bc(self, el: str, q: float, t_supply: float) -> None:
         self.flow_bcs.append((el, q, t_supply))
+
+    def partners(self, port_name: str) -> list[tuple[Component, str]]:
+        """Direkt verbundene Anschlüsse anderer Komponenten (aus den
+        Verbindungseinträgen, in Eingabereihenfolge) — z.B. die Leitung, an
+        der eine Messleitung oder Randbedingung hängt."""
+        return list(self._partner_map.get(self.port(port_name), []))
+
+    def notice(self, text: str) -> None:
+        self._notices.append(text)
+
+    def same_node_ports(self, port_name: str) -> list[tuple[Component, str]]:
+        """Alle ANDEREN Komponenten-Anschlüsse, die mit diesem Port zu einem
+        Knoten verschmolzen sind (über alle Verbindungseinträge)."""
+        el = self.port(port_name)
+        own = (self.comp, port_name)
+        return [x for x in self._node_ports.get(self.uf.find(el), []) if x != own]
 
 
 class Network:
@@ -185,13 +207,32 @@ class Network:
             for other in valid_refs[1:]:
                 uf.union(valid_refs[0], other)
 
+        # direkte Verbindungspartner je Port (Drucksensoren/-randbedingungen:
+        # Querschnitt der angeschlossenen Leitung für den dynamischen Anteil)
+        partner_map: dict[str, list[tuple[Component, str]]] = {}
+        for conn in self.connections:
+            refs = [r for r in conn if r in all_ports]
+            for r in refs:
+                lst = partner_map.setdefault(r, [])
+                for o in refs:
+                    if o != r:
+                        cname, pname = o.split(".", 1)
+                        entry = (self.components[cname], pname)
+                        if entry not in lst:
+                            lst.append(entry)
+
+        node_ports: dict[str, list[tuple[Component, str]]] = {}
+        for c in self.components.values():
+            for pn in c.port_names():
+                node_ports.setdefault(uf.find(f"{c.name}.{pn}"), []).append((c, pn))
+
         # 2. Komponenten bauen (interne Knoten/Kanten, Randbedingungen)
         raw_edges: list[_RawEdge] = []
         heat_losses: list[tuple[str, float, float]] = []
         pressure_bcs: list[tuple[str, float, float]] = []
         flow_bcs: list[tuple[str, float, float]] = []
         for comp in self.components.values():
-            b = _Builder(comp, uf)
+            b = _Builder(comp, uf, partner_map, notices, node_ports)
             comp.build(b)
             raw_edges += b.raw_edges
             heat_losses += b.heat_losses

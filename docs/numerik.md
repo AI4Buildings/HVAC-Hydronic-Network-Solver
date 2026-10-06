@@ -91,6 +91,30 @@ Kurzschluss-Zirkulation √(dp/b_int)).
 Konstantstrom-Kanten: `Q = fix`, Koeffizient d = 1/J = 0 im Laplacian
 (keine Druckkopplung), Δp ist Ergebnis.
 
+### Druckbegriff: Knoten = Totaldruck, Ränder und Sensoren = statisch
+
+Alle Bauteile rechnen ihren Druckabfall als Totaldruckverlust (Reibung, ζ,
+Kv); Knoten kennen keine Geschwindigkeit. Die Knotendrücke sind daher
+Totaldrücke (gauge). Druckrandbedingungen (`inflow`/`outflow`/`open_end`)
+geben den STATISCHEN Überdruck am Anschluss vor. Sitzt der Rand am Ende
+GENAU EINER Leitung mit Querschnitt A (der Knoten enthält nur Rand und Leitung,
+Messanschlüsse zählen nicht; Hook `port_flow_area`) oder ist `d_inner`
+angegeben, hängt der gepinnte Randknoten über eine Übergangskante
+`<name>:dyn` am Netzknoten,
+Kennlinie p_Knoten − p_statisch = ρQ²/(2A²) in BEIDE Richtungen (gerade
+Funktion; Tangentenform a = 2k|Q|, dp_source = a·Q − S, bei Zulauf negative
+Steigung, durch den Widerstand der Leitung überwogen). An Knotenpunkten
+mehrerer Bauteile (Randstrom ≠ Leitungsstrom, Geschwindigkeit undefiniert)
+und ohne Querschnitt wird der Knotendruck direkt vorgegeben — so bleiben
+auch widersprüchliche Ränder am selben Knoten ein Validierungsfehler (ein
+erster Entwurf mit Partnerquerschnitt an Knotenpunkten erzeugte 125
+Nichtkonvergenzen in der Kampagne und verdeckte diese Widersprüche).
+Drucksensoren zeigen p_Knoten − ρw²/2 mit w aus dem Anschluss, an dem die
+Messleitung hängt (`p_dyn_kPa`), Differenzdrucksensoren die statische
+Differenz. Gleiche Nennweite an beiden Rändern: die dynamischen Anteile
+heben sich auf, der Volumenstrom ist identisch mit der reinen Totaldruck-
+rechnung (tests/test_statischer_druck.py).
+
 ### T-Stück mit Idelchik-Druckverlust (components/idelchik.py, separators.Tee)
 
 ζ hängt vom Volumenstromverhältnis der GESCHWISTERKANTEN ab → generischer
@@ -270,7 +294,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 840 Tests)
+## 3. Testabdeckung (tests/, 847 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/

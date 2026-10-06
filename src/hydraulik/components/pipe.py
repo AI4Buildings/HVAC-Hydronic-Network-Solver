@@ -28,6 +28,9 @@ class Pipe(TwoPortComponent):
         Param("t_amb", "temperature", default=20.0, help="Umgebungstemperatur für Wärmeverlust"),
     )
 
+    def port_flow_area(self, port: str) -> float | None:
+        return math.pi * self.d_inner ** 2 / 4.0
+
     def hydraulic_coefficients(self, q: float, fluid: Fluid) -> EdgeCoefficients:
         a, b = friction.pipe_coefficients(q, self.length, self.d_inner,
                                           self.roughness, self.zeta, fluid.rho, fluid.mu)

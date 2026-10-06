@@ -114,6 +114,17 @@ class Conduit(TwoPortComponent):
     def q_seed(self) -> float | None:
         return self.q
 
+    def port_flow_area(self, port: str) -> float | None:
+        """Nur im Rohrmodell bekannt: erster Abschnitt am Eintritt, letzter am
+        Austritt (ideal/C-Wert/Auslegungspunkt: kein Querschnitt)."""
+        import math
+        if self.pipes:
+            seg = self.pipes[0] if port == "in" else self.pipes[-1]
+            return math.pi * seg["d_inner"] ** 2 / 4.0
+        if self.length is not None:
+            return math.pi * self.d_inner ** 2 / 4.0
+        return None
+
     def hydraulic_coefficients(self, q: float, fluid: Fluid) -> EdgeCoefficients:
         if self.pipes:
             a_sum = b_sum = 0.0

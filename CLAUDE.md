@@ -22,7 +22,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (840 Tests; Paritätstests brauchen node)
+pytest                                   # Testsuite (847 Tests; Paritätstests brauchen node)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]   # auch .json
 hydraulik export --json schaltung.yaml [--out schaltung.json]   # geprüft, kanonisches JSON
@@ -162,7 +162,7 @@ docs/                architektur.md, numerik.md, erweitern.md, roadmap.md,
                      solver_pruefung_2026-10.md (Prüfbericht, offene Punkte)
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               840 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+tests/               847 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
                      test_yamlio.py / test_yaml12_kompat.py: Loader + YAML-1.1-
                      Altlasten; test_editor_paritaet.py: JS ↔ Python (node,
                      Korpus tests/data/, Zufallsskalare/-dokumente, Round-Trip);
@@ -185,6 +185,16 @@ tests/               840 Tests: analytische Referenzen + Validierung gegen Muste
 - **Kantenvorzeichen**: positive Flussrichtung ist von Port `in` nach `out`;
   Q < 0 (Rückströmung) ist überall zulässig (Upwind folgt dem Vorzeichen).
 - **Q̇-Vorzeichen**: positiv = Wärme INS Wasser (Heizkörper liefert q_dot < 0).
+- **Druckbegriff**: Knotendrücke = Totaldrücke (gauge); alle Bauteile
+  rechnen Totaldruckverluste. Druckrandbedingungen und Drucksensoren =
+  STATISCHER Überdruck am Anschluss, p_stat = p_Knoten − ρw²/2. Den
+  Querschnitt liefert der Hook `port_flow_area` (Rohr, Rohrmodell-conduit,
+  Idelchik-T-Stück) bzw. `d_inner`: Sensoren nehmen den direkt verbundenen
+  Partner (Builder.partners), Druckränder nur das Ende GENAU EINER Leitung
+  (Builder.same_node_ports, Messanschlüsse ausgenommen) — an Knotenpunkten
+  ist die Randgeschwindigkeit undefiniert, Druck dort direkt vorgeben (sonst
+  Nichtkonvergenz und verdeckte Widerspruchsfehler). Neue Bauteile mit
+  definiertem Querschnitt: `port_flow_area` implementieren.
 - **Kv enthält die Dichte** (Δp = (V̇/kv)²·1e5·ρ/1000); C-Werte
   (`flow_resistance`) sind dichteunabhängig — bei Abgleich mit Handrechnungen
   auf deren Konvention achten (Kvs = √(1e5/C) ist nur bei ρ = 1000 exakt).

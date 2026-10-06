@@ -73,7 +73,11 @@ Parametervalidierung, Editor-Formular und Eintrag im JSON Schema
   `pre_coefficients(q_edges, fluid)`, erhält sie vor jeder Koeffizienten-
   auswertung die aktuellen Flüsse ihrer eigenen Kanten in Bau-Reihenfolge
   (Beispiel: T-Stück mit Idelchik-ζ aus dem Volumenstromverhältnis).
-- Weitere Hooks (alle optional): `check_topology(port_nodes)` → Fehlerliste
+- Weitere Hooks (alle optional): `port_flow_area(port)` → Strömungsquerschnitt
+  am Anschluss (für den statischen Druck an Sensoren und Druckrandbedingungen;
+  Knotendrücke sind Totaldrücke); `edge_result_extras(label, q, p_from, p_to,
+  fluid)` → Zusatzwerte je Kante; im Builder `b.partners(port)` (direkt
+  verbundene Anschlüsse) und `b.notice(text)`; `check_topology(port_nodes)` → Fehlerliste
   nach dem Port-Merge (z.B. kurzgeschlossene Schenkel); `result_notices(q,
   fluid)` → Plausibilitätshinweise nach dem Lösen; `nonmonotone_hydraulics()`
   → True, wenn die Kennlinie nicht monoton ist (mehrere stationäre Lösungen

@@ -975,7 +975,8 @@ document.getElementById("btn-solve").onclick = solveNow;
 /* ---------- Ergebnis-Tooltips --------------------------------------------- */
 const tip = document.getElementById("tip");
 function fmtSensor(s) {
-  const u = {t_C:["ϑ","°C"], p_kPa:["p","kPa (ü)"], dp_kPa:["Δp","kPa"],
+  const u = {t_C:["ϑ","°C"], p_kPa:["p","kPa (ü, statisch)"], p_dyn_kPa:["p_dyn","kPa"],
+             dp_kPa:["Δp","kPa (statisch)"],
              q_m3h:["V̇","m³/h"], m_dot_kg_s:["ṁ","kg/s"],
              t_leitung_C:["ϑ_Leitung","°C"], t_ref_C:["ϑ_Fühler","°C"], q_dot_kW:["Q̇","kW"]};
   let out = `${s.name}:  ` + Object.entries(s.readings).map(([k, v]) => {
@@ -1515,9 +1516,9 @@ const PARAM_MODES = {
   chiller: _PLANT_MODES,
   inflow: [{label: "Randbedingung", options: [
     {key: "q", de: "Volumenstrom", fields: ["q"]},
-    {key: "p", de: "Druck (Überdruck)", fields: ["p"]}]}],
+    {key: "p", de: "statischer Druck (Überdruck)", fields: ["p", "d_inner"]}]}],
   outflow: [{label: "Randbedingung", options: [
-    {key: "p", de: "Druck (Überdruck)", fields: ["p"]},
+    {key: "p", de: "statischer Druck (Überdruck)", fields: ["p", "d_inner"]},
     {key: "q", de: "Entnahme-Volumenstrom", fields: ["q"]}]}],
   ball_valve: [{label: "Durchflusswiderstand", options: [
     {key: "ideal", de: "druckverlustfrei", fields: ["q_nom"], default: true},

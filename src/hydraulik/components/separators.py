@@ -181,6 +181,11 @@ class Tee(Component):
                         f"d_branch_mm weglassen (idealer Knoten).")
         return errors
 
+    def port_flow_area(self, port: str) -> float | None:
+        if self.d_run is None or port not in ("a", "b", "c"):
+            return None
+        return self._areas()["abc".index(port)]
+
     def edge_result_extras(self, label: str, q: float, p_from: float, p_to: float,
                            fluid: Fluid) -> dict | None:
         """Ergebnis je Schenkel (Kante Anschluss → Knoten): Geschwindigkeit und
