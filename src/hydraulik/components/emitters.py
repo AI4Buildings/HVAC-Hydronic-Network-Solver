@@ -92,7 +92,11 @@ class Radiator(TwoPortComponent):
         if self.q_prescribed is not None:
             q_emit = self.q_prescribed
             return ThermalResult(t_in - q_emit / c, -q_emit, extras={"q_emitted_W": q_emit})
-        if t_in <= self.t_room + 0.01 or c <= 0.0:
+        # aus erst bei T_ein ≤ t_room: eine Schwelle darüber (früher +0.01 K)
+        # machte T_aus(T_ein) unstetig — knapp oberhalb kühlt das Wasser bei
+        # kleinem Massenstrom fast auf Raumtemperatur ab (Sprung bis zur
+        # Schwellenbreite, Thermik-Newton fand dann keinen Abstieg)
+        if t_in <= self.t_room or c <= 0.0:
             return ThermalResult(t_in, 0.0, extras={"q_emitted_W": 0.0})
 
         dtlm_nom = self._dtlm_nom()
@@ -108,14 +112,14 @@ class Radiator(TwoPortComponent):
         # numerischen Auflösung — das Wasser kühlt vollständig auf Raum-
         # temperatur ab und gibt seinen gesamten Enthalpiestrom ab. Ohne diese
         # Abfrage bräche brentq mit ValueError ab (kein Vorzeichenwechsel).
-        t_lo = self.t_room + 1e-6
+        t_lo = self.t_room + 1e-6 * min(1.0, t_in - self.t_room)   # relativ: Klammer bleibt gültig
         if balance(t_lo) <= 0.0:
             q_emit = c * (t_in - self.t_room)
             dtlm = dtlm_nom * (q_emit / self.q_nom) ** (1.0 / self.n)
             return ThermalResult(self.t_room, -q_emit,
                                  extras={"q_emitted_W": q_emit, "dt_lm_K": dtlm})
         # balance(t_lo) > 0, balance(t_in) < 0 → Vorzeichenwechsel garantiert
-        t_out = float(brentq(balance, t_lo, t_in, xtol=1e-8))
+        t_out = float(brentq(balance, t_lo, t_in, xtol=1e-8 * min(1.0, t_in - self.t_room)))
         q_emit = c * (t_in - t_out)
         return ThermalResult(t_out, -q_emit,
                              extras={"q_emitted_W": q_emit, "dt_lm_K": lmtd(t_in, t_out, self.t_room)})

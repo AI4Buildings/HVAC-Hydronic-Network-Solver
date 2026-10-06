@@ -493,3 +493,22 @@ def test_drift_erkannt_trotz_grossem_umlauf(q_umlauf_m3h):
     net.connect("pu.out", "by.in", "reg.in"); net.connect("by.out", "reg.out", "pu.in")
     with pytest.raises(ConvergenceError, match="keine stationäre Lösung"):
         net.solve()
+
+
+# --- Heizkörper: stetig an der Raumtemperatur (Kampagne Seed 1727) -------------
+
+@pytest.mark.parametrize("m_dot", [1e-4, 1.09e-2, 0.1])
+def test_heizkoerper_stetig_an_der_raumtemperatur(m_dot):
+    """Vorher galt der Heizkörper bis t_room + 0.01 K als 'aus' (T_aus = T_ein)
+    und kühlte knapp darüber fast auf Raumtemperatur ab: Sprung bis 0.01 K →
+    Thermik-Newton 'festgefahren'. T_aus muss stetig in T_ein sein und nie
+    unter t_room fallen."""
+    hk = h.Radiator("hk", q_nom_kW=2.0, t_sup_nom_C=55, t_ret_nom_C=45, t_room_C=20.0)
+    f = lambda t: hk.thermal_outlet(t, m_dot, W50).t_out
+    ts = [20.0 + d for d in (-1e-3, 0.0, 1e-9, 1e-7, 1e-5, 1e-3, 5e-3, 0.0099, 0.01, 0.0101, 0.02, 0.1, 1.0)]
+    outs = [f(t) for t in ts]
+    for t, o in zip(ts, outs):
+        assert min(t, 20.0) - 1e-12 <= o <= t + 1e-12          # 2. Hauptsatz, keine Erwärmung
+    for (t1, o1), (t2, o2) in zip(zip(ts, outs), zip(ts[1:], outs[1:])):
+        assert abs(o2 - o1) <= abs(t2 - t1) + 1e-8             # Lipschitz 1: kein Sprung
+
