@@ -221,6 +221,15 @@ class Network:
             for m in members:
                 el_to_node[m] = idx
 
+        # 4b. Einbindung je Komponente prüfen (z.B. kurzgeschlossene Schenkel)
+        for comp in self.components.values():
+            port_nodes = {}
+            for pn in comp.port_names():
+                el = f"{comp.name}.{pn}"
+                if el in el_to_node:
+                    port_nodes[pn] = (el_to_node[el], nodes[el_to_node[el]].label)
+            errors += comp.check_topology(port_nodes) or []
+
         # 5. Randbedingungen den Knoten zuordnen
         for el, ua, t_amb in heat_losses:
             n = nodes[el_to_node[el]]

@@ -146,6 +146,12 @@ class Component(ABC):
         """Nennvolumenstrom als Startwert für den Solver (falls bekannt)."""
         return None
 
+    def check_topology(self, port_nodes: dict[str, tuple[int, str]]) -> list[str] | None:
+        """Prüfung der Einbindung nach dem Port-Merge: port_nodes bildet jeden
+        eigenen Port auf (Knotenindex, Knotenbezeichnung) ab. Liste von
+        Fehlermeldungen oder None (Default: keine Anforderung)."""
+        return None
+
     @abstractmethod
     def build(self, b: NetworkBuilder) -> None:
         """Interne Knoten, Kanten und Randbedingungen registrieren."""

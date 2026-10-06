@@ -56,8 +56,11 @@ def test_trennung_handrechnung():
     w_st = (q_in - q_branch) / 3600.0 / f_run
     w_s = q_branch / 3600.0 / f_branch
     # statische Differenz (Trennung, c→Ast): p_a − p_leg = ζ·ρw_c²/2 + ρ(w_leg² − w_c²)/2
-    exp_ab = (idelchik.zeta_straight(x, False) * rho * w_c ** 2 / 2
-              + rho * (w_st ** 2 - w_c ** 2) / 2)
+    # gerader Pfad der Trennung: Tabellenabszisse Q_st/Q_c (Diagramm 7-21,
+    # idelchik_t_stueck_verteilung_llm.md Tab. 5) — hier 0.6 → ζ_c.st = 0.51
+    zeta_st = idelchik.zeta_straight(1.0 - x, False)
+    assert zeta_st == pytest.approx(0.51)
+    exp_ab = zeta_st * rho * w_c ** 2 / 2 + rho * (w_st ** 2 - w_c ** 2) / 2
     exp_ac = (idelchik.zeta_side(x, r_a, False) * rho * w_c ** 2 / 2
               + rho * (w_s ** 2 - w_c ** 2) / 2)
     by = {s.name: s.readings["dp_kPa"] * 1e3 for s in r.sensors}
@@ -134,3 +137,95 @@ def test_tee_validierung():
         h.load({"components": {"t1": {"type": "tee", "d_run_mm": 25.0, "d_branch_mm": 32.0}},
                 "connections": [["t1.a", "t1.b"], ["t1.c", "t1.a"]]})
     assert "d_branch" in str(exc.value)
+
+
+# --- Regimewechsel: stetige Kennlinie, Tabellen nur im Buchbereich (Solver-Prüfung B7)
+
+def _tee(d_run=0.040, d_branch=0.025):
+    return h.Tee("t", d_run_m=d_run, d_branch_m=d_branch)
+
+
+def _S(tee, q, rho=988.0):
+    return tee._pressures(list(q), rho)[0]
+
+
+@pytest.mark.parametrize("k", [0, 1, 2])
+@pytest.mark.parametrize("d_branch", [0.012, 0.025, 0.040])
+def test_kennlinie_stetig_beim_vorzeichenwechsel_eines_schenkels(k, d_branch):
+    """Jeder Regimewechsel liegt bei Schenkelstrom 0. Die statischen Port-
+    drücke dürfen dort nicht springen (vorher: Sprung um bis zu ~ρw², keine
+    Lösung zwischen den Sprungwerten → Stillstand bei V̇ = 0 oder NaN)."""
+    tee = _tee(d_branch=d_branch)
+    T = 2.0 / 3600.0
+    i, j = [m for m in range(3) if m != k]
+    def state(qk):
+        q = [0.0] * 3
+        q[k], q[i], q[j] = qk, T - qk / 2, -T - qk / 2
+        return q
+    scale = 988.0 * (T / (math.pi * 0.012 ** 2 / 4)) ** 2      # größter Staudruck
+    for eps in (1e-9, 1e-12):
+        sp, sm = _S(tee, state(eps * T)), _S(tee, state(-eps * T))
+        assert max(abs(a - b) for a, b in zip(sp, sm)) <= 1e-6 * scale
+    # stetig auch an der Überblendgrenze x = 0.1
+    d = 0.1 * T / (1 - 0.05)
+    for sgn in (1, -1):
+        inner = _S(tee, state(sgn * d * (1 - 1e-9)))
+        outer = _S(tee, state(sgn * d * (1 + 1e-9)))
+        assert max(abs(a - b) for a, b in zip(inner, outer)) <= 1e-6 * scale
+
+
+def test_tabellen_nur_im_buchbereich(monkeypatch):
+    """Das T-Stück wertet die Idelchik-Tabellen nur für x ∈ [0.1, 1] aus —
+    keine Klemmung, keine Extrapolation."""
+    seen = []
+    zs, zt = idelchik.zeta_side, idelchik.zeta_straight
+    monkeypatch.setattr(idelchik, "zeta_side", lambda x, r, c: (seen.append(x), zs(x, r, c))[1])
+    monkeypatch.setattr(idelchik, "zeta_straight", lambda x, c: (seen.append(x), zt(x, c))[1])
+    tee = _tee()
+    T = 1.0 / 3600.0
+    for k in range(3):
+        i, j = [m for m in range(3) if m != k]
+        for f in [-1.5, -1.0, -0.5, -0.2, -0.1, -0.05, -1e-6, 0.0, 1e-6, 0.05, 0.1, 0.2, 0.5, 1.0, 1.5]:
+            q = [0.0] * 3
+            q[k], q[i], q[j] = f * T, T - f * T / 2, -T - f * T / 2
+            _S(tee, q)
+    assert seen and min(seen) >= 0.1 - 1e-12 and max(seen) <= 1.0 + 1e-12
+
+
+def test_druckabtastung_ueber_den_regimewechsel():
+    """Verteilung → Vereinigung am Abzweig: Druck am Abzweigende wird über den
+    statischen Druck des Hauptstrangs geführt; V̇_c wechselt das Vorzeichen.
+    Jeder Punkt muss konvergieren und V̇_c fällt monoton mit p_c (vorher: keine
+    Lösung im Sprungintervall der Kennlinie)."""
+    rho = h.water_at(50.0).rho
+    w = 2.0 / 3600.0 / (math.pi * 0.032 ** 2 / 4)
+    dyn = rho * w * w / 2.0
+    q_c = []
+    for f in [-2.0, -1.0, -0.5, -0.2, -0.05, 0.0, 0.05, 0.2, 0.5, 1.0, 2.0]:
+        doc = {"components": {
+                   "zu": {"type": "inflow", "t_set_C": 50.0, "q_m3h": 2.0},
+                   "t1": {"type": "tee", "d_run_mm": 32.0, "d_branch_mm": 25.0},
+                   "ab_b": {"type": "outflow", "p_kPa": 150.0},
+                   "ab_c": {"type": "outflow", "p_kPa": 150.0 + f * dyn / 1e3}},
+               "connections": [["zu.port", "t1.a"], ["t1.b", "ab_b.port"],
+                               ["t1.c", "ab_c.port"]]}
+        r = h.load(doc).solve(thermal=False)
+        assert r.converged
+        q_c.append(-r["t1:c"].q_m3h)                    # Abfluss über c positiv
+    flows = q_c
+    assert all(b <= a + 1e-9 for a, b in zip(flows, flows[1:]))
+    assert flows[0] > 0.0 > flows[-1]                  # Vorzeichenwechsel überstrichen
+
+
+def test_kurzgeschlossene_schenkel_werden_abgelehnt():
+    """Zwei Schenkel eines Idelchik-T-Stücks am selben Knoten: Validierungs-
+    fehler mit Abhilfe (ohne Durchmesser bleibt das ideale T-Stück erlaubt)."""
+    def doc(tee):
+        return {"components": {
+                    "zu": {"type": "inflow", "t_set_C": 50.0, "q_m3h": 2.0},
+                    "t1": {"type": "tee", **tee},
+                    "ab": {"type": "outflow", "p_kPa": 150.0}},
+                "connections": [["zu.port", "t1.a"], ["t1.b", "t1.c", "ab.port"]]}
+    with pytest.raises(h.NetworkValidationError, match="Schenkel 'b' und 'c' liegen am selben"):
+        h.load(doc({"d_run_mm": 32.0, "d_branch_mm": 25.0})).solve(thermal=False)
+    assert h.load(doc({})).solve(thermal=False).converged

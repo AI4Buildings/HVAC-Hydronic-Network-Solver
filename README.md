@@ -306,7 +306,7 @@ bereit:
 | `link` | in, out | `q_nom_m3h`. Widerstandsfreie Verbindung (Δp ≈ 1 Pa), die zwei Knoten **thermisch trennt** — für Anschlüsse entlang eines Sammlers, damit Zapfstellen nicht stromab eingemischtes Wasser „sehen" |
 | `hydraulic_separator` | prim_in, prim_out, sec_in, sec_out | `q_nom_m3h`, `dp_nom_Pa`, `ua_W_K` |
 | `manifold` | main, s1…sN | `n_ports` |
-| `tee` | a, b, c | T-Stück 90° (a–b gerader Strang, c Abzweig): Default idealer Knoten; mit `d_run_mm` + `d_branch_mm` Druckverlust nach Idelchik (Diagramme 7-10/7-21, ζ = f(V̇-Verhältnis, Flächenverhältnis), Vereinigung UND Trennung automatisch aus der Strömungsrichtung, inkl. Bernoulli-Umrechnung auf statische Drücke) |
+| `tee` | a, b, c | T-Stück 90° (a–b gerader Strang, c Abzweig): Default idealer Knoten; mit `d_run_mm` + `d_branch_mm` Druckverlust nach Idelchik (Diagramme 7-10/7-21, ζ = f(V̇-Verhältnis, Flächenverhältnis), Vereinigung UND Trennung automatisch aus der Strömungsrichtung, stetig über die Regimewechsel, inkl. Bernoulli-Umrechnung auf statische Drücke; zwei Schenkel am selben Knoten werden abgelehnt) |
 | `open_end` | port | `bc: pressure\|flow`, `p_kPa` bzw. `q_m3h`, `t_supply_C` |
 | `cap` | port | dichtes Endstück (Blindstopfen): V̇ = 0 — zum Verschließen von Anschlüssen bei Teilbereichstests; keine Parameter |
 

@@ -91,14 +91,29 @@ class Tee(Component):
     Vereinigung UND Trennung, ζ = f(Q_s/Q_c, F_s/F_c), Totaldruckbezug auf
     den kombinierten Strang) — die Regime-Erkennung (welcher Strang führt
     den Gesamtstrom; Sammlung oder Verteilung) folgt in jeder Iteration den
-    aktuellen Volumenströmen. Die statische Druckdifferenz je Pfad enthält
-    die Bernoulli-Umrechnung (p = p_t − ρw²/2 je Strang). Druck-GEWINNE
-    (negative ζ_c.s der Vereinigung, Injektorwirkung) werden explizit als
-    nachgeführte Druckquelle behandelt, damit die Druckkorrektur-Matrix
-    SPD bleibt. Der kombinierte Strang selbst ist verlustfrei — die beiden
-    Pfadbeiwerte liegen vollständig auf Abzweig- und Durchgangskante.
+    aktuellen Volumenströmen. Abszissen wie im Buch: Seitenpfad Q_s/Q_c,
+    gerader Pfad bei Trennung Q_st/Q_c, bei Vereinigung Q_s/Q_c. Die
+    statische Druckdifferenz je Pfad enthält die Bernoulli-Umrechnung
+    (p = p_t − ρw²/2 je Strang). Der kombinierte Strang selbst ist
+    verlustfrei — die Pfadbeiwerte liegen auf Abzweig- und Durchgangskante.
     Führt der ABZWEIG den Gesamtstrom (Hosenrohr-Konfiguration), werden
     beide geraden Äste näherungsweise als Seitenpfade behandelt.
+
+    Regimewechsel: Jeder Wechsel (Sammlung ↔ Trennung, kombinierter Strang
+    wechselt) liegt bei Schenkelstrom 0, also unterhalb der Tabellengrenze
+    x = 0.1 dieses Schenkels. Dort sind die Tabellenwerte beider Regime
+    verschieden — die Kennlinie spränge, und zwischen den Sprungwerten gäbe
+    es keine Lösung. Unterhalb von x = 0.1 wird daher linear im
+    vorzeichenbehafteten Schenkelstrom zwischen den beiden angrenzenden
+    Regimen (je an ihrer Tabellengrenze) interpoliert: die Kennlinie ist
+    stetig, und die Tabellen werden nur im Buchbereich [0.1, 1] ausgewertet.
+
+    Numerik: Jede Kante meldet ihre lokale Tangente (Linearterm a = dS/dQ,
+    Eigenstrom gestört, Ausgleich über den größten anderen Schenkel; mind.
+    ¼ der Sekante) und die nachgeführte Quelle a·Q − S — Newton bleibt auch
+    bei steilem ζ(x), Druckgewinnen (Injektorwirkung, negatives ζ) und
+    S(0) ≠ 0 im Überblendbereich konsistent, J > 0 hält die Druckkorrektur-
+    Matrix SPD.
     """
 
     d_run: float | None
@@ -113,6 +128,8 @@ class Tee(Component):
 
     #: quasi-ideale Restkante (1 Pa bei 10 m³/h, link-Konvention)
     _B_IDLE = 1.0 / (10.0 / 3600.0) ** 2
+    #: Tabellengrenze x = Q/Q_c; darunter Überblendung zwischen den Regimen
+    _X_BLEND = 0.1
 
     def check_params(self):
         if (self.d_run is None) != (self.d_branch is None):
@@ -125,6 +142,28 @@ class Tee(Component):
     def port_names(self) -> tuple[str, ...]:
         return ("a", "b", "c")
 
+    def check_topology(self, port_nodes):
+        """Mit Idelchik-Druckverlust dürfen keine zwei Schenkel am selben Knoten
+        liegen: der statische Druckrückgewinn (Bernoulli) wird am Knoten nicht
+        zurückgefordert — im Kurzschluss wirkt das T-Stück wie eine Pumpe, die
+        Lösung ist oft nicht eindeutig (Zufallsnetz-Kampagne: 20 von 68 Netzen)."""
+        if self.d_run is None:
+            return None
+        errors = []
+        names = [pn for pn in ("a", "b", "c") if pn in port_nodes]
+        for i, p1 in enumerate(names):
+            for p2 in names[i + 1:]:
+                if port_nodes[p1][0] == port_nodes[p2][0]:
+                    errors.append(
+                        f"T-Stück '{self.name}': Schenkel '{p1}' und '{p2}' liegen am selben "
+                        f"Knoten ('{port_nodes[p1][1]}') – das T-Stück ist kurzgeschlossen. Mit "
+                        f"Idelchik-Druckverlust (d_run/d_branch) ist die Lösung dann nicht "
+                        f"eindeutig: der statische Druckrückgewinn im T-Stück wirkt im "
+                        f"Kurzschluss wie eine Pumpe. Abhilfe: Verbindungen von "
+                        f"'{self.name}.{p1}' und '{self.name}.{p2}' prüfen oder d_run_mm/"
+                        f"d_branch_mm weglassen (idealer Knoten).")
+        return errors
+
     def pre_coefficients(self, q_edges: list[float], fluid: Fluid) -> None:
         """Solver-Hook: aktuelle Flüsse der eigenen Kanten (a, b, c → Knoten)."""
         self._q_legs = list(q_edges)
@@ -134,41 +173,92 @@ class Tee(Component):
             return self._leg_coefficients(k, q_own, fluid)
         return fn
 
-    def _leg_coefficients(self, k: int, q_own: float, fluid: Fluid) -> EdgeCoefficients:
+    def _areas(self) -> tuple[float, float, float]:
         import math as _m
+        f_run = _m.pi * self.d_run ** 2 / 4.0
+        return (f_run, f_run, _m.pi * self.d_branch ** 2 / 4.0)
 
+    def _regime_pressures(self, q: list[float], rho: float) -> list[float]:
+        """S_i = p_Port,i − p_Knoten nach Idelchik im Regime des Zustands q
+        (Knoten = statischer Druck des kombinierten Strangs, dort S = 0)."""
         from . import idelchik
-        q_legs = getattr(self, "_q_legs", None) or [0.0, 0.0, 0.0]
-        absq = [abs(v) for v in q_legs]
+        absq = [abs(v) for v in q]
         q_c = max(absq)
         comb = absq.index(q_c)
-        if q_c < 1e-9 or k == comb or absq[k] < 1e-12:
-            return EdgeCoefficients(b=self._B_IDLE)   # Ruhe / kombinierter Strang
-        f_run = _m.pi * self.d_run ** 2 / 4.0
-        f_branch = _m.pi * self.d_branch ** 2 / 4.0
-        areas = (f_run, f_run, f_branch)
-        converging = q_legs[comb] < 0.0               # Gesamtstrom verlässt den Knoten
-        if comb == 2:                                 # Abzweig führt den Gesamtstrom
-            x = absq[k] / q_c
-            zeta = idelchik.zeta_side(x, min(areas[k] / areas[2], 1.0), converging)
-        else:
-            x = absq[2] / q_c
-            r_a = f_branch / f_run
-            zeta = (idelchik.zeta_side(x, r_a, converging) if k == 2
-                    else idelchik.zeta_straight(x, converging))
+        areas = self._areas()
+        converging = q[comb] < 0.0                    # Gesamtstrom verlässt den Knoten
+        S = [0.0, 0.0, 0.0]
+        for k in range(3):
+            if k == comb:
+                continue
+            if comb == 2:                             # Abzweig führt den Gesamtstrom
+                zeta = idelchik.zeta_side(absq[k] / q_c, min(areas[k] / areas[2], 1.0),
+                                          converging)
+            else:
+                x = absq[2] / q_c
+                if k == 2:
+                    zeta = idelchik.zeta_side(x, areas[2] / areas[0], converging)
+                else:                                 # Abszisse Trennung: Q_st/Q_c
+                    zeta = idelchik.zeta_straight(x if converging else absq[k] / q_c,
+                                                  converging)
+            w_c = q_c / areas[comb]
+            w_k = absq[k] / areas[k]
+            w_in, w_out = (w_k, w_c) if converging else (w_c, w_k)
+            # statischer Abfall entlang der Strömung: Δp_t + ρ(w_aus² − w_ein²)/2
+            drop = zeta * rho * w_c * w_c / 2.0 + rho * (w_out * w_out - w_in * w_in) / 2.0
+            S[k] = drop if converging else -drop
+        return S
+
+    def _pressures(self, q: list[float], rho: float) -> tuple[list[float], dict | None]:
+        """S je Schenkel, stetig über die Regimewechsel; zweiter Wert: Daten
+        der Überblendung (kleinster Schenkel k, Grenzstrom d, Steigung) oder None."""
+        absq = [abs(v) for v in q]
+        k = absq.index(min(absq))
+        if absq[k] >= self._X_BLEND * max(absq):
+            return self._regime_pressures(q, rho), None
+        i, j = [m for m in range(3) if m != k]
+        if q[i] < 0.0:
+            i, j = j, i                               # i: Durchgang hinein, j: hinaus
+        through = (q[i] - q[j]) / 2.0
+        d = self._X_BLEND * through / (1.0 - self._X_BLEND / 2.0)   # x_k = 0.1 genau
+        q_in, q_out = [0.0] * 3, [0.0] * 3            # Schenkel k zu- bzw. abströmend
+        q_in[k], q_in[i], q_in[j] = d, through - d / 2.0, -through - d / 2.0
+        q_out[k], q_out[i], q_out[j] = -d, through + d / 2.0, -through + d / 2.0
+        s_in = self._regime_pressures(q_in, rho)
+        s_out = self._regime_pressures(q_out, rho)
+        w = (q[k] + d) / (2.0 * d)
+        S = [(1.0 - w) * lo + w * hi for lo, hi in zip(s_out, s_in)]
+        return S, {"k": k, "d": d, "slope": (s_in[k] - s_out[k]) / (2.0 * d)}
+
+    def _leg_coefficients(self, k: int, q_own: float, fluid: Fluid) -> EdgeCoefficients:
+        q = list(getattr(self, "_q_legs", None) or [0.0, 0.0, 0.0])
+        if q_own != q[k]:
+            # gestörter Eigenstrom (Differenzenquotient des Solvers): die
+            # Kontinuität gleicht der größte andere Schenkel aus
+            m = max((x for x in range(3) if x != k), key=lambda x: abs(q[x]))
+            q[m] -= q_own - q[k]
+            q[k] = q_own
+        if max(abs(v) for v in q) < 1e-9:
+            return EdgeCoefficients(b=self._B_IDLE)   # T-Stück in Ruhe
         rho = fluid.rho
-        w_c = q_c / areas[comb]
-        w_k = absq[k] / areas[k]
-        dp_total = zeta * rho * w_c * w_c / 2.0       # Totaldruckverlust des Pfads
-        w_in, w_out = (w_k, w_c) if converging else (w_c, w_k)
-        # statischer Abfall entlang der Strömung: p_in − p_out = Δp_t + ρ(w_out² − w_in²)/2
-        drop = dp_total + rho * (w_out * w_out - w_in * w_in) / 2.0
-        target = drop if converging else -drop        # S = p_Port − p_Knoten am Arbeitspunkt
-        if target * q_legs[k] > 0.0:                  # widerstandsartig → quadratischer Koeffizient
-            return EdgeCoefficients(b=target / (q_legs[k] * absq[k]))
-        # Druckgewinn entlang der Strömung: explizit nachgeführt (SPD bleibt)
-        return EdgeCoefficients(b=self._B_IDLE,
-                                dp_source=self._B_IDLE * q_legs[k] * absq[k] - target)
+        S, blend = self._pressures(q, rho)
+        qk = q[k]
+        if blend is not None and blend["k"] == k:
+            # kleiner Schenkel im Überblendbereich: S(0) ≠ 0 — Linearform mit
+            # der Steigung der Überblendung (q|q|-Formen hätten dort Steigung
+            # 0 bzw. ∞) plus Mindeststeifigkeit eines Staudrucks bei x = 0.1
+            b_ref = rho / (2.0 * min(self._areas()) ** 2)
+            a = abs(blend["slope"]) + 2.0 * b_ref * blend["d"]
+            return EdgeCoefficients(a=a, dp_source=a * qk - S[k])
+        # Tangente dS/dQ (Ausgleich über den größten anderen Schenkel)
+        h = 1e-6 * abs(qk)
+        q_h = list(q)
+        m = max((x for x in range(3) if x != k), key=lambda x: abs(q[x]))
+        q_h[k] += h
+        q_h[m] -= h
+        slope = (self._pressures(q_h, rho)[0][k] - S[k]) / h
+        a = max(slope, 0.25 * abs(S[k] / qk), 2.0 * self._B_IDLE * abs(qk))
+        return EdgeCoefficients(a=a, dp_source=a * qk - S[k])
 
     def build(self, b: NetworkBuilder) -> None:
         if self.d_run is None:

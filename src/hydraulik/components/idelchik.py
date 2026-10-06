@@ -11,8 +11,11 @@ Konventionen (siehe idelchik_t_stueck_*_llm.md des Nutzers):
 - Negative ζ_c.s bei der Vereinigung (kleines x) sind physikalisch
   (Injektorwirkung) und bleiben vorzeichenbehaftet erhalten.
 
-Tabellenwerte außerhalb des Gitters werden auf den Rand geklemmt
-(x ∈ [0.1, 1.0], r_A ∈ [0.09, 1.0]).
+Abszissen (wie im Buch): Seitenpfad x = Q_s/Q_c; gerader Pfad bei der
+Trennung Q_st/Q_c, bei der Vereinigung Q_s/Q_c. Tabellenwerte außerhalb des
+Gitters werden auf den Rand geklemmt (x ∈ [0.1, 1.0], r_A ∈ [0.09, 1.0]);
+das T-Stück wertet die Tabellen nur im Buchbereich aus (unterhalb x = 0.1
+überblendet es zwischen den Regimen, siehe Tee).
 """
 from __future__ import annotations
 
@@ -26,7 +29,7 @@ ZETA_CS_CONV = (
     (-0.69, 0.00, 1.11, 2.18, 3.76, 5.90, 8.38, 11.30, 14.60, 18.40),
     (-0.65, -0.09, 0.59, 1.31, 2.24, 3.52, 5.20, 7.28, 9.23, 12.20),
     (-0.80, -0.27, 0.26, 0.84, 1.59, 2.66, 4.00, 5.73, 7.40, 9.60),
-    (-0.88, -0.48, 0.00, 0.53, 1.15, 1.89, 2.92, 4.00, 5.36, 6.60),
+    (-0.88, -0.48, 0.00, 0.53, 1.15, 1.89, 2.92, 4.00, 5.36, 6.00),   # 6.00: Scan-Lesart des Nutzers (14.07.)
     (-0.65, -0.40, -0.24, 0.10, 0.50, 0.83, 1.13, 1.47, 1.86, 2.30),
 )
 # Vereinigung, Durchgangspfad ζ_c.st (für alle r_A)
@@ -42,7 +45,7 @@ ZETA_CS_DIV = (
     (1.09, 1.20, 1.40, 1.59, 1.65, 1.77, 1.94, 2.20, 2.68, 3.30),
     (0.90, 1.00, 1.13, 1.20, 1.40, 1.50, 1.60, 1.80, 2.06, 2.80),
 )
-# Trennung, Durchgangspfad ζ_c.st (für alle r_A)
+# Trennung, Durchgangspfad ζ_c.st (für alle r_A); Abszisse Q_st/Q_c
 ZETA_CST_DIV = (0.70, 0.64, 0.60, 0.57, 0.55, 0.51, 0.49, 0.55, 0.62, 0.70)
 
 
@@ -73,5 +76,7 @@ def zeta_side(x: float, r_a: float, converging: bool) -> float:
 
 
 def zeta_straight(x: float, converging: bool) -> float:
-    """ζ_c.st des Durchgangspfads (gilt für alle r_A)."""
+    """ζ_c.st des Durchgangspfads (gilt für alle r_A).
+
+    x ist die Tabellenabszisse: Trennung Q_st/Q_c, Vereinigung Q_s/Q_c."""
     return _interp1(X_GRID, ZETA_CST_CONV if converging else ZETA_CST_DIV, x)

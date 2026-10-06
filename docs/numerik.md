@@ -96,19 +96,61 @@ Konstantstrom-Kanten: `Q = fix`, Koeffizient d = 1/J = 0 im Laplacian
 ζ hängt vom Volumenstromverhältnis der GESCHWISTERKANTEN ab → generischer
 Solver-Hook `pre_coefficients(q_eigene_kanten, fluid)`: Komponenten mit
 gekoppelten Kanten erhalten vor jeder Koeffizientenauswertung ihre aktuellen
-Kantenflüsse (Picard-nachgeführt). Der kombinierte Strang (max |Q|) bleibt
-verlustfrei, Abzweig-/Durchgangskante tragen die vollen Pfadbeiwerte
-(Vereinigung/Trennung automatisch aus der Flussrichtung; Tabellen bilinear
-interpoliert, an den Rändern geklemmt). Die ζ sind TOTALDRUCK-Beiwerte —
-je Pfad wird die Bernoulli-Differenz auf statische Knotendrücke umgerechnet:
-p_ein − p_aus = ζ·ρw_c²/2 + ρ(w_aus² − w_ein²)/2. Widerstandsartige Anteile
-gehen als quadratischer Koeffizient in J ein; Druck-GEWINNE (negative ζ_c.s
-der Vereinigung, Injektorwirkung; Diffusor-Rückgewinn) werden als
-nachgeführte Druckquelle dp_source behandelt, damit der Laplacian SPD
-bleibt. Netz ganz ohne Kanten: trivialer Frühausstieg (Drücke = Anker).
+Kantenflüsse. Der kombinierte Strang (max |Q|) bleibt verlustfrei,
+Abzweig-/Durchgangskante tragen die vollen Pfadbeiwerte (Vereinigung/Trennung
+automatisch aus der Flussrichtung; Abszissen wie im Buch: Seitenpfad Q_s/Q_c,
+gerader Pfad der Trennung Q_st/Q_c, der Vereinigung Q_s/Q_c). Die ζ sind
+TOTALDRUCK-Beiwerte — je Pfad wird die Bernoulli-Differenz auf statische
+Knotendrücke umgerechnet: p_ein − p_aus = ζ·ρw_c²/2 + ρ(w_aus² − w_ein²)/2.
+
+**Regimewechsel (stetig).** Jeder Wechsel — Trennen ↔ Vereinigen, kombinierter
+Strang wechselt — liegt bei Strom 0 eines Schenkels, also unter dessen
+Tabellengrenze x = 0.1. Die Grenzwerte beider Regime unterscheiden sich dort
+um bis zu ~ρw²; die frühere Klemmung ergab eine springende Kennlinie (keine
+Lösung im Sprungintervall → Stillstand bei V̇ = 0) und, über den geklemmten
+Seiten-ζ < 1, einen statischen Druckgewinn ∝ w_c² auf einem fast
+stagnierenden Schenkel (Pumpwirkung aus dem Hauptstrom → NaN-Divergenz).
+Jetzt wird für x_min < 0.1 linear im vorzeichenbehafteten Schenkelstrom
+zwischen den beiden angrenzenden Regimen interpoliert, je ausgewertet an
+ihrer Tabellengrenze x = 0.1 bei gleichem Durchgangsstrom: die Kennlinie
+ist stetig, und die Tabellen werden nur im Buchbereich [0.1, 1] benutzt.
+
+**Linearisierung (Tangente).** Jede Schenkelkante meldet ihre lokale
+Steigung als Linearterm a = dS/dQ (Eigenstrom gestört, Kontinuität über den
+größten anderen Schenkel; mind. ¼ der Sekante S/Q und 2·b_idle·|Q|) und die
+nachgeführte Quelle dp_source = a·Q − S. Damit ist R(Q) am Arbeitspunkt
+exakt S, J = a > 0 hält den Laplacian SPD, und auch der Differenzenquotient
+des Solvers sieht dζ/dx (vorher ignorierte die Kennlinie den Eigenstrom →
+Picard-artige 2-Zyklen über Tabellenstützstellen). Der kleine Schenkel im
+Überblendbereich hat S(0) ≠ 0; dort gilt die Linearform mit der Steigung der
+Überblendung plus der Steifigkeit eines Staudrucks bei x = 0.1 (q|q|-Formen
+hätten bei Q → 0 die Steigung 0 bzw. ∞). Früher lag die Druckgewinn-Quelle
+auf der quasi-idealen Restkante (1 Pa bei 10 m³/h) — Newton sagte riesige
+Ströme voraus, der Hauptstrom sprang zwischen den Schenkeln.
+
+**Kurzschluss.** Zwei Schenkel am selben Knoten werden beim Kompilieren
+abgelehnt (Hook `check_topology`): der statische Druckrückgewinn im T-Stück
+wird am Knoten nicht zurückgefordert, im Kurzschluss wirkt das T-Stück wie
+eine Pumpe (Kampagne: 20 von 68 solchen Netzen mit zweiter Lösung).
+
 Validierung: tests/test_tee_idelchik.py (Handrechnung Trennung x = 0.4 und
-Vereinigung x = 0.1 mit ζ = −0.65 auf 0.2 Pa genau; Tabellenquelle
-dokumentiert in docs/idelchik_t_stueck_*.md).
+Vereinigung x = 0.1 mit ζ = −0.65 auf 0.2 Pa genau; Stetigkeit an jedem
+Regimewechsel; Tabellen nur im Buchbereich; Druckabtastung über den
+Vorzeichenwechsel des Abzweigs monoton; Tabellenquelle dokumentiert in
+docs/idelchik_t_stueck_*.md). Zufallsnetz-Kampagne: alle 137 vorher nicht
+konvergierenden Netze mit Idelchik-T-Stück lösen (≤ 96 Iterationen).
+
+Bekannte Grenze: Netze mit Maschen durch zwei Schenkel können weiterhin
+mehrere Lösungen haben (Kampagne: 14,9 % der gelösten Netze mit Idelchik-
+T-Stück bei getrennten Schenkeln liefern bei anderen Startwerten eine zweite
+Lösung). Zwei Ursachen: (1) der Bernoulli-Rückgewinn ohne Gegenbuchung am
+Knoten — Netzknoten kennen nur den statischen Druck, die Beschleunigung aus
+dem Knoten in einen Schenkel kostet nichts; ohne Bernoulli-Umrechnung
+(reine Totaldruckverluste) sinkt die Quote auf 5,5 %; (2) nicht-monotones
+ζ(x) (negative ζ_c.s der Vereinigung, U-förmige Durchgangstabelle der
+Trennung). Ob die statische Umrechnung beibehalten wird, ist eine
+Modellentscheidung (Handrechnungsvalidierung und Quellnotizen setzen sie
+voraus) — offen, siehe docs/solver_pruefung_2026-10.md.
 
 Konvergenzkriterien (relativ): Massendefekt / max|Q| < 1e-8, Impulsdefekt /
 Druckmaßstab < 1e-6 (beide mit den Koeffizienten des geprüften Zustands) und
@@ -119,11 +161,6 @@ wenn der interne Regularisierungswiderstand > 15 % der Druckerhöhung aufzehrt
 (typisch q_nom nicht angegeben), Erzeuger, wenn ihr Default-Nennpunkt
 (15 kPa bei 1 m³/h) bei viel größerem Volumenstrom einen großen
 Innendruckverlust ergibt.
-
-Bekannte Grenze: Das Idelchik-T-Stück hat keine Lösung, wenn zwei Schenkel
-am selben Knoten liegen bzw. über eine ideale Verbindung eine Masche durch
-das T-Stück bilden (ζ springt beim Regimewechsel Trennen↔Vereinigen bei
-Schenkelstrom 0) — der Solver bricht dann mit Konvergenzfehler ab.
 
 ## 2. Thermik: Newton auf der Knotenbilanz (solver/thermal.py)
 

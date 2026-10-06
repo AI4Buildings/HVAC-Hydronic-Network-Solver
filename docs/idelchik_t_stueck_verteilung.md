@@ -125,7 +125,7 @@ $$
 $$
 \boxed{\zeta_{c.st}
 =\frac{\Delta p_{st}}{\rho w_c^2/2}
-=g\!\left(\frac{Q_s}{Q_c}\right)}.
+=g\!\left(\frac{Q_{st}}{Q_c}\right)}.
 $$
 
 Druckverluste:
@@ -185,9 +185,12 @@ $$
 
 ## 5. Tabelle für den geraden Pfad $\zeta_{c.st}$
 
-Die Werte gelten für alle tabellierten $F_s/F_c$.
+Die Werte gelten für alle tabellierten $F_s/F_c$. Abszisse ist — anders als beim
+Seitenpfad — der Anteil des geraden Auslaufs $Q_{st}/Q_c$ (Überarbeitung der
+Quelle nach den Prüfplots, 14.07.2026; bis Okt. 2026 fälschlich über $Q_s/Q_c$
+ausgewertet).
 
-| $Q_s/Q_c$ | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0 |
+| $Q_{st}/Q_c$ | 0.1 | 0.2 | 0.3 | 0.4 | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 | 1.0 |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | $\zeta_{c.st}$ | 0.70 | 0.64 | 0.60 | 0.57 | 0.55 | 0.51 | 0.49 | 0.55 | 0.62 | 0.70 |
 

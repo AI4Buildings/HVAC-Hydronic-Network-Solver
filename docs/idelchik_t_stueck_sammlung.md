@@ -183,7 +183,7 @@ $$
 | 0.27 | -0.69 | 0.00 | 1.11 | 2.18 | 3.76 | 5.90 | 8.38 | 11.30 | 14.60 | 18.40 |
 | 0.35 | -0.65 | -0.09 | 0.59 | 1.31 | 2.24 | 3.52 | 5.20 | 7.28 | 9.23 | 12.20 |
 | 0.44 | -0.80 | -0.27 | 0.26 | 0.84 | 1.59 | 2.66 | 4.00 | 5.73 | 7.40 | 9.60 |
-| 0.55 | -0.88 | -0.48 | 0.00 | 0.53 | 1.15 | 1.89 | 2.92 | 4.00 | 5.36 | 6.60 |
+| 0.55 | -0.88 | -0.48 | 0.00 | 0.53 | 1.15 | 1.89 | 2.92 | 4.00 | 5.36 | 6.00 |
 | 1.00 | -0.65 | -0.40 | -0.24 | 0.10 | 0.50 | 0.83 | 1.13 | 1.47 | 1.86 | 2.30 |
 
 ## 5. Tabelle für den geraden Pfad $\zeta_{c.st}$
@@ -202,3 +202,17 @@ $$
 \boxed{\bar{\zeta}_{comb}
 =x\,\zeta_{c.s}+(1-x)\,\zeta_{c.st}}.
 $$
+
+## 7. Offene Lesarten (fachliche Freigabe ausstehend)
+
+- **Bezugsstrang $c$.** Implementiert ist die Lesart dieser Datei: $c$ =
+  kombinierter Auslauf, $Q_c = Q_s + Q_{st}$, $x = Q_s/Q_c \le 1$. Sie ist
+  konsistent mit der im Scan gedruckten Umrechnung
+  $\zeta_{st} = \zeta_{c.st}/(1-Q_s/Q_c)^2$. Eine spätere Überarbeitung der
+  Quellnotizen (14.07.2026) liest die Pfeile der Skizze als $c + s \rightarrow st$
+  ($c$ = gerader Zulauf, $Q_{st} = Q_c + Q_s$). Sie vermerkt selbst, dass diese
+  Lesart der gedruckten Umrechnung widerspricht und vor einer Implementierung
+  fachlich freizugeben ist. Bis zur Freigabe bleibt es bei der Lesart oben.
+- **Endwert $F_s/F_c = 0{,}55$, $x = 1{,}0$:** übernommen ist die überarbeitete
+  Scan-Lesart $6{,}00$ (zuvor $6{,}60$). Sie ist, wie $31{,}8$ und $9{,}60$, am
+  Originalexemplar zu bestätigen.
