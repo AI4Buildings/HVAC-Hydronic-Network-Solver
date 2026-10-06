@@ -59,6 +59,40 @@ NEUSTART = {
                     ["p1.in", "p2.in", "em2.out", "em3.out", "pu1.out", "t1.c"]]}
 
 
+#: Seed 206: die zweite stabile Lösung liegt in einem kleinen Einzugsbereich —
+#: 8 Zusatzstarts verfehlen sie, 16 finden sie (32 finden nichts weiter;
+#: Kampagne 2026-10-06: einziger solcher Fall unter 27 mehrdeutigen Netzen,
+#: Anlass für den Default uniqueness_starts = 16)
+SCHWER = {
+    "fluid": {"name": "glykol", "rho": 1050.0, "mu": 0.004, "cp": 3600.0},
+    "components": {
+        "p1": {"type": "flow_resistance", "c_Pa_m3s2": 120200000000.0},
+        "p2": {"type": "flow_sensor"},
+        "p3": {"type": "ball_valve", "kvs_m3h": 22.43},
+        "p4": {"type": "conduit"},
+        "em1": {"type": "cooling_coil", "ua_ref_W_K": 2001.0, "q_w_ref_m3h": 3.827,
+                "m_dot_air_ref_kg_s": 0.7017, "m_dot_air_kg_s": 2.908, "t_air_in_C": 22.77,
+                "ua_star_wet_kg_s": 2.256, "rh_air_in": 0.8155},
+        "p5": {"type": "check_valve", "kvs_m3h": 1.251},
+        "em2": {"type": "floor_heating", "area_m2": 59.35, "t_room_C": 21.81,
+                "length_m": 27.33, "d_inner_mm": 10.0},
+        "p6": {"type": "ball_valve", "kvs_m3h": 20.02},
+        "pu1": {"type": "pump", "mode": "constant_dp", "dp_kPa": 55.15, "q_nom_m3h": 6.102,
+                "dp_internal_frac": 0.0001},
+        "pu2": {"type": "pump", "mode": "constant_flow", "q_m3h": 12.55},
+        "pu3": {"type": "pump", "mode": "constant_dp", "dp_kPa": 43.32, "q_nom_m3h": 10.0},
+        "hw1": {"type": "hydraulic_separator", "q_nom_m3h": 9.367},
+        "t1": {"type": "tee", "d_run_mm": 40.0, "d_branch_mm": 20.0},
+        "wmz1": {"type": "energy_meter"},
+        "oe1": {"type": "open_end", "bc": "pressure", "p_kPa": 72.45, "t_supply_C": 24.05}},
+    "connections": [["p2.in", "p3.out", "p6.in", "pu3.out"],
+                    ["p5.out", "hw1.prim_in", "hw1.sec_out", "t1.c", "wmz1.t_ref"],
+                    ["p1.out", "em1.in", "p5.in", "hw1.prim_out", "t1.b", "wmz1.out"],
+                    ["p1.in", "p2.out", "p4.out", "pu2.out", "hw1.sec_in", "oe1.port"],
+                    ["p3.in", "em2.in", "p6.out", "pu1.out", "pu2.in", "t1.a"],
+                    ["p4.in", "wmz1.in"], ["em1.out", "em2.out", "pu1.in", "pu3.in"]]}
+
+
 def _residuen(c, q, p):
     """Unabhängige Nachrechnung: Kontinuität an freien Knoten, Impuls je
     freier Kante mit den beim Zustand q ausgewerteten Koeffizienten."""
@@ -122,6 +156,20 @@ def test_alternativen_erfuellen_die_gleichungen():
     # Komponentenzustand auf die ausgegebene Lösung zurückgesetzt
     mass, mom = _residuen(c, hyd.q, hyd.p)
     assert mass < 1e-7
+
+
+def test_default_findet_zweite_loesung_mit_kleinem_einzugsbereich():
+    """Der Default (16 Zusatzstarts) findet auch die schwer erreichbare zweite
+    Lösung; sie erfüllt die Gleichungen (unabhängige Nachrechnung)."""
+    assert SolverSettings().uniqueness_starts == 16
+    c = h.load(copy.deepcopy(SCHWER)).compile()
+    hyd = solve_hydraulics(c, SolverSettings())
+    alts = uniqueness.find_alternative_solutions(c, hyd, SolverSettings())
+    assert len(alts) == 1 and alts[0].dq_max * 3600 > 0.04          # echte Lösung, kein Rest
+    mass, mom = _residuen(c, alts[0].q, alts[0].p)
+    assert mass < 1e-9 and mom < 1e-3
+    r = h.load(copy.deepcopy(SCHWER)).solve()
+    assert any("nicht eindeutig" in n for n in r.notices) and len(r.alternatives) == 1
 
 
 def test_reproduzierbar_und_abschaltbar():

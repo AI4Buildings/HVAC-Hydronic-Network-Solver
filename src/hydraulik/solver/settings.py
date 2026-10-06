@@ -20,8 +20,9 @@ class SolverSettings:
     # Eindeutigkeitsprüfung: nur bei Komponenten mit nicht-monotoner Kennlinie
     # (Idelchik-T-Stück) wird die Hydraulik zusätzlich von so vielen
     # reproduzierbaren Startwerten aus gelöst; weitere Lösungen → Hinweis.
-    # 0 = aus.
-    uniqueness_starts: int = 8
+    # 0 = aus. 16 statt 8: Kampagne 2026-10-06, 8 Starts übersahen 1 von 27
+    # mehrdeutigen Netzen, 32 fanden nichts weiter.
+    uniqueness_starts: int = 16
 
     # Thermik
     t_init: float = 20.0          # Starttemperatur [°C]

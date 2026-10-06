@@ -202,7 +202,7 @@ sich physikalisch ausschließen; welche sich einstellt, hängt vom
 Anfahrvorgang ab (Anfangswertproblem). Daher: `solve_hydraulics_checked`
 (einziger Einstieg für Network.solve und Server) löst bei Komponenten mit
 `nonmonotone_hydraulics()` die Hydraulik zusätzlich von `uniqueness_starts`
-(Default 8) reproduzierbaren Startwerten (Beträge log-gleichverteilt
+(Default 16) reproduzierbaren Startwerten (Beträge log-gleichverteilt
 1e-3…1·V̇max, Vorzeichen zufällig), schärft jede Lösung und die ausgegebene
 nach (Toleranzen ×1e-5) und meldet Lösungen mit max|ΔQ| > max(1e-4·V̇max,
 1e-6 m³/s) — Toleranzreste schwach bestimmter Maschen bleiben danach
@@ -211,10 +211,12 @@ Standardstart nicht, wird von denselben Startwerten aus neu gestartet (in
 Bereichen ohne stabiles Gleichgewicht irrt die Iteration sonst umher, obwohl
 stabile Lösungen existieren). Ergebnis: Hinweis „Hydraulik nicht eindeutig“
 mit den größten Abweichungen, `SolutionResult.alternatives`, im Editor ein
-Dialog; die ausgegebene Lösung bleibt unverändert. Kampagne: 8 Starts
-erkennen alle bekannten Fälle (4 Starts: 34/37), kein Fehlalarm; die 13
-Smoke-Netze mit Verteiler-Strang-Sammler-Struktur sind eindeutig. Aufwand
-≈ 135 ms je Netz, nur bei nicht-monotonen Komponenten.
+Dialog; die ausgegebene Lösung bleibt unverändert. Kampagne (nach
+Ablehnung der Quasi-Kurzschlüsse): 8 Starts erkennen 26 von 27 mehrdeutigen
+Netzen, 16 alle 27, 32 nicht mehr (Default daher 16, seit 2026-10-06); kein
+Fehlalarm; die 13 Smoke-Netze mit Verteiler-Strang-Sammler-Struktur sind
+eindeutig. Aufwand ≈ 180 ms je Netz (Median), nur bei nicht-monotonen
+Komponenten.
 
 Konvergenzkriterien (relativ): Massendefekt / max|Q| < 1e-8, Impulsdefekt /
 Druckmaßstab < 1e-6 (beide mit den Koeffizienten des geprüften Zustands) und
@@ -305,7 +307,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 859 Tests)
+## 3. Testabdeckung (tests/, 860 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/

@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 859 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 860 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 ## Tool starten
@@ -127,7 +127,7 @@ Komponenten einfach den Editor neu erzeugen.
 ```yaml
 fluid: {preset: water, t_C: 45}      # oder {rho: 998, mu: 1.0e-3, cp: 4180}
 settings: {max_iter: 400}            # optional (siehe SolverSettings)
-                                     # uniqueness_starts: 8 – Eindeutigkeitsprüfung bei
+                                     # uniqueness_starts: 16 – Eindeutigkeitsprüfung bei
                                      # Idelchik-T-Stücken (0 = aus)
 
 components:

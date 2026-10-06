@@ -202,7 +202,7 @@ Förderhöhe im 5-%-Regularisierungswiderstand verloren.
     - 3 Netze konvergieren nur von alternativen Startwerten; dafür gibt es
       den automatischen Neustart.
   - *Umgesetzt (solver/uniqueness.py, `solve_hydraulics_checked`):* Bei
-    Komponenten mit `nonmonotone_hydraulics()` laufen 8 reproduzierbare
+    Komponenten mit `nonmonotone_hydraulics()` laufen 16 (bis 2026-10-06: 8) reproduzierbare
     Zusatzstarts mit Nachschärfen; zusätzliche Lösungen ergeben den Hinweis
     „Hydraulik nicht eindeutig“ und `alternatives` im Ergebnis, im Editor
     einen Dialog. Konvergiert der Standardstart nicht, wird von denselben
@@ -210,7 +210,9 @@ Förderhöhe im 5-%-Regularisierungswiderstand verloren.
     - Keine Fehlalarme. Nach Ablehnung der Quasi-Kurzschlüsse sind von 193
       gelösten T-Stück-Netzen 26 als mehrdeutig gemeldet; ein weiteres
       (Seed 206) erkennen erst 16 Starts, 32 Starts finden nichts
-      zusätzlich. 16 Starts verdoppeln die Prüfzeit (Median 97 → 183 ms).
+      zusätzlich. 16 Starts verdoppeln die Prüfzeit (Median 97 → 183 ms);
+      Default seit 2026-10-06 daher 16 (Nutzerentscheidung), Seed 206 ist
+      Testnetz.
     - Die Smoke-Netze mit Verteiler-Strang-Sammler-Struktur sind alle
       eindeutig.
     - Quasi-Kurzschlüsse zweier Schenkel über widerstandsfreie Bauteile

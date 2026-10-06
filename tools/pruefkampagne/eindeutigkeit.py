@@ -6,7 +6,7 @@ Rechnet jedes Netz mit Idelchik-T-Stück über den produktiven Einstieg
 solve_hydraulics_checked (Neustart bei Nichtkonvergenz, Zusatzstarts) und
 zählt gemeldete Mehrfachlösungen. Referenzstand 2026-10-06 (0 3300, T-Stück
 mit Totaldruck, Kurzschlüsse auch über widerstandsfreie Verbindungen
-abgelehnt): 193 gelöst, 26 mehrdeutig (13,5 %), 1 per Neustart, 203
+abgelehnt, 16 Zusatzstarts): 193 gelöst, 27 mehrdeutig (14,0 %), 1 per Neustart, 203
 Validierungsfehler; alle Lösungen dynamisch stabil (stabilitaet.py).
 Schreibt eindeutigkeit_START_ANZAHL.json.
 """

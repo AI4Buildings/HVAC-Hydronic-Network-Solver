@@ -65,13 +65,13 @@ bewertet (mit Nachschärfen, Schwelle wie im Solver).
 | Ergebnis | Anzahl |
 |---|---|
 | Netze mit Idelchik-T-Stück, gelöst | 193 |
-| davon als mehrdeutig gemeldet | 26 |
+| davon als mehrdeutig gemeldet | 27 |
 | davon nur per Neustart gelöst | 1 |
 | Validierungsfehler (kurzgeschlossenes T-Stück u.a.) | 203 |
 | Generatorfehler | 3 |
 
-Mit 16 statt 8 Zusatzstarts wird ein weiteres Netz als mehrdeutig erkannt
-(Seed 206); 32 Starts finden nichts zusätzlich.
+Mit dem Default von 16 Zusatzstarts (seit 2026-10-06). Mit 8 Starts blieb
+Seed 206 unerkannt; 32 Starts finden nichts zusätzlich.
 
 Alle Lösungen der mehrdeutigen Netze sind dynamisch stabil.
 
