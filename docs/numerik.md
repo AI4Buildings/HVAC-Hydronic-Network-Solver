@@ -204,6 +204,19 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
   fester Leistung (q_prescribed/prescribed_q oder Erzeuger dauerhaft an
   q_max). Die `ConvergenceError`-Meldung nennt die betroffenen Knoten und
   Abhilfen (UA angeben, physikalisches Modell, `solve(thermal=False)`).
+  Gezählt wird die Verschiebung aller angenommenen Schritte seit dem letzten
+  echten Fortschritt (Residuum ≥ 1 % unter dem Referenzwert) — bei |T| bis
+  1e6 K erzeugt Rundung scheinbare Mini-Abstiege, die den Zähler sonst
+  ständig zurücksetzten (Kreise ohne Wärmequelle mit großem Umlauf endeten
+  undiagnostiziert an der Iterationsgrenze).
+- **Genauigkeitsgrenze**: Endet die Iteration an `max_iter_thermal` mit
+  Residuum ≤ 100·tol_t und ohne aufgelaufene Drift (< 1 K), wird das
+  Ergebnis mit Hinweis „Thermik auf … K genau“ geliefert statt verworfen
+  (Rundungsgrenze bei stark unterschiedlichen Kapazitätsströmen).
+- **Unbestimmte Umläufe**: Knoten, deren Temperatur nur über Kanten mit
+  (einseitiger) Steigung 1 von sich selbst abhängt — adiabate Umläufe ohne
+  Quelle, nur heizende WP im verlustfreien Kreis —, werden gekennzeichnet;
+  der Bericht meldet „Lösung zum Startwert t_init“.
 - `solve(thermal=False)` überspringt die Energiegleichung (rein hydraulische
   Studien, z.B. Ventilhub-Kennlinien).
 - Fluss-Randbedingungen: mehrere je Knoten zulässig; jede geht mit ihrer
@@ -228,7 +241,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 745 Tests)
+## 3. Testabdeckung (tests/, 827 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/

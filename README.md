@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 745 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 827 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 ## Tool starten
@@ -228,7 +228,10 @@ Luftzustand des Abschnitts (ϑ, φ, x, V̇); Fühler zeigen den Zustand an
 ihrer Messstelle. Regelungsart an der Zuluft wählbar:
 Zustand **fest** gepinnt, **Sollband** oder **raumgekoppelt** mit
 Feuchtelast (simulate_room); der Abluft-Volumenstrom wird praxisgerecht an
-der Abluft angegeben (leer = balancierte Anlage). Ergebnisse (Heiz-/Kühl-/
+der Abluft angegeben (leer = balancierte Anlage); der WRG-Auslegungs-
+volumenstrom `v_nom` ist ohne Angabe der Zuluftvolumenstrom. Ventilator-SFP
+werden je Strang summiert (P_el mit dem jeweiligen Volumenstrom); aktive
+Komponenten gehören in den Zuluftstrang. Ergebnisse (Heiz-/Kühl-/
 Befeuchterleistung, WRG-Kennwerte, Zuluftzustand, Ventilatorstrom) erscheinen
 im Ergebnispanel, als Tooltip und unter jeder Komponente. Drei Vorlagen
 liegen bei: Vollklima mit Sorptionsrotor, KVS-Anlage sowie die **reale
@@ -293,7 +296,7 @@ bereit:
 | `flow_sensor` | in, out | Volumenstromsensor in der Leitung (quasi-ideal, 1 Pa bei `q_nom_m3h`) |
 | `energy_meter` | in, out, t_ref | Wärmemengenzähler: Durchflussteil in der Leitung + Fühler `t_ref` in der Gegenleitung; misst V̇, beide ϑ und Q̇ = ṁ·cp·(ϑ_ref − ϑ_Leitung) (Einbau im RL → Q̇ > 0 = Kreisabgabe); die 5 realen Datenpunkte als `bems`-Einträge |
 | `check_valve` | in, out | Rückschlagklappe: `kvs_m3h` (Durchlassrichtung in→out); sperrt rückwärts (Restleckage kvs/1000, über `block_factor` einstellbar) |
-| `mixing_valve_3way` | a, b, ab | `kvs_m3h`, `opening` (A-Pfad), `characteristic` |
+| `mixing_valve_3way` | a, b, ab | `kvs_m3h`, `opening` (A-Pfad), `characteristic` (A–AB, Default gleichprozentig), `characteristic_b` (B–AB, Default linear) |
 | `radiator` | in, out | `q_nom_kW`, `t_sup_nom_C`, `t_ret_nom_C`, `t_room_C`, `n`, `q_prescribed_kW`; Hydraulik: `kv_m3h` ODER `c_Pa_m3h2` (Default 10 kPa bei Nennstrom) |
 | `floor_heating` | in, out | `area_m2`, `k_W_m2K`, `t_room_C`; Hydraulik: `length_m` (+ `d_inner_mm`, Rohrmodell) ODER `c_Pa_m3h2` |
 | `heating_coil` / `cooling_coil` | in, out | ε-NTU mit Teillast-UA nach Gl. 4.2 (`ua_ref_W_K`, `n` Default 0.4, Referenzen `q_w_ref_m3h`/`m_dot_air_ref_kg_s`; ohne Referenzen UA konstant); `m_dot_air_kg_s`, `t_air_in_C`, `arrangement`; ODER feste Leistung `q_prescribed_kW` (dann kein UA nötig); Hydraulik: `kv_m3h` ODER `c_Pa_m3h2`. Kühlregister zusätzlich Greybox MIT Kondensation: `ua_star_wet_kg_s` + `rh_air_in` (0…1) → Q̇ = max(trocken, nass), Kondensatrate/Luftaustritt in extras |

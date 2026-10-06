@@ -8,8 +8,10 @@ BEMS-Betriebsdatenanalyse (Aedifion-Datenpunkt-IDs an jeder Komponente).
 Stand: v0.6.0 (Juli 2026) plus Robustheitsrunde 2026-09-10 (Bugfixes,
 Fehlerpfade, Newton-Energiegleichung, Zufallsnetz-Rauchtest, CI) und
 Eingabeformat-Härtung 2026-10-05 (YAML 1.2 überall gleich in Solver und
-Editoren, JSON-Ein-/Ausgabe, JSON Schema aus der Registry — Details in den
-obersten Blöcken von docs/roadmap.md); validiert
+Editoren, JSON-Ein-/Ausgabe, JSON Schema aus der Registry) und Solver-
+Prüfung 2026-10-06 (2 Runden, 3300 Zufallsnetze unabhängig nachgerechnet;
+docs/solver_pruefung_2026-10.md — Details in den obersten Blöcken von
+docs/roadmap.md); validiert
 gegen zwei unabhängige FH-Burgenland-Referenzlösungen (Verteiler-Übung,
 TWE-Übung Bsp 6) sowie gegen die Skill-Referenz cooling-coil-greybox
 (FläktGroup-Register).
@@ -20,7 +22,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (745 Tests; Paritätstests brauchen node)
+pytest                                   # Testsuite (827 Tests; Paritätstests brauchen node)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]   # auch .json
 hydraulik export --json schaltung.yaml [--out schaltung.json]   # geprüft, kanonisches JSON
@@ -58,7 +60,10 @@ src/hydraulik/
                      JEDE Komponente hat bems: [{id,key,description},…] (reserviert,
                      base._parse_bems) + description; Editor-Register Fluid-/BEMS-Info
     idelchik.py      ζ-Tabellen 90°-T-Stück (Diagramm 7-10/7-21) für tee mit
-                     Druckverlust (d_run+d_branch; Regime aus Strömungsrichtung)
+                     Druckverlust (d_run+d_branch; Regime aus Strömungsrichtung;
+                     unter x = 0.1 stetige Überblendung zwischen den Regimen,
+                     Tangenten-Linearisierung; Kurzschluss zweier Schenkel
+                     → Validierungsfehler über Hook check_topology)
     storage/separators/connectors (link)/conduit (Verbindungsleitung = Linie
     im Editor: ideal|C-Wert|Auslegungspunkt|Rohrmodell; Rohrmodell wahlweise
     als pipes-Liste beliebig vieler Abschnitte in Reihe, je Abschnitt
@@ -109,9 +114,12 @@ src/hydraulik/
     vka/             integrierter VKA-Rechenkern EN 16798-5-1 (aus Skill
                      vka-effizienz-en16798 übernommen; simulate/simulate_room,
                      energieoptimale Rotorregelung, 1:1 MATLAB-verifiziert;
-                     einzige dokumentierte Abweichung: Rotor-ε auf ≤ 1
-                     begrenzt — f_q-Unbalance-Korrektur trieb ε über 1,
-                     Skill-Kopie identisch gepatcht)
+                     dokumentierte Abweichungen (Physik-Korrekturen L1–L12,
+                     Solver-Prüfung 2026-10: ε ≤ min(1, V̇_ab/V̇_zu),
+                     Sprühbefeuchter, Kühler-Zweig 5, Index-0-Semantik, …;
+                     im Code "Abweichung vom MATLAB-Original" markiert) —
+                     PDF-Referenz bleibt exakt (test_air_vka_matlab.py);
+                     Skill-Kopie IMMER identisch patchen)
     components.py    Luft-Registry (AIR_REGISTRY, gleiche Param-/BEMS-Mechanik):
                      aussenluft/abluft_raum/zuluft (regelung fest|band|raum)/
                      fortluft, wrg (5 Bauarten), frostschutz, vor-/nachheizer,
@@ -143,14 +151,17 @@ docs/                architektur.md, numerik.md, erweitern.md, roadmap.md,
                      solver_pruefung_2026-10.md (Prüfbericht, offene Punkte)
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               745 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+tests/               827 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
                      test_yamlio.py / test_yaml12_kompat.py: Loader + YAML-1.1-
                      Altlasten; test_editor_paritaet.py: JS ↔ Python (node,
                      Korpus tests/data/, Zufallsskalare/-dokumente, Round-Trip);
                      test_schema.py: Schema ↔ Loader je Parameter; test_json_io.py;
                      test_smoke_random.py: 40 Zufallsnetze (fester Seed) über die Palette;
                      test_thermal_newton.py: Energiegleichung gegen Knotenbilanz-Definition,
-                     unabhängiges Fixpunkt-Orakel, geschlossene Lösungen, Invarianzen
+                     unabhängiges Fixpunkt-Orakel, geschlossene Lösungen, Invarianzen;
+                     test_solver_pruefung.py: Befunde der Solver-Prüfung (B1–B16);
+                     test_air_vka_matlab.py: VKA-Kern gegen MATLAB/PDF-Referenz;
+                     test_air_vka_pruefung.py: Lüftungsbefunde L1–L12 (Invarianten)
 .github/workflows/   CI: pytest auf Python 3.10–3.12 bei Push/PR
 ```
 
@@ -201,6 +212,14 @@ tests/               745 Tests: analytische Referenzen + Validierung gegen Muste
   die Behandlung des singulären Unterraums (Kanten mit Steigung 1); der
   Differenzenschritt muss relativ zu |T| skalieren, sonst macht Rundung
   singuläre Umläufe fälschlich regulär (Drift wird dann nicht erkannt).
+- Jacobi-Floor je Kante adaptiv (schrumpft bei stabiler Richtung, Reset
+  bei Vorzeichenwechsel). Eine an |p| gekoppelte absolute Untergrenze wurde
+  getestet und verworfen (266 Kampagnennetze wurden langsam) — vor neuen
+  Floor-Ideen immer die Zufallsnetz-Kampagne laufen lassen.
+- Komponenten mit Kennlinien aus Tabellen/Regimen (Idelchik-T-Stück): stetig
+  machen und die Tangente als Linearterm a melden (dp_source = a·Q − S);
+  eine Kennlinie, die den Eigenstrom ignoriert, lässt Newton zu Picard
+  degenerieren (2-Zyklen).
 - Verbindungssemantik: „verbinden = Knoten verschmelzen" (ein Druck, EINE
   Temperatur). Anschlüsse entlang einer Leitung brauchen getrennte Knoten
   (aufgeteilte Widerstände oder `link`), sonst mischt der Solver stromab

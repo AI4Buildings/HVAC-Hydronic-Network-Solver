@@ -1,17 +1,38 @@
 # Status & Roadmap
 
-## Solver-Prüfung (2026-10-06, Branch fix/solver-pruefung, unveröffentlicht)
+## Solver-Prüfung (2026-10-06, zwei Runden, in main)
 
-754 Tests, alle grün. Ausführlich: docs/solver_pruefung_2026-10.md
+827 Tests, alle grün. Ausführlich: docs/solver_pruefung_2026-10.md
 (Code-Review, geschlossene Lösungen, 3300 Zufallsnetze mit unabhängiger
-Nachrechnung). Behoben: falsche Konvergenzmeldung mit veralteten
-Koeffizienten (bis 17 % Fehler bei parallelen Rohren), Nicht-Konvergenz im
-laminar-turbulenten Übergang, Reststrom in Eigenschleifen, dauerhafte
-Dämpfung, Greybox-Überlauf und 2.-Hauptsatz-Verletzung; Hinweise bei
-Default-Referenzwiderständen (Pumpe, Erzeuger, Weiche). Offen (Entscheidung):
-3-Wege-Ventil-Kennlinie B, Idelchik-T-Stück (Maschen durch zwei Schenkel,
-Mehrdeutigkeit), adaptiver Jacobi-Floor, Kennzeichnung thermisch
-unbestimmter Umläufe; Lüftungskern L1–L12 (Abweichung von der MATLAB-Referenz).
+Nachrechnung).
+
+- **Runde 1:**
+  - falsche Konvergenzmeldung mit veralteten Koeffizienten (bis 17 % Fehler
+    bei parallelen Rohren)
+  - Nicht-Konvergenz im laminar-turbulenten Übergang
+  - Reststrom in Eigenschleifen; dauerhafte Dämpfung
+  - Greybox-Überlauf und 2.-Hauptsatz-Verletzung
+  - Hinweise bei Default-Referenzwiderständen (Pumpe, Erzeuger, Weiche)
+- **Runde 2:**
+  - 3-Wege-Ventil: Kennlinie je Pfad (`characteristic_b`, Default B–AB
+    linear)
+  - adaptiver Jacobi-Floor je Kante
+  - Kennzeichnung thermisch unbestimmter Umläufe; Thermik-Genauigkeitsgrenze
+    und robuste Drift-Erkennung
+  - Heizkörper stetig an der Raumtemperatur
+  - Idelchik-T-Stück:
+    - stetig über die Regimewechsel, mit Tangenten-Linearisierung
+    - Abszisse Q_st/Q_c bei Trennung
+    - Kurzschluss zweier Schenkel wird abgelehnt (Hook `check_topology`)
+  - Lüftungskern L1–L12 plus Nebel bei Umluftmischung, als dokumentierte
+    Abweichungen vom MATLAB-Original; die PDF-Referenz bleibt exakt, die
+    Skill-Kopie ist identisch gepatcht
+- **Wirkung:** Nichtkonvergenzen in der Kampagne 163 → 1 (pathologisch:
+  ~5·10¹² Pa).
+- **Offen (Modellentscheidung):**
+  - Mehrdeutigkeit in Maschen durch zwei T-Stück-Schenkel (Bernoulli-
+    Rückgewinn ohne Knoten-Gegenbuchung)
+  - Sammler-Konvention c laut Quellnotiz noch fachlich freizugeben
 
 ## Eingabeformat gehärtet (2026-10-05, unveröffentlicht)
 
@@ -331,7 +352,7 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (745 Tests, müssen grün sein; node für die Paritätstests);
+1. `pip install -e ".[dev]" && pytest` (827 Tests, müssen grün sein; node für die Paritätstests);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/).
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
    dieser Datei lesen — dort steht, was zuletzt gebaut wurde.
