@@ -35,7 +35,7 @@ Schritt wird gedämpft, wenn die Newton-Richtung selbst unbrauchbar war).
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import scipy.sparse as sp
@@ -79,6 +79,9 @@ class ThermalState:
     iterations: int
     converged: bool
     energy_imbalance: float           # globale Bilanzabweichung [W]
+    #: Knoten, deren Temperatur NICHT eindeutig bestimmt ist (geschlossener
+    #: Umlauf ohne Wärmeübertrag nach außen: Ergebnis = Startwert-abhängig)
+    undetermined_nodes: list[int] = field(default_factory=list)
 
 
 def skipped_thermal(net: CompiledNetwork, settings: SolverSettings | None = None) -> ThermalState:
@@ -310,9 +313,49 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
             + spread_hint(t, t_out))
 
     t_node = t
+    # Stagnierend: kein durchströmter Zufluss, kein nennenswerter Rand-/
+    # Umgebungszufluss (Rundungsreste < m_dot_eps zählen nicht), kein UA
     stagnant = [nd.index for nd in net.nodes
                 if not incoming[nd.index]
-                and (nd.flow_bc + env_in[nd.index]) <= 0.0 and nd.ua <= 0.0]
+                and (nd.flow_bc + env_in[nd.index]) * fluid.rho < s.m_dot_eps and nd.ua <= 0.0]
+
+    # Thermisch unbestimmte Knoten: I − ∂G/∂T singulär. Kandidaten sind
+    # durchströmte Knoten ohne eigene Verankerung (Rand-Zulauf, UA); ein
+    # Knoten ist bestimmt, sobald ein Zufluss aus einem bestimmten Knoten
+    # kommt oder eine Steigung < 1 hat (Modell prägt die Temperatur mit).
+    # Was übrig bleibt, kann sich als Ganzes um eine Konstante verschieben.
+    def anchored(nd) -> bool:
+        return (nd.ua > 0.0
+                or any(qb * fluid.rho >= s.m_dot_eps for qb, _ in nd.bc_supplies)
+                or (env_in[nd.index] * fluid.rho >= s.m_dot_eps and nd.t_supply is not None))
+
+    cand = {nd.index for nd in net.nodes
+            if free[nd.index] and incoming[nd.index] and not anchored(nd)}
+    slope_cache: dict[int, float] = {}
+
+    def slope(i: int) -> float:
+        """Größere der beiden einseitigen Steigungen: an einer Klemme (z.B. nur
+        heizender Erzeuger genau am Sollwert) ist die Temperatur einseitig frei
+        — jede höhere Temperatur ist ebenfalls stationär, also nicht eindeutig."""
+        if i not in slope_cache:
+            if edges[i].thermal_fn is None:
+                slope_cache[i] = 1.0
+            else:
+                k = int(up[i])
+                h = max(_FD_STEP, _FD_REL * abs(float(t[k])))
+                fwd = (model(i, t[k] + h, "Eindeutigkeitsprüfung").t_out - t_out[i]) / h
+                bwd = (t_out[i] - model(i, t[k] - h, "Eindeutigkeitsprüfung").t_out) / h
+                slope_cache[i] = max(fwd, bwd)
+        return slope_cache[i]
+
+    changed = True
+    while changed:
+        changed = False
+        for j in list(cand):
+            if any(int(up[i]) not in cand or slope(i) < 1.0 - 1e-6 for i in incoming[j]):
+                cand.discard(j)
+                changed = True
+    undetermined = sorted(cand)
 
     # Globale Energiebilanz: Kantenwärmeströme + UA-Verluste + Randenthalpien
     balance = float(np.sum(q_dot))
@@ -331,4 +374,4 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
     return ThermalState(t_node=t_node, t_edge_out=t_out, q_dot_edge=q_dot,
                         edge_extras=extras, stagnant_nodes=stagnant,
                         iterations=it, converged=converged,
-                        energy_imbalance=balance)
+                        energy_imbalance=balance, undetermined_nodes=undetermined)

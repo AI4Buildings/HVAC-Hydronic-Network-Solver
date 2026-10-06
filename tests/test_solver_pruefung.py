@@ -6,6 +6,7 @@ modell bzw. geschlossene Lösung) — nicht gegen Solver-Zahlen.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -371,3 +372,39 @@ def test_mischventil_standard_a_gleichprozentig_b_linear():
     # linear/linear: konstanter Gesamt-Kv
     kv_lin = _mv_kv_total(opening=0.3, characteristic="linear", characteristic_b="linear")
     assert kv_lin == pytest.approx(4.0, rel=1e-6)
+
+
+# --- B10: thermisch unbestimmte Umläufe werden gekennzeichnet ---------------------
+
+def _umlauf(*, wp=False, verlust=False, t_init=20.0):
+    from hydraulik.solver.settings import SolverSettings
+    net = h.Network(fluid=W50)
+    net.add(h.Pump("pu", mode="constant_flow", q_m3h=1.0))
+    net.add(h.Pipe("r", length_m=20, d_inner_mm=20, **({"u_linear_W_mK": 0.3, "t_amb_C": 15} if verlust else {})))
+    if wp:
+        net.add(h.HeatPump("wp", mode="target_t_out", t_out_set_C=45, q_nom_m3h=1))
+        net.connect("pu.out", "wp.in"); net.connect("wp.out", "r.in")
+    else:
+        net.connect("pu.out", "r.in")
+    net.connect("r.out", "pu.in")
+    return net.solve(SolverSettings(t_init=t_init))
+
+
+def test_adiabater_umlauf_ohne_quelle_unbestimmt():
+    r = _umlauf()
+    assert any("nicht eindeutig" in n for n in r.notices)
+    assert r["r"].t_out_C == pytest.approx(20.0)
+
+
+@pytest.mark.parametrize("t_init", [20.0, 80.0])
+def test_nur_heizende_wp_im_verlustfreien_kreis_unbestimmt(t_init):
+    """Jede Temperatur ≥ Sollwert ist stationär (WP aus) → gekennzeichnet."""
+    r = _umlauf(wp=True, t_init=t_init)
+    assert any("nicht eindeutig" in n for n in r.notices)
+
+
+def test_bestimmte_kreise_ohne_hinweis():
+    assert not any("nicht eindeutig" in n for n in _umlauf(verlust=True).notices)
+    assert not any("nicht eindeutig" in n for n in _umlauf(wp=True, verlust=True).notices)
+    for path in sorted((Path(__file__).parent.parent / "examples").glob("*.yaml")):
+        assert not any("nicht eindeutig" in n for n in h.load(path).solve(h.load_settings(path)).notices), path

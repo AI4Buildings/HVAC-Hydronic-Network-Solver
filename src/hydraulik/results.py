@@ -296,6 +296,14 @@ def build_result(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
              for nd in net.nodes]
     notices = list(net.notices)
     _plausibility_notices(net, hyd, th, settings, notices)
+    if getattr(th, "undetermined_nodes", None):
+        labels = [net.nodes[j].label for j in th.undetermined_nodes]
+        notices.append(
+            f"Temperatur im Teilkreis um '{labels[0]}'"
+            + (f" (+{len(labels) - 1} Knoten)" if len(labels) > 1 else "")
+            + " ist nicht eindeutig bestimmt: geschlossener Umlauf ohne Wärmeübertrag nach "
+            f"außen (z.B. Erzeuger aus bzw. an der Leistungsgrenze, keine Verluste) — "
+            f"angezeigt ist die Lösung zum Startwert t_init = {settings.t_init:g} °C.")
     # Komponenten-eigene Plausibilitätshinweise (duck-typed result_notices)
     for e in net.edges:
         fn = getattr(e.component, "result_notices", None)
