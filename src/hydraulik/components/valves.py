@@ -97,6 +97,9 @@ class BallValve(TwoPortComponent):
               help="Nennvolumenstrom im druckverlustfreien Fall (Referenzverlust dort 1 Pa)"),
     )
 
+    def ideal_connection(self) -> tuple[str, str] | None:
+        return ("in", "out") if not self.closed and self.kvs is None else None
+
     def build(self, b) -> None:
         if self.closed:
             b.edge(b.port("in"), b.port("out"), self.hydraulic_coefficients,

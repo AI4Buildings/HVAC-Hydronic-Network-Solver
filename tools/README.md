@@ -20,18 +20,18 @@ Referenzstand vergleichen.
 
 | Klasse | Anzahl |
 |---|---|
-| ok | 2933 |
-| ISSUES | 18 |
-| expected_no_steady | 89 |
-| expected_validation | 258 |
+| ok | 2822 |
+| ISSUES | 17 |
+| expected_no_steady | 84 |
+| expected_validation | 375 |
 | UNEXPECTED_convergence | 1 |
 | generator | 1 |
 
 - **expected_no_steady:** Kreise ohne Wärmequelle/-senke bei fester Leistung; korrekt erkannt.
-- **expected_validation:** gewollte Validierungsfehler, z.B. kurzgeschlossenes T-Stück oder widersprüchliche Druckränder.
+- **expected_validation:** gewollte Validierungsfehler, z.B. kurzgeschlossenes T-Stück (auch über widerstandsfreie Verbindungen, 117 Netze) oder widersprüchliche Druckränder.
 - **UNEXPECTED_convergence:** Seed 913, pathologisch mit ~5·10¹² Pa (Konstantstrom gegen sperrende Rückschlagklappe).
 - **generator:** Seed 3078, ein Parameterfehler des Generators, kein Solverbefund.
-- **ISSUES (18, alle erklärt, Stand 2026-10-06):**
+- **ISSUES (17, alle erklärt, Stand 2026-10-06):**
   - *10× feste Leistung bei Kleinstdurchfluss*
     - Seeds 399, 437, 453, 706, 732, 757, 807, 1047, 2385, 2414.
     - Mischungs-/Austrittstemperaturen sind absurd (bis −2,4·10⁶ °C), die
@@ -39,9 +39,9 @@ Referenzstand vergleichen.
     - Der Solver meldet beides selbst: Plausibilitätshinweis und
       Bilanzzeile im Bericht. Der Prüfer bestätigt, dass die Bilanz des
       Solvers mit der unabhängigen Nachrechnung übereinstimmt.
-  - *6× Konditionsgrenze der Thermik*
-    - Seeds 529, 1323, 1328, 1711, 2329, 3098; dazu 3157, 3200 mit
-      Bilanzrest ≤ 3 W bei 20–35 kW.
+  - *7× Konditionsgrenze der Thermik*
+    - Seeds 529, 1323, 1328, 1711, 2329, 3098; dazu 3157 mit
+      Bilanzrest 2,7 W bei 35 kW.
     - Ein großer Umlauf hängt über einen winzigen Teilstrom (Anteil
       ~10⁻⁶) an seiner einzigen Temperaturvorgabe.
     - Der Rest der Knotenbilanz (< 10⁻⁶ K, Abbruchkriterium) wird mit
@@ -64,11 +64,14 @@ bewertet (mit Nachschärfen, Schwelle wie im Solver).
 
 | Ergebnis | Anzahl |
 |---|---|
-| Netze mit Idelchik-T-Stück, gelöst | 310 |
-| davon als mehrdeutig gemeldet | 59 |
-| davon nur per Neustart gelöst | 3 |
-| Validierungsfehler (kurzgeschlossenes T-Stück u.a.) | 86 |
+| Netze mit Idelchik-T-Stück, gelöst | 193 |
+| davon als mehrdeutig gemeldet | 26 |
+| davon nur per Neustart gelöst | 1 |
+| Validierungsfehler (kurzgeschlossenes T-Stück u.a.) | 203 |
 | Generatorfehler | 3 |
+
+Mit 16 statt 8 Zusatzstarts wird ein weiteres Netz als mehrdeutig erkannt
+(Seed 206); 32 Starts finden nichts zusätzlich.
 
 Alle Lösungen der mehrdeutigen Netze sind dynamisch stabil.
 

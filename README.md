@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 847 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 859 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 ## Tool starten
@@ -311,7 +311,7 @@ bereit:
 | `link` | in, out | `q_nom_m3h`. Widerstandsfreie Verbindung (Δp ≈ 1 Pa), die zwei Knoten **thermisch trennt** — für Anschlüsse entlang eines Sammlers, damit Zapfstellen nicht stromab eingemischtes Wasser „sehen" |
 | `hydraulic_separator` | prim_in, prim_out, sec_in, sec_out | `q_nom_m3h`, `dp_nom_Pa`, `ua_W_K` |
 | `manifold` | main, s1…sN | `n_ports` |
-| `tee` | a, b, c | T-Stück 90° (a–b gerader Strang, c Abzweig): Default idealer Knoten; mit `d_run_mm` + `d_branch_mm` Druckverlust nach Idelchik (Diagramme 7-10/7-21, ζ = f(V̇-Verhältnis, Flächenverhältnis), Vereinigung UND Trennung automatisch aus der Strömungsrichtung, stetig über die Regimewechsel; im Netz Totaldruckverlust wie bei allen Bauteilen, statische Anschlussdrücke als Ergebnis `p_static_port_kPa`; zwei Schenkel am selben Knoten werden abgelehnt; mehrdeutige Lösungen werden gemeldet) |
+| `tee` | a, b, c | T-Stück 90° (a–b gerader Strang, c Abzweig): Default idealer Knoten; mit `d_run_mm` + `d_branch_mm` Druckverlust nach Idelchik (Diagramme 7-10/7-21, ζ = f(V̇-Verhältnis, Flächenverhältnis), Vereinigung UND Trennung automatisch aus der Strömungsrichtung, stetig über die Regimewechsel; im Netz Totaldruckverlust wie bei allen Bauteilen, statische Anschlussdrücke als Ergebnis `p_static_port_kPa`; zwei Schenkel am selben Punkt werden abgelehnt — direkt verbunden oder nur über widerstandsfreie Verbindungen wie ideale Linien, `link`, Kugelhahn ohne Kvs, Volumenstromsensor; mehrdeutige Lösungen werden gemeldet) |
 | `open_end` | port | `bc: pressure\|flow`, `p_kPa` (statisch, optional `d_inner_mm`) bzw. `q_m3h`, `t_supply_C` |
 | `cap` | port | dichtes Endstück (Blindstopfen): V̇ = 0 — zum Verschließen von Anschlüssen bei Teilbereichstests; keine Parameter |
 

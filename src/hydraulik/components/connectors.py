@@ -37,5 +37,8 @@ class Link(TwoPortComponent):
               help="Nennvolumenstrom; dort beträgt der interne Referenz-Druckverlust 1 Pa"),
     )
 
+    def ideal_connection(self) -> tuple[str, str] | None:
+        return ("in", "out")
+
     def hydraulic_coefficients(self, q: float, fluid: Fluid) -> EdgeCoefficients:
         return EdgeCoefficients(b=1.0 / self.q_nom ** 2)

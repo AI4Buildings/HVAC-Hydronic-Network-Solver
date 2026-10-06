@@ -78,7 +78,12 @@ Parametervalidierung, Editor-Formular und Eintrag im JSON Schema
   Knotendrücke sind Totaldrücke); `edge_result_extras(label, q, p_from, p_to,
   fluid)` → Zusatzwerte je Kante; im Builder `b.partners(port)` (direkt
   verbundene Anschlüsse) und `b.notice(text)`; `check_topology(port_nodes)` → Fehlerliste
-  nach dem Port-Merge (z.B. kurzgeschlossene Schenkel); `result_notices(q,
+  nach dem Port-Merge (z.B. kurzgeschlossene Schenkel; je Port
+  `(Knoten, Bezeichnung, Punkt, über)`, Punkt = über widerstandsfreie
+  Verbindungen zusammenhängende Knoten); `ideal_connection()` → Anschlusspaar,
+  wenn das Bauteil hydraulisch nur eine widerstandsfreie Verbindung ist
+  (link, ideale Verbindungsleitung, …) — neue quasi-ideale Bauteile
+  implementieren es, damit Topologieprüfungen sie durchschauen; `result_notices(q,
   fluid)` → Plausibilitätshinweise nach dem Lösen; `nonmonotone_hydraulics()`
   → True, wenn die Kennlinie nicht monoton ist (mehrere stationäre Lösungen
   möglich) — dann prüft der Solver die Eindeutigkeit (solver/uniqueness.py).

@@ -262,13 +262,36 @@ class Network:
             for m in members:
                 el_to_node[m] = idx
 
-        # 4b. Einbindung je Komponente prüfen (z.B. kurzgeschlossene Schenkel)
+        # 4b. Einbindung je Komponente prüfen (z.B. kurzgeschlossene Schenkel).
+        # Punkt = Knoten, die nur über widerstandsfreie Verbindungen
+        # (Hook ideal_connection) zusammenhängen — hydraulisch derselbe Punkt.
+        point = list(range(len(nodes)))
+
+        def find(i: int) -> int:
+            while point[i] != i:
+                point[i] = point[point[i]]
+                i = point[i]
+            return i
+        ideal: list[tuple[str, int]] = []
+        for comp in self.components.values():
+            pair = comp.ideal_connection()
+            if pair is None:
+                continue
+            e1, e2 = (f"{comp.name}.{pn}" for pn in pair)
+            if e1 in el_to_node and e2 in el_to_node:
+                point[find(el_to_node[e1])] = find(el_to_node[e2])
+                ideal.append((comp.name, el_to_node[e1]))
+        via: dict[int, list[str]] = {}
+        for name, n in ideal:
+            via.setdefault(find(n), []).append(name)
         for comp in self.components.values():
             port_nodes = {}
             for pn in comp.port_names():
                 el = f"{comp.name}.{pn}"
                 if el in el_to_node:
-                    port_nodes[pn] = (el_to_node[el], nodes[el_to_node[el]].label)
+                    n = el_to_node[el]
+                    port_nodes[pn] = (n, nodes[n].label, find(n),
+                                      tuple(sorted(via.get(find(n), ()))))
             errors += comp.check_topology(port_nodes) or []
 
         # 5. Randbedingungen den Knoten zuordnen

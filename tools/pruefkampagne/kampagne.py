@@ -7,8 +7,8 @@ Schreibt kampagne_START_ANZAHL.json (eine Zeile je Netz: Klasse, Meldung,
 Iterationen) ins aktuelle Verzeichnis. Klassen: ok | ISSUES (Nachrechnung
 oder Eindeutigkeit auffällig) | expected_validation | expected_no_steady |
 UNEXPECTED_convergence | UNEXPECTED_model | UNEXPECTED_crash | generator.
-Referenzstand 2026-10-06 (0 3300 --quick): ok 2933, ISSUES 18 (erklärt in
-tools/README.md), expected_no_steady 89, expected_validation 258,
+Referenzstand 2026-10-06 (0 3300 --quick): ok 2822, ISSUES 17 (erklärt in
+tools/README.md), expected_no_steady 84, expected_validation 375,
 UNEXPECTED_convergence 1 (Seed 913, ~5e12 Pa), generator 1.
 --quick überspringt den Zweitlauf mit anderen Startwerten (Eindeutigkeit).
 Vor jeder Solver-Änderung laufen lassen und mit dem Referenzstand vergleichen.

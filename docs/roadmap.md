@@ -2,7 +2,7 @@
 
 ## Solver-Prüfung (2026-10-06, zwei Runden, in main)
 
-847 Tests, alle grün. Ausführlich: docs/solver_pruefung_2026-10.md
+859 Tests, alle grün. Ausführlich: docs/solver_pruefung_2026-10.md
 (Code-Review, geschlossene Lösungen, 3300 Zufallsnetze mit unabhängiger
 Nachrechnung).
 
@@ -23,7 +23,9 @@ Nachrechnung).
   - Idelchik-T-Stück:
     - stetig über die Regimewechsel, mit Tangenten-Linearisierung
     - Abszisse Q_st/Q_c bei Trennung
-    - Kurzschluss zweier Schenkel wird abgelehnt (Hook `check_topology`)
+    - Kurzschluss zweier Schenkel wird abgelehnt (Hook `check_topology`),
+      auch über widerstandsfreie Verbindungen wie im Editor gezeichnet
+      (Hook `ideal_connection`; Kampagne: 117 von 310 T-Stück-Netzen)
   - Lüftungskern L1–L12 plus Nebel bei Umluftmischung, als dokumentierte
     Abweichungen vom MATLAB-Original; die PDF-Referenz bleibt exakt, die
     Skill-Kopie ist identisch gepatcht
@@ -35,13 +37,17 @@ Nachrechnung).
   inklusive `alternatives`; im Editor erscheint ein Dialog.
 - **T-Stück im Netz mit Totaldruck** (wie alle Bauteile); die statischen
   Anschlussdrücke sind nur noch Ergebnis. Mehrdeutige Zufallsnetze 83 → 59
-  von 310. Bei Nichtkonvergenz startet der Solver automatisch von
-  alternativen Startwerten neu.
+  von 310, nach Ablehnung der Quasi-Kurzschlüsse 26 von 193. Bei
+  Nichtkonvergenz startet der Solver automatisch von alternativen
+  Startwerten neu.
 - **Druckbegriff:** Knotendrücke sind Totaldrücke. Druckrandbedingungen und
   Drucksensoren arbeiten mit dem statischen Überdruck am Anschluss
   (p − ρw²/2, Querschnitt der angeschlossenen Leitung oder `d_inner`).
-- **Offen (Modellentscheidung):**
+- **Offen:**
   - Sammler-Konvention c laut Quellnotiz noch fachlich freizugeben
+    (Modellentscheidung)
+  - Eindeutigkeitsprüfung mit 16 statt 8 Zusatzstarts? 8 übersehen eines
+    von 27 mehrdeutigen Kampagnennetzen, bei doppelter Prüfzeit
 
 ## Eingabeformat gehärtet (2026-10-05, unveröffentlicht)
 
@@ -361,7 +367,7 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (847 Tests, müssen grün sein; node für die Paritätstests);
+1. `pip install -e ".[dev]" && pytest` (859 Tests, müssen grün sein; node für die Paritätstests);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/). Auf einem neuen
    Rechner: README, Abschnitt „Auf einem anderen Rechner weiterarbeiten“.
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block

@@ -22,7 +22,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (847 Tests; Paritätstests brauchen node)
+pytest                                   # Testsuite (859 Tests; Paritätstests brauchen node)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]   # auch .json
 hydraulik export --json schaltung.yaml [--out schaltung.json]   # geprüft, kanonisches JSON
@@ -65,7 +65,10 @@ src/hydraulik/
                      Druckverlust (d_run+d_branch; Regime aus Strömungsrichtung;
                      unter x = 0.1 stetige Überblendung zwischen den Regimen,
                      Tangenten-Linearisierung; Kurzschluss zweier Schenkel
-                     → Validierungsfehler über Hook check_topology; im Netz
+                     → Validierungsfehler über Hook check_topology, auch
+                     über widerstandsfreie Verbindungen (Hook
+                     ideal_connection: ideale conduit, link, Kugelhahn ohne
+                     Kvs, V̇-Sensor, WMZ — Knoten bilden einen „Punkt“); im Netz
                      TOTALDRUCK wie alle Bauteile — statische Anschlussdrücke
                      nur als Ergebnis (edge_result_extras: p_static_port_kPa))
     storage/separators/connectors (link)/conduit (Verbindungsleitung = Linie
@@ -164,7 +167,7 @@ docs/                architektur.md, numerik.md, erweitern.md, roadmap.md,
                      solver_pruefung_2026-10.md (Prüfbericht, offene Punkte)
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               847 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+tests/               859 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
                      test_yamlio.py / test_yaml12_kompat.py: Loader + YAML-1.1-
                      Altlasten; test_editor_paritaet.py: JS ↔ Python (node,
                      Korpus tests/data/, Zufallsskalare/-dokumente, Round-Trip);
@@ -176,8 +179,9 @@ tests/               847 Tests: analytische Referenzen + Validierung gegen Muste
                      test_air_vka_matlab.py: VKA-Kern gegen MATLAB/PDF-Referenz;
                      test_air_vka_pruefung.py: Lüftungsbefunde L1–L12 (Invarianten);
                      test_eindeutigkeit.py: Mehrdeutigkeit melden + Neustart
-                     (Kampagnennetze 3289, 2647); test_tee_idelchik.py:
-                     T-Stück gegen Handrechnung; test_statischer_druck.py:
+                     (Kampagnennetze 3289, 1972); test_tee_idelchik.py:
+                     T-Stück gegen Handrechnung, Kurzschlussregeln;
+                     test_statischer_druck.py:
                      Druckbegriff (Ränder/Sensoren statisch) gegen Bisektion
 tools/               Prüfwerkzeuge außerhalb von pytest (tools/README.md):
                      pruefkampagne/ (3300 Zufallsnetze + unabhängige
@@ -266,8 +270,9 @@ tools/               Prüfwerkzeuge außerhalb von pytest (tools/README.md):
 - Modellfragen mit fachlicher Tragweite entscheidet der Nutzer — vorher
   fragen: T-Stück-Druckbegriff (seit 2026-10-06 Totaldruck), Sammler-
   Konvention c (Idelchik 7-10, offen), Ablehnung kurzgeschlossener T-Stücke
-  (könnte zum Hinweis herabgestuft werden), Druckbegriff an Rändern/Sensoren
-  (statischer Überdruck, Nutzerwunsch 2026-10-06).
+  (2026-10-06: beibehalten und auf widerstandsfreie Verbindungen ausgeweitet,
+  weil im Editor jede Linie eine Verbindungsleitung ist), Druckbegriff an
+  Rändern/Sensoren (statischer Überdruck, Nutzerwunsch 2026-10-06).
 - Mehrere stabile stationäre Lösungen sind ein Anfangswertproblem: melden,
   nie still auswählen (Stabilitätstest: tools/pruefkampagne/stabilitaet.py).
 - Jede Modell- oder Solver-Änderung an ALLEN Kampagnennetzen gegenprüfen,

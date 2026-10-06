@@ -32,24 +32,31 @@ MEHRDEUTIG = {
                     ["p1.out", "p2.in", "pu1.out", "t1.b"],
                     ["p1.in", "q1.in", "q2.in", "t1.a"]]}
 
-#: Seed 2647: vom Standardstartwert aus irrt die Iteration umher (Kennlinie
-#: ohne stabiles Gleichgewicht in diesem Bereich), stabile Lösungen existieren
+#: Seed 1972: vom Standardstartwert aus irrt die Iteration umher (Kennlinie
+#: ohne stabiles Gleichgewicht in diesem Bereich), eine stabile Lösung
+#: existiert. (Das frühere Netz Seed 2647 hatte die Schenkel b und c über
+#: einen Volumenstromsensor kurzgeschlossen und wird seit 2026-10-06 abgelehnt.)
 NEUSTART = {
-    "fluid": {"name": "oel", "rho": 870.0, "mu": 0.03, "cp": 2000.0},
+    "fluid": {"name": "water_61C", "rho": 982.9, "mu": 0.0004626, "cp": 4185.0},
     "components": {
-        "p1": {"type": "pipe", "length_m": 58.12, "zeta": 0.564, "d_inner_mm": 13.0},
-        "p2": {"type": "flow_resistance", "c_Pa_m3s2": 5.489e11, "a_Pa_m3s": 1.8e5},
-        "em1": {"type": "floor_heating", "area_m2": 19.54, "t_room_C": 19.6, "length_m": 20.65},
-        "p3": {"type": "flow_sensor"},
-        "pu1": {"type": "pump", "mode": "constant_dp", "dp_internal_frac": 0.01,
-                "dp_kPa": 143.2, "q_nom_m3h": 27.59},
-        "pu2": {"type": "pump", "mode": "constant_flow", "q_m3h": 1.363},
-        "pu3": {"type": "pump", "mode": "constant_flow", "q_m3h": 3.551},
-        "q1": {"type": "ideal_storage", "t_set_C": 48.25, "q_m3h": 0.4673},
-        "t1": {"type": "tee", "d_run_mm": 40.0, "d_branch_mm": 40.0}},
-    "connections": [["p1.in", "p2.in", "em1.in", "pu1.out", "pu3.in", "q1.in", "t1.a"],
-                    ["p1.out", "p3.in", "pu1.in", "pu2.out", "t1.b"],
-                    ["p2.out", "em1.out", "p3.out", "pu2.in", "pu3.out", "q1.out", "t1.c"]]}
+        "em1": {"type": "radiator", "q_nom_kW": 0.4962, "t_sup_nom_C": 48.0,
+                "t_ret_nom_C": 41.43, "t_room_C": 16.08, "n": 1.126, "kv_m3h": 2.977},
+        "p1": {"type": "pipe", "length_m": 17.24, "d_inner_mm": 20.0, "zeta": 13.14},
+        "p2": {"type": "conduit", "t_amb_C": 12.0,
+               "pipes": [{"length_m": 3.989, "d_inner_mm": 40.0, "roughness_mm": 0.007,
+                          "zeta": 2.585}]},
+        "em2": {"type": "floor_heating", "area_m2": 59.76, "t_room_C": 18.9, "length_m": 98.95},
+        "em3": {"type": "cooling_coil", "ua_ref_W_K": 1624.0, "q_w_ref_m3h": 2.551,
+                "m_dot_air_ref_kg_s": 0.2793, "m_dot_air_kg_s": 2.704, "t_air_in_C": 21.91,
+                "ua_star_wet_kg_s": 2.375, "rh_air_in": 0.3789},
+        "pu1": {"type": "pump", "mode": "constant_flow", "q_m3h": 18.33},
+        "t1": {"type": "tee", "d_run_mm": 40.0, "d_branch_mm": 40.0},
+        "zu1": {"type": "inflow", "t_set_C": 27.41, "p_kPa": 20.03},
+        "ab1": {"type": "outflow", "p_kPa": 80.89, "t_reverse_C": 11.75},
+        "tf1": {"type": "temperature_sensor"}},
+    "connections": [["p2.out", "pu1.in", "t1.a", "zu1.port"], ["em1.out", "tf1.port"],
+                    ["em1.in", "p1.out", "em2.in", "em3.in", "t1.b", "ab1.port"],
+                    ["p1.in", "p2.in", "em2.out", "em3.out", "pu1.out", "t1.c"]]}
 
 
 def _residuen(c, q, p):
@@ -99,7 +106,7 @@ def test_neustart_von_alternativem_startwert():
     r = h.load(copy.deepcopy(NEUSTART)).solve()
     assert r.converged
     assert any("vom Standardstartwert nicht konvergiert" in n for n in r.notices)
-    assert len(r.alternatives) == 1
+    assert r.alternatives == []                 # nur diese eine Lösung gefunden
     with pytest.raises(h.ConvergenceError):
         h.load(copy.deepcopy(NEUSTART)).solve(SolverSettings(uniqueness_starts=0))
 

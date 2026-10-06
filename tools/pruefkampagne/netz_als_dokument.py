@@ -4,11 +4,10 @@
 
 Parameter werden auf 4 signifikante Stellen gerundet und in übliche Einheiten
 (m³/h, kPa, kW, mm) gebracht; Widerstandsbeiwerte (a_…, c_…) bleiben in SI.
-Defaultwerte entfallen. Achtung: Betriebsarten, die sich aus den angegebenen
-Parametern ergeben (z.B. conduit ideal/C-Wert/Rohrmodell), können sich beim
-Rückschreiben ändern — das Verhalten des Dokuments daher immer nachprüfen
-(z.B. Mehrdeutigkeit bzw. Konvergenz wie beim Original).
-"""
+Defaultwerte entfallen; die pipes-Liste der Verbindungsleitung wird
+mitgeschrieben. Durch das Runden kann sich das Verhalten knapp ändern — das
+Dokument daher immer nachprüfen (z.B. Mehrdeutigkeit bzw. Konvergenz wie
+beim Original)."""
 from __future__ import annotations
 
 import json
@@ -51,6 +50,10 @@ def to_doc(net) -> dict:
                 d[k[:-2] + "_mm"] = _rnd(v * 1e3)
             else:
                 d[k] = v
+        if getattr(c, "pipes", None):            # Listen-Kwarg (LIST_PARAMS), nicht in PARAMS
+            d["pipes"] = [{"length_m": _rnd(sg["length"]), "d_inner_mm": _rnd(sg["d_inner"] * 1e3),
+                           "roughness_mm": _rnd(sg["roughness"] * 1e3), "zeta": _rnd(sg["zeta"])}
+                          for sg in c.pipes]
         comps[name] = d
     f = net.fluid
     return {"fluid": {"name": f.name, "rho": _rnd(f.rho), "mu": _rnd(f.mu), "cp": _rnd(f.cp)},

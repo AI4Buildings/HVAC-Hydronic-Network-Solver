@@ -162,6 +162,9 @@ class FlowSensor(TwoPortComponent):
 
     PARAMS = (_Q_NOM_PARAM,)
 
+    def ideal_connection(self) -> tuple[str, str] | None:
+        return ("in", "out")
+
     def hydraulic_coefficients(self, q: float, fluid: Fluid) -> EdgeCoefficients:
         return EdgeCoefficients(b=1.0 / self.q_nom ** 2)
 
@@ -191,6 +194,9 @@ class EnergyMeter(TwoPortComponent):
 
     def port_names(self) -> tuple[str, ...]:
         return ("in", "out", "t_ref")
+
+    def ideal_connection(self) -> tuple[str, str] | None:
+        return ("in", "out")              # Durchflussteil quasi-ideal; t_ref ist Anzapfung
 
     def build(self, b: NetworkBuilder) -> None:
         super().build(b)          # Durchflussteil in → out

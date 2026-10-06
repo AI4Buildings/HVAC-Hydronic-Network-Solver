@@ -168,16 +168,32 @@ class Tee(Component):
             return None
         errors = []
         names = [pn for pn in ("a", "b", "c") if pn in port_nodes]
+        folge = ("die Aufteilung über die beiden Schenkel bestimmt dann allein die "
+                 "Idelchik-Kennlinie (d_run/d_branch), meist mit Zirkulation durch das "
+                 "T-Stück und oft nicht eindeutig; die Tabellen gelten für ungestörte "
+                 "Leitungen hinter dem T-Stück, nicht für sofort wieder zusammengeführte "
+                 "Abgänge")
         for i, p1 in enumerate(names):
             for p2 in names[i + 1:]:
-                if port_nodes[p1][0] == port_nodes[p2][0]:
+                n1, lab1, pt1, via = port_nodes[p1][:4]
+                n2, lab2, pt2, _ = port_nodes[p2][:4]
+                if n1 == n2:
                     errors.append(
                         f"T-Stück '{self.name}': Schenkel '{p1}' und '{p2}' liegen am selben "
-                        f"Knoten ('{port_nodes[p1][1]}') – das T-Stück ist kurzgeschlossen; die "
-                        f"Aufteilung über die beiden Schenkel bestimmt dann allein die "
-                        f"Idelchik-Kennlinie (d_run/d_branch), oft nicht eindeutig. Abhilfe: "
-                        f"Verbindungen von "
-                        f"'{self.name}.{p1}' und '{self.name}.{p2}' prüfen oder d_run_mm/"
+                        f"Knoten ('{lab1}') – das T-Stück ist kurzgeschlossen; {folge}. "
+                        f"Abhilfe: Verbindungen von '{self.name}.{p1}' und "
+                        f"'{self.name}.{p2}' prüfen oder d_run_mm/d_branch_mm weglassen "
+                        f"(idealer Knoten).")
+                elif pt1 == pt2:
+                    ueber = ", ".join(f"'{v}'" for v in via[:4]) + (
+                        f" u.a. ({len(via)} insgesamt)" if len(via) > 4 else "")
+                    errors.append(
+                        f"T-Stück '{self.name}': Schenkel '{p1}' ('{lab1}') und '{p2}' "
+                        f"('{lab2}') sind nur über widerstandsfreie Verbindungen ({ueber}: "
+                        f"ideale Verbindungsleitung, link, Kugelhahn ohne Kvs oder "
+                        f"Volumenstromsensor) verbunden – das T-Stück ist kurzgeschlossen; "
+                        f"{folge}. Abhilfe: Verbindungen prüfen, der Leitung dazwischen "
+                        f"einen Widerstand geben (Rohrmodell, C-Wert) oder d_run_mm/"
                         f"d_branch_mm weglassen (idealer Knoten).")
         return errors
 

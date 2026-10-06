@@ -167,11 +167,22 @@ hätten bei Q → 0 die Steigung 0 bzw. ∞). Früher lag die Druckgewinn-Quelle
 auf der quasi-idealen Restkante (1 Pa bei 10 m³/h) — Newton sagte riesige
 Ströme voraus, der Hauptstrom sprang zwischen den Schenkeln.
 
-**Kurzschluss.** Zwei Schenkel am selben Knoten werden beim Kompilieren
-abgelehnt (Hook `check_topology`): die Aufteilung über die beiden Schenkel
-bestimmt dann allein die Tabellenkennlinie, oft nicht eindeutig (Totaldruck-
-Modell: 17 von 69 solchen Kampagnennetzen) — praktisch immer ein
-Zeichenfehler.
+**Kurzschluss.** Zwei Schenkel am selben Punkt werden beim Kompilieren
+abgelehnt (Hook `check_topology`). Ein Punkt sind Knoten, die nur über
+widerstandsfreie Verbindungen zusammenhängen (Hook `ideal_connection`:
+ideale Verbindungsleitung, `link`, offener Kugelhahn ohne Kvs,
+Volumenstromsensor, WMZ). Beide Wege beginnen und enden dann am selben
+Punkt; die Aufteilung bestimmt allein die Tabellenkennlinie. Beispiel
+DN 26/20, 1,2 m³/h: Für jede Aufteilung zwischen 0 und 100 % ist der
+Abzweigverlust größer als der Durchgangsverlust. Gleich werden sie nur mit
+Zirkulation durch das T-Stück (0,53 bzw. 0,71 m³/h, zwei Lösungen). Die
+Tabellen gelten für ungestörte Leitungen hinter dem T-Stück, das Ergebnis
+ist physikalisch bedeutungslos.
+- Die erste Fassung erkannte nur direkt verbundene Schenkel. Im Editor ist
+  aber jede Linie eine Verbindungsleitung; dort wurde der Kurzschluss
+  gerechnet, und die zweite Lösung fanden erst 16 Zusatzstarts.
+- Kampagne: 117 von 310 Netzen mit Idelchik-T-Stück sind so
+  kurzgeschlossen (darunter 33 der 59 mehrdeutigen).
 
 Validierung: tests/test_tee_idelchik.py (Handrechnung Trennung x = 0.4 und
 Vereinigung x = 0.1 mit ζ = −0.65 auf 0.2 Pa genau; Stetigkeit an jedem
@@ -294,7 +305,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 847 Tests)
+## 3. Testabdeckung (tests/, 859 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/

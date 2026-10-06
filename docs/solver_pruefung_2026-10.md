@@ -160,6 +160,14 @@ Förderhöhe im 5-%-Regularisierungswiderstand verloren.
     abgelehnt (neuer generischer Hook `check_topology`). Die Aufteilung über
     die beiden Schenkel bestimmt dann allein die Tabellenkennlinie, oft nicht
     eindeutig; praktisch immer ein Zeichenfehler.
+  - **Nachtrag 2026-10-06 (Nutzerentscheidung):** Ablehnung beibehalten und
+    auf Schenkel ausgeweitet, die nur über widerstandsfreie Verbindungen am
+    selben Punkt enden (Hook `ideal_connection`). Anlass: Im Editor ist jede
+    Linie eine Verbindungsleitung, die Prüfung griff dort nie. Ein so
+    gezeichnetes Beispiel wurde gerechnet (Zirkulation durch das T-Stück),
+    die zweite Lösung erst mit 16 Zusatzstarts gefunden. Kampagne: 117
+    weitere Netze abgelehnt (111 ok, 5 no_steady, 1 ISSUES), keine andere
+    Klassenänderung.
   - **Wirkung:** Alle 137 vorher nicht konvergierenden Netze mit
     Idelchik-T-Stück lösen (≤ 96 Iterationen).
 
@@ -199,12 +207,17 @@ Förderhöhe im 5-%-Regularisierungswiderstand verloren.
     „Hydraulik nicht eindeutig“ und `alternatives` im Ergebnis, im Editor
     einen Dialog. Konvergiert der Standardstart nicht, wird von denselben
     Startwerten neu gestartet, mit Hinweis.
-    - 8 Starts erkennen alle bekannten Fälle; es gibt keinen Fehlalarm.
+    - Keine Fehlalarme. Nach Ablehnung der Quasi-Kurzschlüsse sind von 193
+      gelösten T-Stück-Netzen 26 als mehrdeutig gemeldet; ein weiteres
+      (Seed 206) erkennen erst 16 Starts, 32 Starts finden nichts
+      zusätzlich. 16 Starts verdoppeln die Prüfzeit (Median 97 → 183 ms).
     - Die Smoke-Netze mit Verteiler-Strang-Sammler-Struktur sind alle
       eindeutig.
     - Quasi-Kurzschlüsse zweier Schenkel über widerstandsfreie Bauteile
       erhöhen die Häufigkeit, sind aber weder notwendig noch hinreichend;
-      ein Topologie-Check ersetzt die Prüfung daher nicht.
+      ein Topologie-Check ersetzt die Prüfung daher nicht. Seit 2026-10-06
+      werden sie trotzdem abgelehnt (siehe Nachtrag zu B7): nicht wegen der
+      Mehrdeutigkeit, sondern weil die Tabellen dort nicht gelten.
 - **Sammler-Konvention (Idelchik 7-10).** Die überarbeiteten Quellnotizen
   lesen c als geraden Zulauf (Q_st = Q_c + Q_s). Sie vermerken selbst, dass
   dies der gedruckten (1 − Q_s/Q_c)²-Umrechnung widerspricht und „vor einer
@@ -217,11 +230,11 @@ Förderhöhe im 5-%-Regularisierungswiderstand verloren.
     der Gleitkomma-Auflösung, der Massendefekt stagniert bei 7·10⁻⁶.
   - Ein an die Druckauflösung gekoppelter Jacobi-Floor löste den Fall,
     verlangsamte aber 266 gewöhnliche Netze und wurde verworfen.
-- **Restbefunde der Kampagne (18 Netze, Stand 2026-10-06; erklärt in
+- **Restbefunde der Kampagne (17 Netze, Stand 2026-10-06; erklärt in
   tools/README.md).**
   - 10× feste Leistung bei Kleinstdurchfluss: Der Solver meldet die
     absurden Temperaturen und die Bilanzabweichung bereits selbst.
-  - 8× Konditionsgrenze der Thermik: Ein großer Umlauf hängt über einen
+  - 7× Konditionsgrenze der Thermik: Ein großer Umlauf hängt über einen
     Teilstrom ~10⁻⁶ an seiner einzigen Temperaturvorgabe. Ein Bilanzrest
     < 10⁻⁶ K wird zu ≤ 1,2·10⁻⁴ K Temperaturfehler. Das ist technisch
     bedeutungslos. Ein fehlerbasiertes Abbruchkriterium wäre möglich, ist

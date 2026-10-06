@@ -173,10 +173,20 @@ class Component(ABC):
         zusätzlichen Startwerten (SolverSettings.uniqueness_starts)."""
         return False
 
-    def check_topology(self, port_nodes: dict[str, tuple[int, str]]) -> list[str] | None:
-        """Prüfung der Einbindung nach dem Port-Merge: port_nodes bildet jeden
-        eigenen Port auf (Knotenindex, Knotenbezeichnung) ab. Liste von
-        Fehlermeldungen oder None (Default: keine Anforderung)."""
+    def ideal_connection(self) -> tuple[str, str] | None:
+        """Anschlusspaar, das hydraulisch nur widerstandsfrei verbunden ist
+        (interner Referenzwiderstand, z.B. link, ideale Verbindungsleitung,
+        offener Kugelhahn ohne Kvs, Volumenstromsensor), sonst None. Für
+        Topologieprüfungen gelten so verbundene Knoten als derselbe Punkt."""
+        return None
+
+    def check_topology(self, port_nodes: dict[str, tuple]) -> list[str] | None:
+        """Prüfung der Einbindung nach dem Port-Merge. port_nodes bildet jeden
+        eigenen Port auf (Knotenindex, Knotenbezeichnung, Punkt, über) ab:
+        Punkt fasst Knoten zusammen, die nur über widerstandsfreie Verbindungen
+        (Hook ideal_connection) zusammenhängen; über = Namen dieser
+        Verbindungsbauteile im Punkt (leer, wenn der Punkt ein Knoten ist).
+        Liste von Fehlermeldungen oder None (Default: keine Anforderung)."""
         return None
 
     @abstractmethod

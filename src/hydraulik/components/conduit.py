@@ -114,6 +114,12 @@ class Conduit(TwoPortComponent):
     def q_seed(self) -> float | None:
         return self.q
 
+    def ideal_connection(self) -> tuple[str, str] | None:
+        """Ohne Hydraulik-Angabe ideal (nur 1-Pa-Referenzwiderstand) — gleiche
+        Fallunterscheidung wie hydraulic_coefficients (Auslegungspunkt → c)."""
+        ideal = self.c is None and self.length is None and not self.pipes
+        return ("in", "out") if ideal else None
+
     def port_flow_area(self, port: str) -> float | None:
         """Nur im Rohrmodell bekannt: erster Abschnitt am Eintritt, letzter am
         Austritt (ideal/C-Wert/Auslegungspunkt: kein Querschnitt)."""

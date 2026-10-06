@@ -257,6 +257,70 @@ def test_kurzgeschlossene_schenkel_werden_abgelehnt():
     assert h.load(doc({})).solve(thermal=False).converged
 
 
+def _kurzschluss_doc(verb_b, verb_c, tee=None):
+    """Zulauf → T-Stück; Schenkel b und c laufen über je eine Verbindung auf
+    denselben Knoten (Editor: jede gezogene Linie ist eine Verbindungsleitung)."""
+    return {"components": {
+                "zu": {"type": "inflow", "t_set_C": 50.0, "q_m3h": 2.0},
+                "t1": {"type": "tee", **({"d_run_mm": 32.0, "d_branch_mm": 25.0}
+                                         if tee is None else tee)},
+                "vb": verb_b, "vc": verb_c,
+                "ab": {"type": "outflow", "p_kPa": 150.0}},
+            "connections": [["zu.port", "t1.a"], ["t1.b", "vb.in"], ["t1.c", "vc.in"],
+                            ["vb.out", "vc.out", "ab.port"]]}
+
+
+_IDEAL = {"ideale Leitung": {"type": "conduit"}, "link": {"type": "link"},
+          "Kugelhahn offen": {"type": "ball_valve"}, "V̇-Sensor": {"type": "flow_sensor"}}
+
+
+@pytest.mark.parametrize("art", sorted(_IDEAL))
+def test_kurzschluss_ueber_widerstandsfreie_verbindungen_wird_abgelehnt(art):
+    """Wie im Editor gezeichnet: Durchgang und Abzweig enden über ideale
+    Verbindungen am selben Punkt — hydraulisch derselbe Kurzschluss wie die
+    direkte Verbindung (vorher gerechnet: Zirkulation durch das T-Stück, die
+    zweite Lösung erst mit ≥ 16 Zusatzstarts gefunden)."""
+    doc = _kurzschluss_doc(_IDEAL[art], {"type": "conduit"})
+    with pytest.raises(h.NetworkValidationError,
+                       match=r"Schenkel 'b' \('t1\.b = vb\.in'\) und 'c' \('t1\.c = vc\.in'\) "
+                             r"sind nur über widerstandsfreie Verbindungen \('vb', 'vc'"):
+        h.load(doc).compile()
+
+
+@pytest.mark.parametrize("verb", [
+    {"type": "conduit", "c_Pa_m3h2": 500.0},
+    {"type": "conduit", "length_m": 2.0, "d_inner_mm": 26.0},
+    {"type": "conduit", "pipes": [{"length_m": 2.0, "d_inner_mm": 26.0}]},
+    {"type": "conduit", "dp_kPa": 2.0, "q_m3h": 1.0},
+    {"type": "ball_valve", "kvs_m3h": 6.3},
+    {"type": "pipe", "length_m": 2.0, "d_inner_mm": 26.0},
+])
+def test_verbindung_mit_widerstand_ist_kein_kurzschluss(verb):
+    """Ein echter Widerstand in einem der Wege (Rohrmodell, C-Wert,
+    Auslegungspunkt, Kugelhahn mit Kvs, Rohr) bestimmt die Aufteilung mit —
+    zulässig."""
+    h.load(_kurzschluss_doc(verb, {"type": "conduit"})).compile()
+
+
+def test_kurzschluss_gesperrter_kugelhahn_und_ideales_t_stueck_zulaessig():
+    """Ein geschlossener Kugelhahn verbindet nicht; ohne Durchmesser ist das
+    T-Stück ein idealer Knoten — beides bleibt erlaubt."""
+    h.load(_kurzschluss_doc({"type": "ball_valve", "closed": True}, {"type": "conduit"})).compile()
+    assert h.load(_kurzschluss_doc({"type": "conduit"}, {"type": "conduit"}, tee={})) \
+        .solve(thermal=False).converged
+
+
+def test_kurzschluss_ueber_kette_widerstandsfreier_bauteile():
+    """Auch eine Kette (Leitung → V̇-Sensor → link) zählt als ein Punkt; die
+    Meldung nennt die beteiligten Verbindungen."""
+    doc = _kurzschluss_doc({"type": "conduit"}, {"type": "flow_sensor"})
+    doc["components"]["lk"] = {"type": "link"}
+    doc["connections"][-1] = ["vb.out", "lk.in"]
+    doc["connections"].append(["lk.out", "vc.out", "ab.port"])
+    with pytest.raises(h.NetworkValidationError, match=r"\('lk', 'vb', 'vc'"):
+        h.load(doc).compile()
+
+
 @pytest.mark.parametrize("q_legs", [(0.0, 0.0, 1e-3), (0.0, 1e-3, 0.0), (2e-3, 0.0, 0.0),
                                     (0.0, 0.0, -1e-3), (1e-3, -1e-3, 0.0)])
 def test_schenkelkoeffizienten_bei_zwei_stromlosen_schenkeln(q_legs):
