@@ -453,3 +453,27 @@ hydraulik run <datei.yaml> --json    # maschinenlesbares Ergebnis
 | `docs/numerik.md` | Herleitung des Solvers (SIMPLE ≡ Newton via Schur-Komplement), Robustheitsmaßnahmen, Thermik, Testabdeckung |
 | `docs/erweitern.md` | Anleitung: neue Komponenten hinzufügen (mit Codegerüst) |
 | `docs/roadmap.md` | Stand, bewusste v1-Grenzen, v2-Ideen, Wiedereinstieg |
+| `docs/solver_pruefung_2026-10.md` | Prüfbericht des Solvers (Befunde, Korrekturen, offene Punkte, Kampagnenwirkung) |
+| `tools/README.md` | Prüfwerkzeuge außerhalb der Testsuite: Zufallsnetz-Kampagne, Eindeutigkeit/Stabilität, Browser-E2E |
+
+### Auf einem anderen Rechner weiterarbeiten
+
+```bash
+git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git hydraulik
+cd hydraulik
+python3 -m venv .venv && source .venv/bin/activate      # Python ≥ 3.10
+pip install -e ".[dev]"                                  # optional: ".[dev,e2e]"
+pytest                                                   # alle Tests grün
+editor server                                            # GUIs: http://127.0.0.1:8091/
+```
+
+- **Node.js:** Die Paritätstests JS ↔ Python (`tests/test_editor_paritaet.py`)
+  laufen nur, wenn `node` installiert ist; sonst werden sie übersprungen.
+- **Nicht im Repository:** Die Referenzunterlagen (Übungs-PDFs, Idelchik-Scans,
+  GEA-Datenblatt) sind urheberrechtlich geschützt und werden nicht committet.
+  Zum Rechnen und Testen werden sie nicht gebraucht.
+- **Skill-Kopie:** Die Skill-Kopie `vka-effizienz-en16798` liegt außerhalb
+  (`~/.claude/skills`). Der Lüftungskern im Repo (`src/hydraulik/air/vka/`)
+  ist eigenständig; bei Kernänderungen die Skill-Kopie identisch nachziehen
+  (siehe CLAUDE.md). Ob die Skill-Kopie eines Rechners auf dem Stand des
+  Repos ist, zeigt `python3 tools/vka_skill_abgleich.py`.

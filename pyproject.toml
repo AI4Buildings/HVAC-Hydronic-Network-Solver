@@ -18,6 +18,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "jsonschema>=4.18"]
+# Browsertests der Editoren (tools/e2e/); danach: python -m playwright install chromium
+e2e = ["playwright>=1.40"]
 
 [project.scripts]
 hydraulik = "hydraulik.cli:main"

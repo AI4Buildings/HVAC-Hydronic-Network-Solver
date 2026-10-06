@@ -36,6 +36,8 @@ python3 examples/07_twe_heizkreisverteiler.py    # Auslegung + Verifikation + Ab
 python3 examples/validation_fh_verteiler.py      # Validierungs-Kennlinienplots
 python3 examples/08_ventilautoritaet.py          # Wirkung der Ventilautorität (Plots)
 python3 examples/09_energetikum_lueftungsregister.py  # reale Anlage + BEMS-IDs (Aedifion)
+python3 tools/pruefkampagne/kampagne.py 0 3300 --quick   # Prüfkampagne (vor Solver-Änderungen)
+python3 tools/vka_skill_abgleich.py      # VKA-Kern ↔ Skill-Kopie identisch?
 ```
 
 ## Struktur
@@ -173,7 +175,15 @@ tests/               847 Tests: analytische Referenzen + Validierung gegen Muste
                      test_solver_pruefung.py: Befunde der Solver-Prüfung (B1–B16);
                      test_air_vka_matlab.py: VKA-Kern gegen MATLAB/PDF-Referenz;
                      test_air_vka_pruefung.py: Lüftungsbefunde L1–L12 (Invarianten);
-                     test_eindeutigkeit.py: Mehrdeutigkeit melden (Kampagnennetz 3128)
+                     test_eindeutigkeit.py: Mehrdeutigkeit melden + Neustart
+                     (Kampagnennetze 3289, 2647); test_tee_idelchik.py:
+                     T-Stück gegen Handrechnung; test_statischer_druck.py:
+                     Druckbegriff (Ränder/Sensoren statisch) gegen Bisektion
+tools/               Prüfwerkzeuge außerhalb von pytest (tools/README.md):
+                     pruefkampagne/ (3300 Zufallsnetze + unabhängige
+                     Nachrechnung, Eindeutigkeit, Stabilität; Referenzstand
+                     dort), e2e/ (Playwright-Browsertests beider Editoren,
+                     Extra ".[e2e]"), vka_skill_abgleich.py
 .github/workflows/   CI: pytest auf Python 3.10–3.12 bei Push/PR
 ```
 
@@ -247,8 +257,32 @@ tests/               847 Tests: analytische Referenzen + Validierung gegen Muste
   (aufgeteilte Widerstände oder `link`), sonst mischt der Solver stromab
   eingemischtes Wasser in stromauf liegende Zapfstellen.
 
+## Arbeitsweise und Nutzerentscheidungen
+
+- Bewusst gewählt (nicht „modernisieren"): SIMPLE-artiger Druckkorrektur-
+  Solver (didaktischer 1D-CFD-Charakter, Newton-konsistent gemacht);
+  physikalische Wärmeübertragungsmodelle statt nur fester Q̇; YAML/JSON +
+  Python-API mit Einheiten-Suffixen.
+- Modellfragen mit fachlicher Tragweite entscheidet der Nutzer — vorher
+  fragen: T-Stück-Druckbegriff (seit 2026-10-06 Totaldruck), Sammler-
+  Konvention c (Idelchik 7-10, offen), Ablehnung kurzgeschlossener T-Stücke
+  (könnte zum Hinweis herabgestuft werden), Druckbegriff an Rändern/Sensoren
+  (statischer Überdruck, Nutzerwunsch 2026-10-06).
+- Mehrere stabile stationäre Lösungen sind ein Anfangswertproblem: melden,
+  nie still auswählen (Stabilitätstest: tools/pruefkampagne/stabilitaet.py).
+- Jede Modell- oder Solver-Änderung an ALLEN Kampagnennetzen gegenprüfen,
+  nicht nur an den bekannten Problemfällen (Prognose „32 von 37 eindeutig"
+  war zu optimistisch: real 70 beseitigt, 45 neu); Ergebnis mit dem
+  Referenzstand in tools/README.md vergleichen und Abweichungen erklären.
+- Referenzunterlagen im Arbeitsverzeichnis (Übungs-PDFs, Idelchik-Scans,
+  GEA-Datenblatt) sind urheberrechtlich geschützt: NIE committen (.gitignore);
+  das Repo ist öffentlich.
+- VKA-Kern (air/vka/) und Skill-Kopie ~/.claude/skills/vka-effizienz-en16798
+  physikalisch identisch halten; Prüfung mit tools/vka_skill_abgleich.py.
+
 ## Offene Punkte (v2-Kandidaten)
 
 Siehe docs/roadmap.md: Pumpenkennlinien, Netzplan-Visualisierung,
 Ventilautorität im Bericht, feuchtes Kühlregister, Parametersweep-Helfer,
-Regelkreis-Iteration.
+Regelkreis-Iteration. Offene Fachentscheidungen und der pathologische
+Kampagnenfall Seed 913: docs/solver_pruefung_2026-10.md.

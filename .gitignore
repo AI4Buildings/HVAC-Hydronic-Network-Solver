@@ -19,3 +19,7 @@ examples/*.png
 Trennung_Teil*.png
 Vereinigung_Teil*.png
 lueftung_editor.html
+
+# Ausgaben der Prüfwerkzeuge (tools/)
+kampagne_*.json
+eindeutigkeit_*.json

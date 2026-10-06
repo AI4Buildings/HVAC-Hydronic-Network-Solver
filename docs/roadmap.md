@@ -362,17 +362,23 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 ## Wiedereinstieg
 
 1. `pip install -e ".[dev]" && pytest` (847 Tests, müssen grün sein; node für die Paritätstests);
-   `editor server` startet beide GUIs (http://127.0.0.1:8091/).
+   `editor server` startet beide GUIs (http://127.0.0.1:8091/). Auf einem neuen
+   Rechner: README, Abschnitt „Auf einem anderen Rechner weiterarbeiten“.
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
-   dieser Datei lesen — dort steht, was zuletzt gebaut wurde.
-3. docs/architektur.md (Struktur) und docs/numerik.md (Solver-Herleitung);
+   dieser Datei lesen — dort steht, was zuletzt gebaut wurde; offene Fach-
+   entscheidungen stehen im Prüfbericht docs/solver_pruefung_2026-10.md.
+3. Vor Solver- oder Modelländerungen die Prüfkampagne laufen lassen
+   (tools/README.md) und mit dem dort notierten Referenzstand vergleichen.
+4. docs/architektur.md (Struktur) und docs/numerik.md (Solver-Herleitung);
    für neue Komponenten docs/erweitern.md.
-4. Luftseite: src/hydraulik/air/ (components/loader/adapter + vka/-Kern);
+5. Luftseite: src/hydraulik/air/ (components/loader/adapter + vka/-Kern);
    Editor-Verhalten in air_editor_template.html (PARAM_MODES, Vorlagen,
-   isTapPort/Messleitungen, Stationen-Tooltips).
-5. Lokale, bewusst NICHT committete Referenzunterlagen (Copyright; liegen
+   isTapPort/Messleitungen, Stationen-Tooltips). Kernänderungen in
+   air/vka/ IMMER auch in der Skill-Kopie ~/.claude/skills/vka-effizienz-en16798
+   nachziehen (liegt außerhalb des Repos) und dort validate_vka.py laufen lassen.
+6. Lokale, bewusst NICHT committete Referenzunterlagen (Copyright; liegen
    nur im Arbeitsverzeichnis): Übungs-PDFs, Idelchik-Buchscans
    (Trennung_/Vereinigung_Teil*.png), Dokumentations_Vollklimaanlage.pdf
    (GEA-Datenblatt zur Vorlage „GEA Vollklima Energetikum").
-6. Plandatei der ursprünglichen Entwicklung:
+7. Plandatei der ursprünglichen Entwicklung (nur auf dem Entwicklungsrechner):
    `~/.claude/plans/ich-w-rde-gerne-eine-idempotent-tome.md`

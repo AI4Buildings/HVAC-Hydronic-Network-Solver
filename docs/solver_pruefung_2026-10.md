@@ -217,6 +217,15 @@ Förderhöhe im 5-%-Regularisierungswiderstand verloren.
     der Gleitkomma-Auflösung, der Massendefekt stagniert bei 7·10⁻⁶.
   - Ein an die Druckauflösung gekoppelter Jacobi-Floor löste den Fall,
     verlangsamte aber 266 gewöhnliche Netze und wurde verworfen.
+- **Restbefunde der Kampagne (18 Netze, Stand 2026-10-06; erklärt in
+  tools/README.md).**
+  - 10× feste Leistung bei Kleinstdurchfluss: Der Solver meldet die
+    absurden Temperaturen und die Bilanzabweichung bereits selbst.
+  - 8× Konditionsgrenze der Thermik: Ein großer Umlauf hängt über einen
+    Teilstrom ~10⁻⁶ an seiner einzigen Temperaturvorgabe. Ein Bilanzrest
+    < 10⁻⁶ K wird zu ≤ 1,2·10⁻⁴ K Temperaturfehler. Das ist technisch
+    bedeutungslos. Ein fehlerbasiertes Abbruchkriterium wäre möglich, ist
+    aber nicht umgesetzt.
 - **Kreuzstrom-Näherung.** Die Incropera-Korrelation weicht bis 3,5 % ab
   (kleines NTU, Cr = 1). Das ist bekannt und akzeptabel.
 
