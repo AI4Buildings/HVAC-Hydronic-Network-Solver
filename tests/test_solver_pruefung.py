@@ -408,3 +408,88 @@ def test_bestimmte_kreise_ohne_hinweis():
     assert not any("nicht eindeutig" in n for n in _umlauf(wp=True, verlust=True).notices)
     for path in sorted((Path(__file__).parent.parent / "examples").glob("*.yaml")):
         assert not any("nicht eindeutig" in n for n in h.load(path).solve(h.load_settings(path)).notices), path
+
+
+# --- B14: fast geschlossenes Ventil parallel zu einer idealen Verbindung ---------
+
+@pytest.mark.parametrize("opening", [1e-3, 0.02])
+@pytest.mark.parametrize("fluid", [W50, h.Fluid("glykol", 1050.0, 4e-3, 3600.0)], ids=["wasser", "glykol"])
+def test_fast_geschlossenes_ventil_konvergiert_zuegig(opening, fluid):
+    """Gleichgewichtsstrom ~1e-7 m³/h liegt weit unter der Standard-Floor-
+    Auflösung (0.1 % des Startwerts): Newton darf dort nicht künstlich gedämpft
+    bleiben (vorher 415–487 Iterationen > max_iter 400)."""
+    from hydraulik.solver.hydraulic import solve_hydraulics
+    net = h.Network(fluid=fluid)
+    net.add(h.Pump("pu", mode="constant_dp", dp_kPa=60, q_nom_m3h=3))
+    net.add(h.FlowResistance("netz", c_Pa_m3h2=5000))
+    net.add(h.Link("by"))
+    net.add(h.ControlValve("rv", kvs_m3h=0.4, opening=opening, rangeability=1000))
+    net.add(h.HeatPump("wp", mode="target_t_out", t_out_set_C=45, q_nom_m3h=19))
+    net.add(h.Radiator("hk", q_nom_kW=2, t_sup_nom_C=55, t_ret_nom_C=45))
+    net.connect("pu.out", "netz.in"); net.connect("netz.out", "by.in", "rv.in")
+    net.connect("rv.out", "wp.in"); net.connect("wp.out", "hk.in"); net.connect("hk.out", "by.out", "pu.in")
+    comp = net.compile()
+    hyd = solve_hydraulics(comp)
+    assert hyd.converged and hyd.iterations <= 60
+    # Strang rv–wp–hk: Δp über dem Strang = Δp über dem Link; Strom aus der Kennlinie
+    e = {x.name: x for x in comp.edges}
+    q = float(hyd.q[e["rv"].index])
+    dp_strang = sum(x.coeff_fn(q, fluid).b * q * abs(q) for x in (e["rv"], e["wp"], e["hk"]))
+    dp_link = hyd.p[e["by"].node_from] - hyd.p[e["by"].node_to]
+    # innerhalb der Impulstoleranz des Solvers (1e-6 · Druckmaßstab 60 kPa)
+    assert abs(dp_strang - dp_link) <= 1e-6 * 60e3
+
+
+# --- Thermik: Genauigkeitsgrenze statt Fehler, keine stationäre Lösung bleibt Fehler
+
+def test_thermik_genauigkeitsgrenze_mit_hinweis_statt_fehler():
+    """Endet die Iteration knapp über tol_t (≤ 100·tol_t, ohne Drift — typisch
+    die Rundungsgrenze bei stark unterschiedlichen Kapazitätsströmen), wird die
+    Lösung mit Genauigkeitshinweis geliefert statt verworfen."""
+    from hydraulik.solver.settings import SolverSettings
+    net = h.Network(fluid=W50)
+    net.add(h.IdealStorage("sp", t_set_C=60))
+    net.add(h.Pump("pu", mode="constant_flow", q_m3h=1.0))
+    net.add(h.Radiator("hk", q_nom_kW=3, t_sup_nom_C=55, t_ret_nom_C=45))
+    net.connect("sp.out", "pu.in"); net.connect("pu.out", "hk.in"); net.connect("hk.out", "sp.in")
+    import re
+    from hydraulik.exceptions import ConvergenceError
+    # Residuum nach EINEM Newton-Schritt (Iterationsgrenze) aus der Meldung
+    with pytest.raises(ConvergenceError) as exc:
+        net.solve(SolverSettings(tol_t=1e-30, max_iter_thermal=1))
+    rest = float(re.search(r"Bilanzabweichung ([0-9.e+-]+) K", str(exc.value)).group(1))
+    assert rest > 0.0
+    # Rest ≤ 100·tol_t → Ergebnis mit Genauigkeitshinweis
+    r = net.solve(SolverSettings(tol_t=rest / 10.0, max_iter_thermal=1))
+    assert r.converged
+    assert any("Thermik" in n and "genau" in n for n in r.notices), r.notices
+    # Rest > 100·tol_t → weiterhin Fehler
+    with pytest.raises(ConvergenceError):
+        net.solve(SolverSettings(tol_t=rest / 1000.0, max_iter_thermal=1))
+
+
+def test_keine_stationaere_loesung_bleibt_fehler():
+    from hydraulik.exceptions import ConvergenceError
+    net = h.Network(fluid=W50)
+    net.add(h.Pump("pu", mode="constant_flow", q_m3h=0.5))
+    net.add(h.Radiator("hk", q_prescribed_kW=2.0, kv_m3h=2.0))
+    net.connect("pu.out", "hk.in"); net.connect("hk.out", "pu.in")
+    with pytest.raises(ConvergenceError, match="keine stationäre Lösung"):
+        net.solve()
+
+
+@pytest.mark.parametrize("q_umlauf_m3h", [50.0, 1500.0])
+def test_drift_erkannt_trotz_grossem_umlauf(q_umlauf_m3h):
+    """Kreis ohne Wärmequelle mit fest entziehendem Register und großem
+    Umlauf über einen Link: das Bilanzresiduum ist winzig (~1e-4 K), bei
+    |T| ~ 1e6 K erzeugt Rundung scheinbare Mini-Abstiege — die Drift muss
+    trotzdem als „keine stationäre Lösung" erkannt werden (vorher:
+    Iterationsgrenze ohne Diagnose)."""
+    from hydraulik.exceptions import ConvergenceError
+    net = h.Network(fluid=h.water_at(10))
+    net.add(h.Pump("pu", mode="constant_flow", q_m3h=q_umlauf_m3h))
+    net.add(h.Link("by"))
+    net.add(h.HeatingCoil("reg", q_prescribed_kW=-2.24, kv_m3h=2.0, m_dot_air_kg_s=1.0, t_air_in_C=0.0))
+    net.connect("pu.out", "by.in", "reg.in"); net.connect("by.out", "reg.out", "pu.in")
+    with pytest.raises(ConvergenceError, match="keine stationäre Lösung"):
+        net.solve()

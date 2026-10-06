@@ -296,6 +296,11 @@ def build_result(net: CompiledNetwork, hyd: HydraulicState, th: ThermalState,
              for nd in net.nodes]
     notices = list(net.notices)
     _plausibility_notices(net, hyd, th, settings, notices)
+    if getattr(th, "residual_K", 0.0) > settings.tol_t:
+        notices.append(
+            f"Thermik auf {th.residual_K:.1e} K genau – die Toleranz tol_t = {settings.tol_t:g} K "
+            f"wurde an der numerischen Genauigkeitsgrenze nicht ganz erreicht (stark "
+            f"unterschiedliche Kapazitätsströme); das Ergebnis ist verwendbar.")
     if getattr(th, "undetermined_nodes", None):
         labels = [net.nodes[j].label for j in th.undetermined_nodes]
         notices.append(

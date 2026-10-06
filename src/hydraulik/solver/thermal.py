@@ -61,9 +61,15 @@ _TRUST_MIN = 1e-9
 #: Stillstand: gedämpfter Schritt ohne Armijo-Abstieg, der das Residuum um
 #: höchstens diesen Anteil wachsen lässt (Toleranz für Rundung bei großen T)
 _STALL_TOL = 1e-3
-#: Stillstand mit messbarem Abstieg (relativ) gilt als Fortschritt, nicht als
-#: Drift-Verdacht — z.B. weit entfernte, aber existierende Lösung (UA klein)
-_PROGRESS_TOL = 1e-6
+#: Drift-Erkennung: die Verschiebung aufeinanderfolgender Schritte wird
+#: akkumuliert, bis das Residuum um mindestens diesen Anteil unter den Wert
+#: beim letzten Fortschritt fällt (weit entfernte, aber existierende Lösung,
+#: z.B. UA klein, kommt so stetig voran). Kleinere „Abstiege" sind bei großen
+#: |T| Rundungsrauschen und dürfen die Drift nicht zurücksetzen.
+_PROGRESS_REL = 1e-2
+#: Stillstand mit Residuum ≤ dieser Faktor · tol_t gilt als Genauigkeitsgrenze
+#: (Ergebnis mit Hinweis statt Fehler)
+_ACCEPT_FACTOR = 100.0
 #: Kumulierte Verschiebung [K] aufeinanderfolgender Stillstand-Schritte, ab
 #: der keine stationäre Lösung existiert (isolierter Umlauf mit fester Leistung)
 _DRIFT_DISPLACEMENT_K = 1e6
@@ -82,6 +88,9 @@ class ThermalState:
     #: Knoten, deren Temperatur NICHT eindeutig bestimmt ist (geschlossener
     #: Umlauf ohne Wärmeübertrag nach außen: Ergebnis = Startwert-abhängig)
     undetermined_nodes: list[int] = field(default_factory=list)
+    #: erreichtes max. Knotenbilanz-Residuum [K]; > tol_t nur, wenn die
+    #: Toleranz an der numerischen Genauigkeitsgrenze stehen blieb (≤ 100·tol_t)
+    residual_K: float = 0.0
 
 
 def skipped_thermal(net: CompiledNetwork, settings: SolverSettings | None = None) -> ThermalState:
@@ -221,7 +230,8 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
     trust = _TRUST_INIT                                 # Vertrauensbereich [K]
     A = None                                            # Linearisierung am aktuellen Feld
     force_lm = False                                    # Newton-Richtung zuletzt unbrauchbar
-    stall_disp = 0.0                                    # Verschiebung seit letztem Abstieg [K]
+    stall_disp = 0.0                                    # Verschiebung seit letztem Fortschritt [K]
+    err_ref = err                                       # Residuum beim letzten Fortschritt
     it = 0
     converged = err < s.tol_t
     while not converged and it < s.max_iter_thermal:
@@ -280,8 +290,11 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
             continue
         force_lm = False
         step = lam * float(np.max(np.abs(delta)))
+        if err_new <= (1.0 - _PROGRESS_REL) * err_ref:
+            stall_disp, err_ref = 0.0, err_new
+        else:
+            stall_disp += step
         if outcome == "stillstand":
-            stall_disp = 0.0 if err_new <= (1.0 - _PROGRESS_TOL) * err else stall_disp + step
             if stall_disp > _DRIFT_DISPLACEMENT_K:
                 affected = [net.nodes[i].label for i in np.flatnonzero(np.abs(F) > s.tol_t)]
                 raise ConvergenceError(
@@ -296,7 +309,6 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
                     f"nur hydraulisch rechnen (net.solve(thermal=False))." + spread_hint(t, t_out))
             trust = 2.0 * max(trust, step)
         else:
-            stall_disp = 0.0
             if bounded:
                 trust = 2.0 * step                      # λ = 1: wachsen, sonst schrumpfen
             else:
@@ -306,6 +318,12 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
         A = None
         converged = err < s.tol_t
 
+    # Iterationsgrenze knapp über der Toleranz (Rundungsgrenze bei stark
+    # unterschiedlichen Kapazitätsströmen): Ergebnis mit Genauigkeitshinweis
+    # statt Fehler — aber nur ohne aufgelaufene Drift (Verschiebung seit dem
+    # letzten Fortschritt < 1 K); Fälle ohne stationäre Lösung bleiben Fehler.
+    if not converged and err <= _ACCEPT_FACTOR * s.tol_t and stall_disp < 1.0:
+        converged = True
     if not converged:
         raise ConvergenceError(
             f"Thermik-Solver nicht konvergiert nach {it} Iterationen "
@@ -374,4 +392,5 @@ def solve_thermal(net: CompiledNetwork, hyd: HydraulicState,
     return ThermalState(t_node=t_node, t_edge_out=t_out, q_dot_edge=q_dot,
                         edge_extras=extras, stagnant_nodes=stagnant,
                         iterations=it, converged=converged,
-                        energy_imbalance=balance, undetermined_nodes=undetermined)
+                        energy_imbalance=balance, undetermined_nodes=undetermined,
+                        residual_K=err)

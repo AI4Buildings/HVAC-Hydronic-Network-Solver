@@ -73,6 +73,13 @@ def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = Non
     seeds = np.array([e.q_seed if e.q_seed else s.q_init for e in net.edges])
     q = np.where(fixed, q_fix, seeds)
     r_floor_frac = np.abs(seeds) * s.q_eps_frac + 1e-12
+    # Adaptiver Floor je Kante: bleibt eine Kante im Floor-Bereich bei stabiler
+    # Strömungsrichtung (z.B. fast geschlossenes Ventil, Gleichgewichtsstrom
+    # weit unter q_eps), schrumpft er je Iteration ×0.1 (bis 1e-4 des
+    # Standards, nicht unter 1 Pa/(m³/s)) — sonst dämpfte der Floor Newton
+    # dort bis zu tausendfach.
+    # Ein Vorzeichenwechsel (pendelnde Rückschlagklappe) setzt ihn zurück.
+    floor_frac = r_floor_frac.copy()
 
     alpha_p, alpha_q = s.alpha_p, s.alpha_q
     history: list[tuple[float, float]] = []
@@ -188,9 +195,9 @@ def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = Non
         #    Steigung bis Faktor ~3 → Newton schießt über und pendelt. Daher
         #    zusätzlich der Differenzenquotient aus dem Komponentenmodell
         #    (generisch, kein neuer Vertrag); das Maximum ist nie zu flach.
-        r_floor = np.maximum(b_arr * r_floor_frac, 1e-3)  # min. 1e-3 Pa/(m³/s)
+        r_floor = np.maximum(b_arr * floor_frac, 1e-3)    # min. 1e-3 Pa/(m³/s)
         jac = a_arr + 2.0 * b_arr * np.abs(q)
-        h_fd = 1e-6 * np.maximum(np.abs(q), r_floor_frac)
+        h_fd = 1e-6 * np.maximum(np.abs(q), floor_frac)
         r_now = r_edge - dp_src
         for e in net.edges:
             i = e.index
@@ -201,6 +208,7 @@ def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = Non
             slope = (c.a * q_h + c.b * q_h * abs(q_h) - c.dp_source - r_now[i]) / h_fd[i]
             if np.isfinite(slope) and slope > jac[i]:
                 jac[i] = slope
+        floor_limited = jac < r_floor
         jac = np.maximum(jac, r_floor)
 
         # 4. Impulsprädiktor (Newton-Inkrement der Kantenimpulsgleichung)
@@ -232,8 +240,18 @@ def solve_hydraulics(net: CompiledNetwork, settings: SolverSettings | None = Non
         dpc = p_corr[n_from] - p_corr[n_to]
         q_new = q_star + d * dpc
         q_new[fixed] = q_fix[fixed]
-        step_tol = np.maximum(1e-6 * max(float(np.max(np.abs(q_new))), 1e-9), 2.0 * r_floor_frac)
+        step_tol = np.maximum(1e-6 * max(float(np.max(np.abs(q_new))), 1e-9), 2.0 * floor_frac)
         step_ok = bool(np.all(np.abs(q_new - q) <= step_tol))
+        flipped = np.sign(q_new) * np.sign(q) < 0.0
+        # Untergrenze: 1e-4 des Standards, aber nie unter 1 Pa/(m³/s) als
+        # Floor-Wert — widerstandsarme Kanten (Link, Sensor) behalten ihren
+        # Standard-Floor: dort machte ein kleineres J das 1/J so groß, dass
+        # Rundungsfehler der Druckkorrektur die Kontinuität verfehlen
+        frac_min = np.maximum(r_floor_frac * 1e-4,
+                              np.minimum(r_floor_frac, 1.0 / np.maximum(b_arr, 1e-300)))
+        floor_frac = np.where(flipped, r_floor_frac,
+                              np.where(floor_limited, np.maximum(floor_frac * 0.1, frac_min),
+                                       floor_frac))
         p = p + alpha_p * p_corr
         p[pinned] = p_bc[pinned]
         q = q_new
