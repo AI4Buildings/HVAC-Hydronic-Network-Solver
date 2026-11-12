@@ -77,7 +77,12 @@ Parametervalidierung, Editor-Formular und Eintrag im JSON Schema
   am Anschluss (für den statischen Druck an Sensoren und Druckrandbedingungen;
   Knotendrücke sind Totaldrücke); `edge_result_extras(label, q, p_from, p_to,
   fluid)` → Zusatzwerte je Kante; im Builder `b.partners(port)` (direkt
-  verbundene Anschlüsse) und `b.notice(text)`; `check_topology(port_nodes)` → Fehlerliste
+  verbundene Anschlüsse), `b.same_node_ports(port)` (alle über
+  Verbindungseinträge verbundenen Anschlüsse, Stand vor den bauteilinternen
+  alias-Verschmelzungen, unabhängig von der Baureihenfolge) und
+  `b.notice(text)`; `is_tap_port(port)` → True für reine Messanschlüsse
+  (Default: alle Ports eines Fühlers; Bauteile mit Kante UND Fühleranschluss
+  wie der Wärmemengenzähler überschreiben es je Port); `check_topology(port_nodes)` → Fehlerliste
   nach dem Port-Merge (z.B. kurzgeschlossene Schenkel; je Port
   `(Knoten, Bezeichnung, Punkt, über)`, Punkt = über widerstandsfreie
   Verbindungen zusammenhängende Knoten); `ideal_connection()` → Anschlusspaar,

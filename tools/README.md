@@ -83,8 +83,10 @@ jede neue Abweichung erklären, bevor eine Änderung als fertig gilt.
 - Modelländerungen an **allen** Netzen gegenprüfen, nicht nur an den bekannten
   Problemfällen. Beim T-Stück auf Totaldruck verschwanden 70 Mehrdeutigkeiten,
   45 kamen neu dazu.
-- `Pool.map` hängt, wenn ein Worker eine nicht picklebare Ausnahme wirft
-  (z.B. `ComponentParamError`). Generatorfehler deshalb im Worker abfangen.
+- `Pool.map` hing, wenn ein Worker eine nicht picklebare Ausnahme warf
+  (z.B. `ComponentParamError`). Seit 2026-11-12 sind die Fehlerklassen
+  pickle-fest (`__reduce__`); Generatorfehler werden weiterhin im Worker
+  abgefangen.
 
 ## `e2e/` – Browsertests beider Editoren (Playwright)
 
@@ -93,6 +95,7 @@ pip install -e ".[dev,e2e]" && python -m playwright install chromium
 python tools/e2e/editor_e2e.py        # Import/Export/Autosave/Rechnen, Server + statisch
 python tools/e2e/vorlagen_e2e.py      # alle Vorlagen: Editor ↔ Python-Loader ↔ JSON Schema
 python tools/e2e/eindeutigkeit_e2e.py # Dialog bei mehrdeutiger Hydraulik
+python tools/e2e/bugfix_2026_11_e2e.py # Regressionen der Fehlerbehebung 2026-11 (beide Editoren)
 ```
 
 Jedes Skript endet mit `ERGEBNIS: alles ok` bzw. listet die Fehler.
@@ -105,7 +108,7 @@ python tools/vka_skill_abgleich.py [~/.claude/skills/vka-effizienz-en16798/scrip
 
 Vergleicht `src/hydraulik/air/vka/` mit der Skill-Kopie. Die Importform
 (relativ/absolut) und die Zusatzausgabe der Stationszustände werden dabei
-ausgeglichen. Stand 2026-10-06: identisch, inklusive der Korrekturen L1–L12.
+ausgeglichen. Stand 2026-11-12: identisch, inklusive der Korrekturen L1–L16.
 Liegt der Skill auf einem neuen Rechner in einer älteren Fassung vor, zeigt
 der Diff die fehlenden Korrekturen. Nach dem Nachziehen im Skill
 `python3 validate_vka.py` laufen lassen.

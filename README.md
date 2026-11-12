@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 860 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 1256 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 ## Tool starten
@@ -118,7 +118,12 @@ siehe unten): Unter `editor server` importiert der Server-Parser jede
 YAML-Form samt Loader-Hinweisen in der Statuszeile; die statische HTML-Datei
 nutzt einen lokalen YAML-1.2-Parser (Block- und Flow-Stil) mit derselben
 Semantik, der Anker, Tags und Block-Skalare mit Meldung ablehnt statt sie
-anders zu lesen. Palette, Ports und Formulare werden aus der
+anders zu lesen. Ein Import ohne `components`-Abschnitt wird abgelehnt (die
+Zeichnung bleibt stehen); `settings` und der Fluidname einer Datei bleiben
+über Import/Export erhalten und gelten beim Rechnen. Zahlenfelder nehmen
+Dezimalpunkt oder -komma. Der Server antwortet nur auf Anfragen an
+127.0.0.1/localhost vom eigenen Ursprung und begrenzt den Anfragekörper auf
+5 MB. Palette, Ports und Formulare werden aus der
 Komponenten-Registry generiert (Single Source of Truth): Nach neuen
 Komponenten einfach den Editor neu erzeugen.
 
@@ -149,7 +154,9 @@ Regeln:
   mehreren Verbindungen (oder ≥3 Ports je Eintrag) bildet eine ideale
   Mischstelle (Verzweigung).
 - Validierungsfehler werden **gesammelt** als nummerierte Liste gemeldet
-  (mit Korrekturvorschlägen), sodass eine Datei in einem Durchgang korrigierbar ist.
+  (mit Korrekturvorschlägen), sodass eine Datei in einem Durchgang korrigierbar ist:
+  `hydraulik run`/`export`, der Editor-Server und `hydraulik.load_checked()`
+  fassen Parameter-, `settings`- und Verbindungsfehler in EINER Liste zusammen.
 
 ### YAML 1.2 – überall gleich gelesen
 
@@ -169,9 +176,17 @@ Editor `yaml_core.js` mit identischer Semantik — per Paritätstest abgesichert
 
 - **Schlüssel sind immer Zeichenketten im Originaltext**: `no:`, `off:` oder
   `true:` sind gültige Komponentennamen.
+- **Komponentennamen dürfen Punkte enthalten** (`"HK 1.OG"`, `TS1.1`): eine
+  Portreferenz wird am letzten Punkt getrennt (`"HK 1.OG.in"` → Komponente
+  `HK 1.OG`, Port `in`); Portnamen enthalten nie einen Punkt.
 - Doppelte Schlüssel sind ein Fehler (mit Zeilennummer). Anker/Aliase
-  (`&name`/`*name`) sind erlaubt; YAML-1.1-Merge-Schlüssel `<<` und Tags wie
-  `!!binary`/`!!timestamp` nicht.
+  (`&name`/`*name`) sind erlaubt, solange sie nicht rekursiv sind;
+  YAML-1.1-Merge-Schlüssel `<<` und Tags wie `!!binary`/`!!timestamp` nicht.
+- Grenzen der Eingabe (jeweils mit eigener Fehlermeldung): höchstens
+  200 000 Werte je Dokument (Aliase aufgelöst gezählt), keine rohen
+  Steuerzeichen (in doppelten Anführungszeichen als `\uXXXX` schreiben),
+  eine `%YAML`-Direktive nur in Version 1.2. Leerraum ist nur Leerzeichen
+  und Tabulator — ein geschütztes Leerzeichen gehört zum Wert.
 - Bool-Parameter (z.B. `closed` am Kugelhahn) nur mit `true`/`false` —
   `yes`/`no` meldet der Loader mit dem Hinweis „bitte true/false verwenden".
 - Ganzzahl-Parameter akzeptieren auch `2.0` bzw. `1e3` (wie JSON Schema).
@@ -195,7 +210,8 @@ Editor `yaml_core.js` mit identischer Semantik — per Paritätstest abgesichert
   `h.load("schaltung.json")`. `.json`-Dateien werden strikt gelesen
   (doppelte Schlüssel, `NaN`/`Infinity` und Kommentare sind Fehler).
 - **Kanonisches JSON**: `hydraulik export --json schaltung.yaml [--out schaltung.json]`
-  prüft das Modell mit dem Loader und schreibt es mit denselben Schlüsseln
+  prüft das Modell vollständig (Parameter, `settings`, Einbindung der Ports —
+  bei Fehlern wird nichts geschrieben) und schreibt es mit denselben Schlüsseln
   (Einheiten-Suffixe bleiben) in stabiler Reihenfolge (oberste Ebene fest,
   Komponenten in Dateireihenfolge mit `type` zuerst; Kommentare entfallen).
   YAML → JSON → identische Lösung ist für alle Beispiele getestet.
@@ -243,6 +259,17 @@ per Regressionstest gegen die Datenblattwerte abgesichert. Die
 Ventilatorposition wird rechnerisch am Stranganfang bilanziert (validierte
 Modellkonvention); Rotor-Übertragungsgrade sind physikalisch auf ε ≤ 1
 begrenzt (Hinweis bei stark unbalancierten Volumenströmen).
+
+Plausibilität: Je Zuluftstrang rechnet der Kern genau ein Register je Typ
+(doppelte Vorheizer/Kühler/Nachheizer/Befeuchter werden abgelehnt); nicht
+angeschlossene Komponenten werden mit Hinweis übergangen. Eine
+KVS-Auslegung, die mit dem angegebenen Sole-Volumenstrom nicht möglich ist,
+wird mit dem nötigen Mindestwert gemeldet. Erreicht die Anlage das
+Zuluft-Sollband nicht (z.B. Feuchteband ohne Befeuchter), steht das als
+Hinweis im Ergebnis. Im raumgekoppelten Modus ist die ausgegebene
+Raumfeuchte immer bilanzkonsistent (Raumfeuchte = Abluftfeuchte); ist das
+Raumfeuchteband nicht erreichbar, wird der sich einstellende Zustand mit
+Hinweis ausgegeben.
 
 ![Lüftungsschema-Editor mit integriertem VKA-Solver](docs/img/lueftung_editor.png)
 
@@ -369,9 +396,18 @@ kleinsten Kv auf Kvs/R.
     ohne bekannten Querschnitt (Behälter, ideale Verbindung).
   - **Drucksensoren** zeigen den statischen Überdruck an der Messstelle,
     `p_dyn_kPa` ist der abgezogene dynamische Anteil. w stammt aus dem
-    Querschnitt des Anschlusses, an dem die Messleitung hängt, oder aus
-    `d_inner_mm`. **Differenzdrucksensoren** zeigen die statische Differenz;
-    bei gleicher Nennweite beidseits ist sie gleich der Totaldruckdifferenz.
+    Querschnitt des Anschlusses, an dem die Messleitung hängt; hat dieser
+    keinen (Pumpe, Ventil, Rand – im Editor der Regelfall, weil Leitungen
+    eigene Verbindungen sind), gilt wie beim Druckrand die einzige Leitung
+    mit bekanntem Querschnitt an der Messstelle; mit `d_inner_mm` der
+    angegebene Querschnitt. An einem Knotenpunkt mehrerer Leitungen oder
+    ohne bekannten Querschnitt zeigt der Sensor den Knotendruck (dann ohne
+    `p_dyn_kPa`; der Bericht weist ihn als Knotendruck aus).
+    **Differenzdrucksensoren** zeigen die statische Differenz; bei gleicher
+    Nennweite beidseits ist sie gleich der Totaldruckdifferenz.
+  - Fühleranschlüsse (Temperatur-/Drucksensoren, `t_ref` des
+    Wärmemengenzählers) sind rückwirkungsfrei: sie zählen bei der Frage, ob
+    ein Druckrand am Ende genau einer Leitung sitzt, nicht mit.
   - Der Druckanker `p_out` eines Speichers ist der Behälterdruck; im Behälter
     ruht das Wasser, statisch = total.
   - Größenordnung von ρw²/2 bei Wasser: 0,5 kPa bei 1 m/s, 2 kPa bei 2 m/s.

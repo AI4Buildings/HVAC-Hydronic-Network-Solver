@@ -10,7 +10,9 @@ Fehlerpfade, Newton-Energiegleichung, Zufallsnetz-Rauchtest, CI) und
 Eingabeformat-Härtung 2026-10-05 (YAML 1.2 überall gleich in Solver und
 Editoren, JSON-Ein-/Ausgabe, JSON Schema aus der Registry) und Solver-
 Prüfung 2026-10-06 (2 Runden, 3300 Zufallsnetze unabhängig nachgerechnet;
-docs/solver_pruefung_2026-10.md — Details in den obersten Blöcken von
+docs/solver_pruefung_2026-10.md) und Fehlerbehebungsrunde 2026-11-12
+(Projektdurchsicht, rund 50 Fehler außerhalb des Solverkerns behoben;
+docs/fehlerbehebung_2026-11.md — Details in den obersten Blöcken von
 docs/roadmap.md); validiert
 gegen zwei unabhängige FH-Burgenland-Referenzlösungen (Verteiler-Übung,
 TWE-Übung Bsp 6) sowie gegen die Skill-Referenz cooling-coil-greybox
@@ -22,7 +24,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (860 Tests; Paritätstests brauchen node)
+pytest                                   # Testsuite (1256 Tests; Paritätstests brauchen node)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]   # auch .json
 hydraulik export --json schaltung.yaml [--out schaltung.json]   # geprüft, kanonisches JSON
@@ -101,6 +103,8 @@ src/hydraulik/
                      = Originaltext, nur reine Python-Typen, Duplikate/Tags
                      gesammelt), parse_json() (strikt), canonical_json()
   yaml_loader.py     load(), load_settings() (typ-/bereichsgeprüft, gesammelt);
+                     load_checked() = beides PLUS Einbindung (compile) in EINER
+                     Fehlerliste — Einstieg für CLI und Server;
                      fluid über FLUID_*_PARAMS; LLM-taugliche Fehlermeldungen;
                      toleriert 'layout:'-Block
   schema.py          JSON Schema (Draft 2020-12) nur aus Registry/Param/
@@ -130,7 +134,7 @@ src/hydraulik/
     vka/             integrierter VKA-Rechenkern EN 16798-5-1 (aus Skill
                      vka-effizienz-en16798 übernommen; simulate/simulate_room,
                      energieoptimale Rotorregelung, 1:1 MATLAB-verifiziert;
-                     dokumentierte Abweichungen (Physik-Korrekturen L1–L12,
+                     dokumentierte Abweichungen (Physik-Korrekturen L1–L16,
                      Solver-Prüfung 2026-10: ε ≤ min(1, V̇_ab/V̇_zu),
                      Sprühbefeuchter, Kühler-Zweig 5, Index-0-Semantik, …;
                      im Code "Abweichung vom MATLAB-Original" markiert) —
@@ -167,7 +171,7 @@ docs/                architektur.md, numerik.md, erweitern.md, roadmap.md,
                      solver_pruefung_2026-10.md (Prüfbericht, offene Punkte)
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               860 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+tests/               1256 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
                      test_yamlio.py / test_yaml12_kompat.py: Loader + YAML-1.1-
                      Altlasten; test_editor_paritaet.py: JS ↔ Python (node,
                      Korpus tests/data/, Zufallsskalare/-dokumente, Round-Trip);
@@ -177,7 +181,9 @@ tests/               860 Tests: analytische Referenzen + Validierung gegen Muste
                      unabhängiges Fixpunkt-Orakel, geschlossene Lösungen, Invarianzen;
                      test_solver_pruefung.py: Befunde der Solver-Prüfung (B1–B16);
                      test_air_vka_matlab.py: VKA-Kern gegen MATLAB/PDF-Referenz;
-                     test_air_vka_pruefung.py: Lüftungsbefunde L1–L12 (Invarianten);
+                     test_air_vka_pruefung.py: Lüftungsbefunde L1–L16 (Invarianten);
+                     test_bugfix_{kern,io,luft,editor}_2026_11.py: Regressionen der
+                     Fehlerbehebungsrunde (docs/fehlerbehebung_2026-11.md);
                      test_eindeutigkeit.py: Mehrdeutigkeit melden + Neustart
                      (Kampagnennetze 3289, 1972); test_tee_idelchik.py:
                      T-Stück gegen Handrechnung, Kurzschlussregeln;
@@ -204,8 +210,12 @@ tools/               Prüfwerkzeuge außerhalb von pytest (tools/README.md):
   STATISCHER Überdruck am Anschluss, p_stat = p_Knoten − ρw²/2. Den
   Querschnitt liefert der Hook `port_flow_area` (Rohr, Rohrmodell-conduit,
   Idelchik-T-Stück) bzw. `d_inner`: Sensoren nehmen den direkt verbundenen
-  Partner (Builder.partners), Druckränder nur das Ende GENAU EINER Leitung
-  (Builder.same_node_ports, Messanschlüsse ausgenommen) — an Knotenpunkten
+  Partner (Builder.partners), sonst wie der Rand die EINZIGE Leitung mit
+  Querschnitt an der Messstelle (Nutzerentscheidung 2026-11-12: im Editor
+  hängt die Messleitung immer am Bauteilport); Druckränder nur das Ende
+  GENAU EINER Leitung (Builder.same_node_ports = Verbindungsgruppe vor den
+  alias-Verschmelzungen; Messanschlüsse per Hook `is_tap_port` je Port
+  ausgenommen, auch `t_ref` des WMZ) — an Knotenpunkten
   ist die Randgeschwindigkeit undefiniert, Druck dort direkt vorgeben (sonst
   Nichtkonvergenz und verdeckte Widerspruchsfehler). Neue Bauteile mit
   definiertem Querschnitt: `port_flow_area` implementieren.
@@ -217,6 +227,10 @@ tools/               Prüfwerkzeuge außerhalb von pytest (tools/README.md):
   Kopplungen; klassische TS-Nummern als `ts`-Label, nie als Recheneinheit.
 - Fehlermeldungen deutsch, gesammelt (nie beim ersten Fehler abbrechen),
   mit difflib-Korrekturvorschlägen — sie werden von LLMs konsumiert.
+  Rohe Python-Fehler (KeyError/TypeError/OSError) aus Eingaben sind Bugs.
+- **Komponentennamen dürfen Punkte enthalten** („HK 1.OG"): Portreferenzen
+  IMMER am letzten Punkt trennen (rsplit; Portnamen enthalten nie einen),
+  in Python wie in den Editoren.
 - **Eingabeformat**: YAML 1.2 Core Schema bzw. JSON, geparst NUR über
   yamlio (kein `import yaml`/`ruamel` anderswo — Test). Änderungen an der
   Leseregel immer in yamlio.py UND yaml_core.js; test_editor_paritaet.py
@@ -290,4 +304,7 @@ tools/               Prüfwerkzeuge außerhalb von pytest (tools/README.md):
 Siehe docs/roadmap.md: Pumpenkennlinien, Netzplan-Visualisierung,
 Ventilautorität im Bericht, feuchtes Kühlregister, Parametersweep-Helfer,
 Regelkreis-Iteration. Offene Fachentscheidungen und der pathologische
-Kampagnenfall Seed 913: docs/solver_pruefung_2026-10.md.
+Kampagnenfall Seed 913: docs/solver_pruefung_2026-10.md. Offene Fachfragen
+der Luftseite (Plattenwärmetauscher ohne Bypass, Vorheizer vor der WRG,
+Rotor-Sprung, Ventilator mit Umluft) und Editor-Lücken (zwei Leitungen in
+Reihe): docs/fehlerbehebung_2026-11.md.

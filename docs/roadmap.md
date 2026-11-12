@@ -1,5 +1,30 @@
 # Status & Roadmap
 
+## Fehleranalyse und Fehlerbehebung (2026-11-12, in main)
+
+1256 Tests, alle grün; e2e „alles ok“; Kampagne und Eindeutigkeitsprüfung
+unverändert zum Referenzstand. Ausführlich: docs/fehlerbehebung_2026-11.md.
+
+- **Anlass:** Durchsicht des ganzen Projekts auf Fehler. Der Solverkern
+  war unauffällig; rund 50 reproduzierte Fehler lagen in ungetesteten
+  Pfaden darum herum.
+- **Rechenkern:** Namen mit Punkt, `type`/`name:`-Fehler als Meldung,
+  `settings.p_ref` wirkt, Fühleranschlüsse (WMZ `t_ref`) rückwirkungsfrei,
+  Drucksensoren statisch auch am Bauteilport (Regel wie Druckrand,
+  Nutzerentscheidung), Heizkörper mit Leistung 0.
+- **Ein-/Ausgabe:** `load_checked` (alle Fehler in einem Durchgang, auch
+  CLI und Server), Knotenbudget und Zeichenvertrag in yamlio, ruamel bleibt
+  für fremde Nutzer unberührt, numpy-Skalare, pickle-feste Fehlerklassen.
+- **Luftseite:** Raumregelung bilanzkonsistent mit Rückfall + Hinweis;
+  neue Abweichungen vom MATLAB-Original L13–L16 (Sprühbefeuchter-Lücke,
+  Frostschutz-Massenstrom mit Umluft, KVS-Aussetzer, Heizer-Toleranz);
+  doppelte/lose Komponenten, KVS-Auslegungsgrenze, Hinweise.
+- **Editoren/Server:** Inspector-Auswahlwechsel, Kopieren von Leitungen,
+  Import von Verbindungsgruppen, `settings`-Erhalt, Escaping, Server-Härtung
+  (Größe, Host/Origin, striktes JSON).
+- **Offen:** fünf Fachfragen der Luftseite, Ventilator mit Umluft, zwei
+  Leitungen in Reihe im Editor — siehe docs/fehlerbehebung_2026-11.md.
+
 ## Solver-Prüfung (2026-10-06, zwei Runden, in main)
 
 860 Tests, alle grün. Ausführlich: docs/solver_pruefung_2026-10.md
@@ -367,7 +392,7 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (860 Tests, müssen grün sein; node für die Paritätstests);
+1. `pip install -e ".[dev]" && pytest` (1256 Tests, müssen grün sein; node für die Paritätstests);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/). Auf einem neuen
    Rechner: README, Abschnitt „Auf einem anderen Rechner weiterarbeiten“.
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block

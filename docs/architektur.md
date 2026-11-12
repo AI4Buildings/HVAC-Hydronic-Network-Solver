@@ -64,8 +64,10 @@ entkoppelt; die Solver kennen nur (a, b, dp_source) und thermal_fn.
 5. Union-Find-Wurzeln → Knotenliste; Kanten erhalten Knotenindizes.
 6. **Druckinsel-Analyse**: Zusammenhangskomponenten des Teilgraphen aus
    druckempfindlichen Kanten (fixed_q-Kanten zählen nicht). Jede Insel ohne
-   Druck-Randbedingung bekommt automatisch einen Referenzdruck (150 kPa,
-   „Ausdehnungsgefäß") + Hinweis im Bericht. Inseln ohne echte Druck-RB
+   Druck-Randbedingung bekommt automatisch einen Referenzdruck
+   (`settings.p_ref`, Standard 150 kPa, „Ausdehnungsgefäß"; dafür nimmt
+   `Network.compile(settings)` die Solver-Einstellungen entgegen) + Hinweis
+   im Bericht. Inseln ohne echte Druck-RB
    müssen ihre festen Volumenströme bilanzieren, sonst
    `SingularNetworkError` mit Nennung der beteiligten Komponenten
    (häufigster LLM-Eingabefehler!).

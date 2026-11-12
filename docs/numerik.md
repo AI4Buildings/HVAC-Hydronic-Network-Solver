@@ -307,7 +307,7 @@ Läuft nach Hydraulik-Konvergenz (exakt entkoppelt, da Stoffwerte konstant).
 | WP/KM | feste Leistung oder Solltemperatur (mit q_max-Klemme, nur in Arbeitsrichtung) |
 | alle | optional `q_prescribed` statt physikalischem Modell |
 
-## 3. Testabdeckung (tests/, 860 Tests)
+## 3. Testabdeckung (tests/, 1256 Tests)
 
 Analytische Referenzen: Hagen-Poiseuille, Churchill↔Swamee-Jain,
 Kv-Definition (1 m³/h @ 1 bar), Einzelkreis Q = √(Δp/Σb), Serien-/
