@@ -300,9 +300,17 @@ def _export_section(html: str) -> str:
     return html[start:end]
 
 
+def _helpers_section(html: str) -> str:
+    """Reine Hilfsfunktionen des Editors (esc, parseNum, labelIn/-Out, …) — ohne DOM."""
+    start = html.index("/* ---------- Reine Hilfsfunktionen")
+    end = html.index("/* ---------- Einheiten-Anzeige")
+    return html[start:end]
+
+
 def _run_export(html: str, state: dict, with_core: bool = True) -> str:
     script = (yaml_core_js() if with_core else "") + f"""
 let state = {json.dumps(state)};
+{_helpers_section(html)}
 function compById(id){{ return state.comps.find(c => c.id === id); }}
 function portRef(end){{ const c = compById(end.comp); return `${{c ? c.name : "?"}}.${{end.port}}`; }}
 {_export_section(html)}
@@ -388,12 +396,17 @@ def test_export_ist_rechenbar_und_werte_gleich():
 
 @pytest.mark.parametrize("value", [
     0, -0.0, 1, -1, 0.1, 0.30000000000000004, 1 / 3, 5e-7, 1e-7, 1.5e-6, 1e-300, 5e-324,
-    2.2250738585072014e-308, 1e21, 1e22, 1.7976931348623157e308, -2.5e-10, 123456789012345680000,
+    # 1.2345678901234568e20: früher als Python-int 123456789012345680000 notiert — der Editor
+    # hält den double und schreibt ihn jetzt als Gleitkommazahl (Ganzzahlen > 2^53 lehnt der
+    # Editor-Parser ab; die Ziffernfolge wäre eine ANDERE Ganzzahl als der double)
+    2.2250738585072014e-308, 1e21, 1e22, 1.7976931348623157e308, -2.5e-10, 1.2345678901234568e20,
     2 ** 53, 1e16, 12345.678e-20, float("inf"), float("-inf"),
     True, False, None, "", " ", "yes", "no", "on", "off", "y", "n", "Y", "NO", "true", "True",
     "FALSE", "null", "Null", "~", "08", "07", "010", "1e3", "1.4e0", "0x10", "0o7", "1_000", "0b101",
     ".inf", "-.inf", ".nan", "inf", "nan", "2026-10-05", "12:30", "Kreis #2", "a: b", "- x", "[x]",
     "{x}", "it's", 'say "hi"', "Δp ϑ", "tab\there", "zeile\numbruch", "\x7f", "\x85", "\u2028",
+    "\u2029", "\x00", "\x1b", "\x9f", "a\ufeffb", "\ufffe", "\uffff", "20\u00a0", "\u00a0x", "😀",
+    2.0 ** 53 + 2, -(2.0 ** 60), 1.2345678901234567e19,
     " führend", "nachlaufend ", "#hash", "%pct", "@at", "`bt", "&amp", "*stern", "!bang", "|pipe",
     ">gt", "?frage", ",komma", "-", "--", "---", "...", "<<", "qu1.port", "lt_1-a", "_x", ".x",
     [1, "no", [5e-7, None]], {"a": "yes", "08": 1e21},
@@ -408,7 +421,12 @@ console.log(JSON.stringify({{text, back: JSON.parse(enc(YamlCore.parse(text)))}}
     out = _node(script)
     py = parse_yaml(out["text"])["v"]
     assert _same(_enc_py(py), _enc_py(value)), out["text"]
-    assert _same(out["back"]["v"], _enc_py(value)), out["text"]
+    back = out["back"]["v"]
+    if isinstance(value, float) and isinstance(back, int) and not isinstance(back, bool):
+        # JSON-Transport des Tests: JS schreibt einen ganzzahligen double ohne Exponent
+        # (kürzeste Ziffernfolge desselben double) — als double vergleichen
+        back = float(back)
+    assert _same(back, _enc_py(value)), out["text"]
     if isinstance(value, float) and math.isfinite(value):
         # bitgenau (ganzzahlige Werte schreibt JS ohne Exponent → Python-int, gleicher Wert)
         assert float(py).hex() == value.hex() and math.copysign(1, py) == math.copysign(1, value)
@@ -417,6 +435,155 @@ console.log(JSON.stringify({{text, back: JSON.parse(enc(YamlCore.parse(text)))}}
 def test_nan_export_roundtrip():
     out = _node(yaml_core_js() + 'console.log(JSON.stringify(YamlCore.scalar(NaN)));')
     assert out == ".nan" and math.isnan(parse_yaml(f"v: {out}")["v"])
+
+
+# --- Zeichenvertrag beider Parser (Bugfix-Runde 2026-11) ----------------------------
+# Leerraum ist nur das Leerzeichen; rohe Steuerzeichen sind überall ein Fehler;
+# was der Editor-Parser nicht exakt wie yamlio liest, lehnt er ab.
+
+@pytest.mark.parametrize("text, expected", [
+    ("pu: {type: pump, dp_kPa: 20\u00a0}\n", {"pu": {"type": "pump", "dp_kPa": "20\u00a0"}}),
+    ("pu: {\u00a0type: pump, dp_kPa: 20}\n", {"pu": {"\u00a0type": "pump", "dp_kPa": 20}}),
+    ("c:\n  - [a.out,\u00a0b.in]\n", {"c": [["a.out", "\u00a0b.in"]]}),
+    ("dp_kPa: 20\u00a0\n", {"dp_kPa": "20\u00a0"}),
+    ("a:\n  \u00a0b: 1\n", {"a": {"\u00a0b": 1}}),
+    ("a: [1,\u00a02]\n", {"a": [1, "\u00a02"]}),
+    ("\u00a0\n", "\u00a0"),
+    ("v: true\ufeff\n", {"v": "true\ufeff"}),
+    ("a: \ufeff\n", {"a": "\ufeff"}),
+    ("\ufeffa: 1\n", {"a": 1}),                       # BOM nur ganz am Anfang entfällt
+    ("a: 1\u00a0# kein Kommentar\n", {"a": "1\u00a0# kein Kommentar"}),
+], ids=lambda v: ascii(v)[:40] if isinstance(v, str) else "")
+def test_nur_leerzeichen_sind_leerraum(text, expected):
+    """U+00A0 und ein U+FEFF mitten im Text sind gewöhnliche Zeichen (früher
+    schnitt .trim() im Editor sie ab: '20<NBSP>' wurde zur Zahl 20)."""
+    py, js = _py_parse(text), _js_parse_many([text])[0]
+    assert py == {"ok": expected}, py
+    assert js == {"ok": expected}, js
+
+
+_ROH = ["\x00", "\x01", "\x08", "\x0b", "\x0c", "\x1b", "\x7f", "\x80", "\x85", "\x9f",
+        "\u2028", "\u2029", "\ufffe", "\uffff"]
+
+
+@pytest.mark.parametrize("ch", _ROH, ids=lambda c: f"U+{ord(c):04X}")
+def test_rohe_steuerzeichen_ueberall_abgelehnt(ch):
+    texts = [t.replace("@", ch) for t in (
+        "v: a@b\n", 'v: "a@b"\n', "v: 'a@b'\n", "v: 1 # k@k\n", "a@b: 1\n", "v: [a@, b]\n",
+        "@\n", "# nur Kommentar @\nv: 1\n", "v: 1\n@")]
+    for text, js in zip(texts, _js_parse_many(texts)):
+        py = _py_parse(text)
+        assert "err" in py and "err" in js, (text, py, js)
+        assert f"U+{ord(ch):04X}" in js["err"] and "Escape" in js["err"], js
+
+
+def test_escapes_in_doppelten_anfuehrungszeichen_bleiben_erlaubt():
+    text = 'v: "\\x85 \\u2028 \\x7f \\t \\u00a0 \\ud83d\\ude00 \\U0001F600"\n'
+    expected = {"ok": {"v": "\x85 \u2028 \x7f \t \u00a0 😀 😀"}}
+    assert _py_parse(text) == expected and _js_parse_many([text])[0] == expected
+
+
+@pytest.mark.parametrize("text", ['v: "\\ud800"\n', 'v: "a\\ude00\\ud83d"\n', 'v: "\\ud83d x \\ude00"\n'])
+def test_einzelnes_surrogat_als_escape_abgelehnt(text):
+    py, js = _py_parse(text), _js_parse_many([text])[0]
+    assert "err" in py and "err" in js and "Surrogat" in js["err"], (py, js)
+
+
+@pytest.mark.parametrize("text", [
+    "v: 9007199254740992\n", "v: -9007199254740993\n", "v: 123456789012345678901234567890\n",
+    "v: 0x20000000000000\n", "v: 0o777777777777777777777\n", "v: [1, 9007199254740993]\n",
+    "v: {k: +9007199254740992}\n", "bems: [{id: 12345678901234567890}]\n",
+])
+def test_ganzzahlen_jenseits_2_hoch_53_lehnt_der_editor_ab(text):
+    """JavaScript rechnet mit double: 9007199254740993 würde als …992 gelesen.
+    Der Editor-Parser lehnt ab, statt einen anderen Wert zu lesen als yamlio."""
+    py, js = _py_parse(text), _js_parse_many([text])[0]
+    assert "ok" in py
+    assert "err" in js and "2^53" in js["err"] and "Zeichenkette" in js["err"], js
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("v: 9007199254740991\n", {"v": 9007199254740991}),
+    ("v: -9007199254740991\n", {"v": -9007199254740991}),
+    ("v: 9007199254740992.0\n", {"v": 9007199254740992.0}),
+    ("v: 1.0e+20\n", {"v": 1e20}),
+    ('v: "12345678901234567890"\n', {"v": "12345678901234567890"}),
+    ("12345678901234567890: 1\n", {"12345678901234567890": 1}),       # Schlüssel bleibt Text
+])
+def test_grosse_zahlen_die_exakt_bleiben(text, expected):
+    py, js = _py_parse(text), _js_parse_many([text])[0]
+    assert "ok" in py and "ok" in js and _same(py["ok"], expected) and _same(js["ok"], expected)
+
+
+def test_ganzzahliger_double_jenseits_2_hoch_53_wird_als_gleitkommazahl_geschrieben():
+    out = _node(yaml_core_js() + "console.log(JSON.stringify([2**53, 2**53 + 2, -(2**60), 1e21, "
+                                 "2**53 - 1].map(YamlCore.number)));")
+    assert out == ["9.007199254740992e+15", "9.007199254740994e+15", "-1.152921504606847e+18",
+                   "1.0e+21", "9007199254740991"]
+    for text in out:                      # beide Parser lesen den Export des Editors
+        assert parse_yaml(f"v: {text}")["v"] == float(text)
+        assert "ok" in _js_parse_many([f"v: {text}\n"])[0]
+
+
+@pytest.mark.parametrize("text", [
+    "... x: 1\n",                                 # Dokumentende am Zeilenanfang
+    "v: [a,\n... b]\n", "v: [a,\n--- b]\n",     # Dokumentmarke in offener Klammer
+    "- [a #x, b]\n- c, d]\n",                    # ']' steht im Kommentar
+    "v: [a #x\n  b]\n", "v: [a\n  #x\n  b]\n", "v: [a b #x\n  c, d]\n",
+    "v: [a: 1 #x\n  b]\n", "v: {a: 1 # c }\nb: 2}\n",
+    "connections:\n  - [pu.out, hk.in  # Vorlauf]\n  - [hk.out, pu.in]\n",
+])
+def test_kommentar_beendet_skalar_fehler_in_beiden_parsern(text):
+    """Früher fügte der Editor-Parser über den Kommentar hinweg zusammen
+    ('- [a #x, b]\\n- c, d]' → [['a - c', 'd']]); yamlio meldet einen Fehler."""
+    py, js = _py_parse(text), _js_parse_many([text])[0]
+    assert "err" in py and "err" in js, (py, js)
+
+
+@pytest.mark.parametrize("text, wert", [
+    ("v: [a\n\n  b]\n", {"v": ["a\nb"]}),       # Leerzeile im Skalar: yamlio faltet zu \n
+    ("v: [a\n  - b]\n", {"v": ["a - b"]}),       # Fortsetzung beginnt mit '- '
+    ("- [a\n  - b]\n", [["a - b"]]),
+])
+def test_editor_lehnt_ab_was_er_nicht_wie_yamlio_liest(text, wert):
+    py, js = _py_parse(text), _js_parse_many([text])[0]
+    assert py == {"ok": wert}
+    assert "err" in js, js
+
+
+@pytest.mark.parametrize("text, wert", [
+    ("v: [a, # x\n  b]\n", {"v": ["a", "b"]}),
+    ('v: ["a" #x\n  , b]\n', {"v": ["a", "b"]}),
+    ("v: [a #x\n  , b]\n", {"v": ["a", "b"]}),
+    ("v: [a #x\n]\n", {"v": ["a"]}),
+    ("v: {a: 1, # x\n\n  b: 2}\n", {"v": {"a": 1, "b": 2}}),
+    ("v: [a\n  b]\n", {"v": ["a b"]}),            # mehrzeiliger Skalar ohne Kommentar: gefaltet
+    (" ... x: 1\n", {"... x": 1}),                # eingerückt: gewöhnlicher Text
+    ("...x: 1\n", {"...x": 1}),
+])
+def test_kommentare_und_leerzeilen_zwischen_flow_eintraegen_bleiben_lesbar(text, wert):
+    assert _py_parse(text) == {"ok": wert} and _js_parse_many([text])[0] == {"ok": wert}
+
+
+def test_zufall_mit_sonderzeichen_nie_still_anders():
+    """Zufallskorpus mit U+00A0, BOM, NEL, U+2028, DEL, VT …: der Editor-Parser
+    liest wie yamlio oder lehnt ab — nie ein anderer Wert, nie 'Editor liest,
+    yamlio lehnt ab'."""
+    rng = random.Random(20261112)
+    alphabet = list("0123456789.eE+-_x: #,'\"[]{}aTn~") + [
+        "\u00a0", "\ufeff", "\x85", "\u2028", "\u2029", "\x7f", "\x0b", "\x0c", "\x1b", "ä", "😀",
+        ": ", " #", "- ", "true", "null", "1e3", ".inf", "...", "---"]
+    ctx = ["v: @\n", "v: [@]\n", "v: {k: @}\n", "@: 1\n", "- @\n", "@\n", "a:\n  @\n",
+           "v: [a,\n  @]\n", "v: @ # c\n", "a: 1\n@\nb: 2\n", 'v: "@"\n', "v: '@'\n"]
+    texts = sorted({rng.choice(ctx).replace("@", "".join(rng.choice(alphabet)
+                                                         for _ in range(rng.randint(1, 6))))
+                    for _ in range(2500)})
+    bad = []
+    for text, js in zip(texts, _js_parse_many(texts)):
+        py = _py_parse(text)
+        if "ok" in js and not ("ok" in py and _same(py["ok"], js["ok"])):
+            bad.append((text, py, js))
+    assert bad == []
 
 
 # --- Alte Editor-Exporte (Format vor YAML 1.2) bleiben lesbar ------------------------

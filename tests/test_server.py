@@ -191,3 +191,198 @@ def test_editoren_nutzen_server_import_mit_fallback(server_url):
     luft = urllib.request.urlopen(server_url + "/lueftung").read().decode("utf-8")
     assert 'fetch("normalize_air"' in luft and "loadDoc(normalizeDoc(YamlCore.parse(saved)))" in luft
     assert "const YamlCore" in html and "const YamlCore" in luft
+
+
+# --- Robustheit des Endpunkts (Bugfix-Runde 2026-11) ------------------------------
+
+import http.client
+import socket
+
+
+def _raw(server_url, method, path, body=b"", headers=None):
+    """Anfrage mit frei gesetzten Kopfzeilen (http.client setzt Host selbst,
+    solange keiner übergeben wird). Liefert (Status, Kopfzeilen, Body-Bytes)."""
+    host, port = server_url.replace("http://", "").split(":")
+    conn = http.client.HTTPConnection(host, int(port), timeout=10)
+    try:
+        conn.putrequest(method, path, skip_host=bool(headers and "Host" in headers),
+                        skip_accept_encoding=True)
+        hdrs = dict(headers or {})
+        if body and "Content-Length" not in hdrs and "Transfer-Encoding" not in hdrs:
+            hdrs["Content-Length"] = str(len(body))
+        for k, v in hdrs.items():
+            conn.putheader(k, v)
+        conn.endheaders()
+        if body:
+            conn.send(body)
+        resp = conn.getresponse()
+        return resp.status, dict(resp.getheaders()), resp.read()
+    finally:
+        conn.close()
+
+
+def _strict_loads(data: bytes):
+    """json.loads, das NaN/Infinity ablehnt (wie JSON.parse im Browser)."""
+    def no_const(name):
+        raise AssertionError(f"kein striktes JSON: {name}")
+    return json.loads(data.decode("utf-8"), parse_constant=no_const)
+
+
+CLOSED_LOOP = """\
+settings: {p_ref: %s}
+components:
+  pu1: {type: pump, mode: constant_flow, q_m3h: 1.0}
+  r1: {type: flow_resistance, c_Pa_m3h2: 1000}
+connections:
+  - [pu1.out, r1.in]
+  - [r1.out, pu1.in]
+"""
+
+
+def test_settings_p_ref_erreicht_das_netz(server_url):
+    """settings.p_ref der Datei setzt den Referenzdruck des geschlossenen Kreises
+    (compile(settings)) — vorher galt immer der Standardwert 150 kPa."""
+    data = _post(server_url, CLOSED_LOOP % 300000)
+    assert data["ok"], data
+    assert max(n["p_kPa"] for n in data["nodes"]) == pytest.approx(300.0, abs=1e-6) or \
+        any(n["p_kPa"] == pytest.approx(300.0, abs=1e-6) for n in data["nodes"])
+    assert any("300 kPa" in n for n in data["notices"])
+    std = solve_payload(CLOSED_LOOP.replace("settings: {p_ref: %s}\n", ""))
+    assert any(n["p_kPa"] == pytest.approx(150.0, abs=1e-6) for n in std["nodes"])
+
+
+@pytest.mark.parametrize("length", ["abc", "-1", "1e3", "+5", ""])
+def test_ungueltiger_content_length_gibt_json_fehler(server_url, length):
+    status, hdrs, data = _raw(server_url, "POST", "/solve", b"a: 1", {"Content-Length": length})
+    assert status == 400 and "application/json" in hdrs["Content-Type"]
+    out = _strict_loads(data)
+    assert out["ok"] is False and "Content-Length" in out["error"]
+
+
+def test_fehlender_content_length_und_chunked(server_url):
+    status, _, data = _raw(server_url, "POST", "/solve")
+    assert status == 411 and "Content-Length" in _strict_loads(data)["error"]
+    status, _, data = _raw(server_url, "POST", "/solve", b"4\r\na: 1\r\n0\r\n\r\n",
+                           {"Transfer-Encoding": "chunked"})
+    assert status == 411 and _strict_loads(data)["ok"] is False
+
+
+def test_zu_grosser_body_wird_abgelehnt_ohne_ihn_zu_lesen(server_url):
+    from hydraulik.server import MAX_BODY_BYTES
+    assert MAX_BODY_BYTES == 5 * 1024 * 1024
+    status, _, data = _raw(server_url, "POST", "/normalize", b"",
+                           {"Content-Length": str(MAX_BODY_BYTES + 1)})
+    out = _strict_loads(data)
+    assert status == 413 and out["ok"] is False and "5 MB" in out["error"]
+    # genau an der Grenze wird gelesen (hier: Kommentarzeilen bis zur Grenze)
+    body = (YAML_OK + "#" * (MAX_BODY_BYTES - len(YAML_OK.encode()))).encode()
+    status, _, data = _raw(server_url, "POST", "/solve", body)
+    assert status == 200 and _strict_loads(data)["ok"] is True
+
+
+def test_unvollstaendiger_body_haengt_nicht(server_url, monkeypatch):
+    from hydraulik import server as srv
+    monkeypatch.setattr(srv._Handler, "timeout", 0.5)
+    host, port = server_url.replace("http://", "").split(":")
+    with socket.create_connection((host, int(port)), timeout=10) as s:
+        s.sendall(f"POST /solve HTTP/1.1\r\nHost: {host}:{port}\r\nContent-Length: 500\r\n\r\na: 1".encode())
+        s.settimeout(10)
+        chunks = []
+        while True:
+            part = s.recv(65536)
+            if not part:
+                break
+            chunks.append(part)
+    reply = b"".join(chunks)
+    assert reply.startswith(b"HTTP/1.0 408") or reply.startswith(b"HTTP/1.1 408"), reply[:80]
+    assert _strict_loads(reply.split(b"\r\n\r\n", 1)[1])["ok"] is False
+
+
+def test_kein_utf8_gibt_json_fehler(server_url):
+    status, _, data = _raw(server_url, "POST", "/solve", b"a: \xff\xfe")
+    out = _strict_loads(data)
+    assert status == 400 and out["ok"] is False and "UTF-8" in out["error"]
+
+
+def test_fremder_host_und_origin_werden_abgelehnt(server_url):
+    port = server_url.rsplit(":", 1)[1]
+    body = YAML_OK.encode()
+    # DNS-Rebinding: fremder Host-Name zeigt auf 127.0.0.1
+    for method, path in (("GET", "/hydraulik"), ("GET", "/"), ("POST", "/solve")):
+        status, _, data = _raw(server_url, method, path, body if method == "POST" else b"",
+                               {"Host": f"evil.example:{port}"})
+        assert status == 403 and "evil.example" in _strict_loads(data)["error"]
+    # eigener Host, aber falscher Port im Host-Kopf
+    assert _raw(server_url, "POST", "/solve", body, {"Host": "127.0.0.1:1"})[0] == 403
+    # Cross-Site-POST einer fremden Webseite (Browser schickt Origin mit)
+    for origin in ("https://evil.example", "http://127.0.0.1:1", "null", f"https://127.0.0.1:{port}"):
+        status, _, data = _raw(server_url, "POST", "/solve", body, {"Origin": origin})
+        assert status == 403 and "Origin" in _strict_loads(data)["error"], origin
+    # eigene Seite: 127.0.0.1 und localhost, mit und ohne Origin
+    for host in (f"127.0.0.1:{port}", f"localhost:{port}", f"LOCALHOST:{port}"):
+        for extra in ({}, {"Origin": f"http://{host.lower()}"}):
+            status, _, data = _raw(server_url, "POST", "/solve", body, {"Host": host, **extra})
+            assert status == 200 and _strict_loads(data)["ok"] is True, (host, extra)
+
+
+def test_antwort_ist_striktes_json_bei_inf_und_nan(server_url):
+    """/normalize mit .inf/.nan: vorher 'Infinity'/'NaN' im Body — der Browser
+    konnte die Antwort nicht lesen und fiel still auf den lokalen Parser zurück."""
+    text = "components:\n  a: {type: cap, x: .inf, y: -.inf, z: .nan}\nconnections: []\n"
+    status, _, data = _raw(server_url, "POST", "/normalize", text.encode())
+    assert status == 200 and b"Infinity" not in data and b"NaN" not in data
+    out = _strict_loads(data)
+    assert out["ok"] and out["doc"]["components"]["a"] == {"type": "cap", "x": None, "y": None, "z": None}
+    assert "3 nicht endliche" in out["issues"][0] and "null" in out["issues"][0]
+
+
+def test_encode_payload_meldet_nicht_endliche_werte():
+    from hydraulik.server import encode_payload
+    out = _strict_loads(encode_payload({"ok": True, "notices": ["a"],
+                                        "nodes": [{"p_kPa": float("nan")}, {"p_kPa": 1.5}]}))
+    assert out["nodes"] == [{"p_kPa": None}, {"p_kPa": 1.5}]
+    assert out["notices"][1] == "a" and "nicht endliche" in out["notices"][0]
+    out = _strict_loads(encode_payload({"ok": True, "zuluft": {"t_C": float("inf")}, "hinweise": []}))
+    assert out["zuluft"]["t_C"] is None and "nicht endliche" in out["hinweise"][0]
+    out = _strict_loads(encode_payload({"ok": True, "v": float("-inf")}))
+    assert out["v"] is None and "nicht endliche" in out["hinweise"][0]
+    # endliche Werte bleiben unverändert, ohne Hinweis
+    assert _strict_loads(encode_payload({"ok": True, "v": 1e-300, "n": 3, "b": True, "s": "ä"})) == \
+        {"ok": True, "v": 1e-300, "n": 3, "b": True, "s": "ä"}
+
+
+def test_einzelnes_surrogat_reisst_die_antwort_nicht(server_url):
+    """Ein einzelnes Surrogat ist kein gültiges UTF-8: die Antwort wird dann als
+    ASCII-JSON mit Escape kodiert statt mit UnicodeEncodeError abzubrechen."""
+    from hydraulik.server import encode_payload
+    data = encode_payload({"ok": True, "error": "x\ud800y", "s": "ä"})
+    assert _strict_loads(data) == {"ok": True, "error": "x\ud800y", "s": "ä"}
+    # über den Endpunkt: immer eine lesbare JSON-Antwort (yamlio lehnt das Escape ab)
+    text = 'components:\n  a: {type: cap, description: "x\\ud800y"}\nconnections: []\n'
+    status, _, data = _raw(server_url, "POST", "/normalize", text.encode())
+    assert status == 200 and isinstance(_strict_loads(data)["ok"], bool)
+
+
+def test_normalize_lehnt_ganzzahlen_jenseits_2_hoch_53_ab(server_url):
+    """Der Editor liest Zahlen als double — 12345678901234567890 käme als
+    12345678901234567000 an und würde so wieder exportiert."""
+    text = "components:\n  a: {type: cap, bems: [{id: 12345678901234567890}]}\nconnections: []\n"
+    data = _post_to(server_url, "/normalize", text)
+    assert not data["ok"] and "12345678901234567890" in data["error"] and "2^53" in data["error"]
+    assert "components.a.bems[0].id" in data["error"]
+    ok = text.replace("12345678901234567890", "9007199254740991")       # 2^53 − 1: exakt
+    assert _post_to(server_url, "/normalize", ok)["ok"]
+    assert _post_to(server_url, "/normalize", text.replace("12345678901234567890", '"12345678901234567890"'))["ok"]
+
+
+def test_serve_meldet_belegten_port_auf_deutsch(capsys):
+    from hydraulik.server import serve
+    with socket.socket() as blocker:
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        port = blocker.getsockname()[1]
+        with pytest.raises(SystemExit) as exc:
+            serve(port=port, open_browser=False)
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert f"Port {port}" in err and "--port" in err and "Traceback" not in err

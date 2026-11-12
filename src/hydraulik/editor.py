@@ -13,6 +13,7 @@ oder Parameter erscheinen nach Neu-Generierung automatisch.
 from __future__ import annotations
 
 import json
+import re
 from importlib import resources
 from pathlib import Path
 
@@ -84,13 +85,29 @@ def yaml_core_js() -> str:
     return resources.files("hydraulik").joinpath("yaml_core.js").read_text(encoding="utf-8")
 
 
+_CATALOG_PLACEHOLDER = "__CATALOG_JSON__"
+
+
+def catalog_script_literal(catalog: dict) -> str:
+    """Katalog als JavaScript-Ausdruck für den <script>-Block. Texte aus der
+    Registry (Hilfetexte, Docstrings) dürfen den Block nicht beenden oder
+    umdeuten: '</' wird als '<\\/' und '<!--' als '<\\u0021--' geschrieben
+    (gültiges JSON wie JavaScript, gleicher Wert)."""
+    return (json.dumps(catalog, ensure_ascii=False)
+            .replace("</", "<\\/").replace("<!--", "<\\u0021--"))
+
+
 def _render(template_name: str, catalog: dict) -> str:
     template = resources.files("hydraulik").joinpath(template_name).read_text(encoding="utf-8")
-    html = template.replace("__CATALOG_JSON__", json.dumps(catalog, ensure_ascii=False))
-    html = html.replace(_YAML_CORE_PLACEHOLDER, yaml_core_js())
-    if "__CATALOG_JSON__" in html or _YAML_CORE_PLACEHOLDER in html:
-        raise RuntimeError(f"Platzhalter in {template_name} nicht ersetzt.")
-    return html
+    parts = {_CATALOG_PLACEHOLDER: catalog_script_literal(catalog),
+             _YAML_CORE_PLACEHOLDER: yaml_core_js()}
+    for placeholder in parts:
+        if template.count(placeholder) != 1:
+            raise RuntimeError(f"Platzhalter {placeholder} muss in {template_name} genau "
+                               f"einmal vorkommen ({template.count(placeholder)}×).")
+    # EIN Durchgang: eingesetzter Inhalt wird nicht erneut nach Platzhaltern
+    # durchsucht (ein Hilfetext mit dem Platzhaltertext bliebe sonst nicht Text)
+    return re.sub("|".join(re.escape(k) for k in parts), lambda m: parts[m.group(0)], template)
 
 
 def render_editor() -> str:

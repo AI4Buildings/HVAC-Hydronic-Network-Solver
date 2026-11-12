@@ -42,6 +42,7 @@
   .field .unitrow input { flex:1; }
   .field .unitrow select { width:118px; }
   .req { color:var(--vl); }
+  .field input.bad { border-color:var(--vl); background:#fff1f1; }
   #issues { font-size:12px; }
   #issues li { color:#8a5200; margin:2px 0; }
   #issues li.err { color:var(--vl); }
@@ -124,6 +125,52 @@
 "use strict";
 const CATALOG = __CATALOG_JSON__;
 /*__YAML_CORE_JS__*/
+
+/* ---------- Reine Hilfsfunktionen (ohne DOM; auch von den Tests geladen) ---- */
+// HTML-Escaping für Text UND Attributwerte. JEDE Einfügung fremder Daten in
+// innerHTML (Namen, Beschreibungen, Parameterwerte, Layoutangaben aus
+// importierten Dateien, Vorlagennamen, Server-Texte) läuft hierüber.
+function esc(s){
+  return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+const isObj = v => !!v && typeof v === "object" && !Array.isArray(v);
+const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+// Geometrie aus Dateien/Vorlagen: nur endliche Zahlen, sonst der Ersatzwert
+function numOr(v, dflt){ return typeof v === "number" && Number.isFinite(v) ? v : dflt; }
+function normRot(v){ return ((Math.round(numOr(v, 0) / 90) * 90) % 360 + 360) % 360; }
+/* Zahleneingabe unabhängig von der Browser-Sprache: Dezimaltrennzeichen Punkt
+   ODER Komma ("1,5" = 1.5), Exponent erlaubt, keine Tausendertrennzeichen.
+   Rückgabe: Zahl | undefined (leeres Feld) | null (keine eindeutige Zahl).
+   "1,234" (genau drei Ziffern nach einem einzelnen Komma, davor 1–3 Ziffern
+   ohne führende Null) ist mehrdeutig — deutsch 1,234, englisch 1234 — und
+   wird abgelehnt statt geraten. */
+function parseNum(text){
+  const t = String(text ?? "").trim().replace(/\u2212/g, "-");   // typografisches Minus
+  if (t === "") return undefined;
+  if (!/^[-+]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][-+]?\d+)?$/.test(t)) return null;
+  if (/^[-+]?[1-9]\d{0,2},\d{3}$/.test(t)) return null;
+  return Number(t.replace(",", "."));
+}
+/* Labels (ts, BEMS id/key/description) wie der Loader lesen: null = kein
+   Label, Ganzzahl → Text. Alles andere (Kommazahl, true/false, Listen) bleibt
+   unverändert stehen und wird unverändert exportiert — der Loader meldet es. */
+function labelIn(v){
+  if (v === undefined || v === null) return "";
+  if (typeof v === "number" && Number.isInteger(v)) return String(v);
+  return v;
+}
+const labelSet = v => v !== undefined && v !== null && v !== "";
+function labelOut(v){ return typeof v === "string" ? YamlCore.string(v) : YamlCore.scalar(v); }
+// bems/pipes: Liste von Mappings; ein einzelnes Mapping gilt wie im Loader als Liste mit einem Eintrag
+function listIn(raw){ return (Array.isArray(raw) ? raw : (isObj(raw) ? [raw] : [])).filter(isObj); }
+function bemsIn(raw){
+  return listIn(raw).map(e => {
+    const out = {};
+    for (const [k, v] of Object.entries(e)) { const x = labelIn(v); if (labelSet(x)) out[k] = x; }
+    return out;
+  });
+}
 
 /* ---------- Einheiten-Anzeige (YAML-Suffix → lesbare Einheit) ------------- */
 const UNIT_LABEL = {
@@ -331,13 +378,34 @@ const BUILTIN_TEMPLATES = {
     ],
   },
 };
-let userTemplates = {};
-try { userTemplates = JSON.parse(localStorage.getItem("hydraulik_templates") || "{}"); }
-catch (e) { userTemplates = {}; }
+// ohne Prototyp: beliebige Vorlagennamen ('constructor', '__proto__') sind gewöhnliche Schlüssel
+let userTemplates = Object.create(null);
+try {
+  const stored = JSON.parse(localStorage.getItem("hydraulik_templates") || "{}");
+  if (isObj(stored)) Object.assign(userTemplates, stored);
+} catch (e) { userTemplates = Object.create(null); }
 function persistTemplates() {
   try { localStorage.setItem("hydraulik_templates", JSON.stringify(userTemplates)); } catch (e) {}
 }
-function getTemplate(name) { return userTemplates[name] || BUILTIN_TEMPLATES[name] || null; }
+function getTemplate(name) {
+  if (hasOwn(userTemplates, name)) return userTemplates[name];
+  return hasOwn(BUILTIN_TEMPLATES, name) ? BUILTIN_TEMPLATES[name] : null;
+}
+// null = einfügbar, sonst der Grund (Vorlagen stammen auch aus fremden JSON-Dateien)
+function templateProblem(tpl) {
+  if (!isObj(tpl) || !Array.isArray(tpl.comps) || !tpl.comps.length) return "keine Komponenten";
+  if (!tpl.comps.every(isObj)) return "ungültiger Komponenteneintrag";
+  const unknown = [...new Set(tpl.comps.map(c => c.type).filter(t => !hasType(t)))];
+  if (unknown.length)
+    return `unbekannte Komponententypen: ${unknown.map(String).join(", ")} ` +
+           `(Vorlage des anderen Editors?)`;
+  if (tpl.wires !== undefined && !Array.isArray(tpl.wires)) return "'wires' ist keine Liste";
+  const endOk = e => Array.isArray(e) && Number.isInteger(e[0]) && e[0] >= 0 &&
+                     e[0] < tpl.comps.length && typeof e[1] === "string";
+  if (!(tpl.wires || []).every(w => isObj(w) && endOk(w.a) && endOk(w.b)))
+    return "Leitung mit ungültigem Endpunkt";
+  return null;
+}
 const deepClone = o => JSON.parse(JSON.stringify(o));
 
 function templateFromSelection() {
@@ -365,41 +433,54 @@ function templateFromSelection() {
   };
 }
 function insertTemplate(tpl, x, y) {
+  const problem = templateProblem(tpl);
+  if (problem) {                       // nichts einfügen statt die Zeichnung zu beschädigen
+    alert(`Vorlage kann nicht eingefügt werden: ${problem}.`);
+    return false;
+  }
   invalidate();
   const newIds = [], ids = new Set();
   for (const tc of tpl.comps) {
+    const base = typeof tc.name === "string" && tc.name ? tc.name : freshName(tc.type);
     const c = {id: idSeq++, type: tc.type,
-               name: nameTaken(tc.name) ? uniqueName(tc.name) : tc.name,
-               ts: tc.ts || "", rot: tc.rot || 0,
-               x: snap(x + tc.dx), y: snap(y + tc.dy),
-               params: deepClone(tc.params || {})};
-    if (tc.bems && tc.bems.length) c.bems = deepClone(tc.bems);
+               name: nameTaken(base) ? uniqueName(base) : base,
+               ts: labelIn(tc.ts), rot: normRot(tc.rot),
+               x: snap(x + numOr(tc.dx, 0)), y: snap(y + numOr(tc.dy, 0)),
+               params: isObj(tc.params) ? deepClone(tc.params) : {}};
+    const bems = bemsIn(tc.bems);
+    if (bems.length) c.bems = bems;
     state.comps.push(c); newIds.push(c.id); ids.add(c.id);
   }
-  for (const tw of tpl.wires) {
+  for (const tw of (tpl.wires || [])) {
     const w = {a: {comp: newIds[tw.a[0]], port: tw.a[1]},
-               b: {comp: newIds[tw.b[0]], port: tw.b[1]}, color: tw.color || "n"};
+               b: {comp: newIds[tw.b[0]], port: tw.b[1]},
+               color: typeof tw.color === "string" ? tw.color : "n"};
     if (tw.type === "conduit") {
       w.type = "conduit";
-      const base = tw.name || "lt1";
+      const base = typeof tw.name === "string" && tw.name ? tw.name : "lt1";
       w.name = nameTaken(base) ? uniqueName(base) : base;
-      w.ts = tw.ts || ""; w.params = deepClone(tw.params || {});
-      if (tw.pipes) w.pipes = deepClone(tw.pipes);
-      if (tw.bems) w.bems = deepClone(tw.bems);
+      w.ts = labelIn(tw.ts); w.params = isObj(tw.params) ? deepClone(tw.params) : {};
+      const pipes = listIn(tw.pipes), bems = bemsIn(tw.bems);
+      if (pipes.length) w.pipes = deepClone(pipes);
+      if (bems.length) w.bems = bems;
     }
-    if (tw.pts) w.pts = tw.pts.map(([dx, dy]) => ({x: snap(x + dx), y: snap(y + dy)}));
+    const pts = (Array.isArray(tw.pts) ? tw.pts : [])
+      .filter(q => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1]))
+      .map(([dx, dy]) => ({x: snap(x + dx), y: snap(y + dy)}));
+    if (pts.length) w.pts = pts;
     state.wires.push(w);
   }
   selection = {kind: "multi", ids};
   commit(); render();
+  return true;
 }
 function saveSelectionAsTemplate() {
   const tpl = templateFromSelection();
   if (!tpl) { alert("Zuerst Komponenten auswählen (Rechteck oder Shift+Klick)."); return; }
   const name = (prompt("Name der Vorlage:") || "").trim();
   if (!name) return;
-  if (BUILTIN_TEMPLATES[name]) { alert("Name ist durch eine mitgelieferte Vorlage belegt."); return; }
-  if (userTemplates[name] && !confirm(`Vorlage '${name}' überschreiben?`)) return;
+  if (hasOwn(BUILTIN_TEMPLATES, name)) { alert("Name ist durch eine mitgelieferte Vorlage belegt."); return; }
+  if (hasOwn(userTemplates, name) && !confirm(`Vorlage '${name}' überschreiben?`)) return;
   userTemplates[name] = tpl;
   persistTemplates(); buildPalette();
   setStatus(`Vorlage '${name}' gespeichert – in der Palette unter VORLAGEN.`);
@@ -446,8 +527,9 @@ const META = {
 };
 const GRP_ORDER = ["Erzeuger & Speicher","Verteilung","Ventile","Verbraucher",
                    "Leitungen & Widerstände","Randbedingungen","Sensoren","Sonstige"];
-const TYPES = {};
+const TYPES = Object.create(null);     // ohne Prototyp: 'constructor', 'toString' sind keine Typen
 CATALOG.types.forEach(t => TYPES[t.type] = t);
+const hasType = t => typeof t === "string" && hasOwn(TYPES, t);
 
 /* ---------- Zustand ----------------------------------------------------- */
 let state = { fluid:{mode:"preset", t_C:50, rho:998, mu:0.001, cp:4180},
@@ -469,6 +551,29 @@ let inspectorHold = false;          // Formular bei reiner Wertänderung nicht n
                                     // das nächste angeklickte Feld ersetzen/verschlucken)
 let inspectorForce = false;         // Modus-Wechsel: Umbau erzwingen (schlägt den Guard)
 let inspectorTab = "fluid";         // Inspector-Register: "fluid" | "bems"
+let inspectorBuiltFor = null;       // Auswahl, für die das Formular zuletzt aufgebaut wurde
+function selKey() {                 // Identität der Auswahl (Objekt bzw. id-Liste)
+  if (!selection) return null;
+  if (selection.kind === "multi") return "multi:" + [...selection.ids].sort((a, b) => a - b).join(",");
+  return selection.ref;
+}
+// Laufende Eingabe im Inspector abschließen: blur() löst das noch ausstehende
+// change-Ereignis aus (für die BISHERIGE Auswahl bzw. das bisherige Formular).
+// Nötig vor jedem Auswahl- oder Formularwechsel — nicht jeder Browser gibt
+// einem angeklickten Button oder der Zeichenfläche von sich aus den Fokus.
+function commitPendingInput() {
+  const ae = document.activeElement;
+  if (ae && ae !== document.body && document.getElementById("inspector").contains(ae)) ae.blur();
+}
+// Wertänderung: Zeichnung neu, Formular stehen lassen · Strukturänderung: Formular neu
+function holdRender() { inspectorHold = true; try { render(); } finally { inspectorHold = false; } }
+function forceRender() { inspectorForce = true; try { render(); } finally { inspectorForce = false; } }
+function badNumber(inp, empty) {    // Eingabe ist keine eindeutige Zahl: Wert NICHT übernehmen
+  inp.classList.add("bad");
+  setStatus(empty ? "Dieses Feld braucht eine Zahl – der bisherige Wert bleibt bestehen."
+    : `'${inp.value}' ist keine eindeutige Zahl – der bisherige Wert bleibt bestehen. ` +
+      `Dezimalzahl mit Punkt oder Komma schreiben (1.5 bzw. 1,5), ohne Tausendertrennzeichen.`);
+}
 
 function wireEnds(w) {
   return [absPort(compById(w.a.comp), w.a.port), absPort(compById(w.b.comp), w.b.port)];
@@ -547,14 +652,12 @@ function pasteClipboard() {
     state.comps.push(c); ids.add(c.id);
   }
   for (const w of clipboard.wires) {
-    const nw = {a: {comp: idMap[w.a.comp], port: w.a.port},
-                b: {comp: idMap[w.b.comp], port: w.b.port}, color: w.color};
-    if (w.type === "conduit") {
-      nw.type = "conduit";
-      nw.name = uniqueName(w.name);
-      nw.ts = w.ts || "";
-      nw.params = JSON.parse(JSON.stringify(w.params || {}));
-    }
+    // die GANZE Leitung klonen (pipes, bems, ts, Parameter, Moduswahl) – eine
+    // Kopie ohne pipes wäre still eine ideale Leitung
+    const nw = JSON.parse(JSON.stringify(w));
+    nw.a = {comp: idMap[w.a.comp], port: w.a.port};
+    nw.b = {comp: idMap[w.b.comp], port: w.b.port};
+    if (w.type === "conduit") nw.name = uniqueName(w.name);
     if (w.pts) nw.pts = w.pts.map(p => ({x: p.x + 48, y: p.y + 48}));
     state.wires.push(nw);
   }
@@ -569,8 +672,8 @@ function invalidate(){ if (lastResult) { lastResult = null; setStatus("Zeichnung
 
 /* ---------- Undo / Redo --------------------------------------------------- */
 let history = [], historyIndex = -1;
-function snapshot(){ return JSON.stringify({fluid: state.fluid, comps: state.comps,
-                                            wires: state.wires, idSeq}); }
+function snapshot(){ return JSON.stringify({fluid: state.fluid, settings: state.settings,
+                                            comps: state.comps, wires: state.wires, idSeq}); }
 function commit(){
   history = history.slice(0, historyIndex + 1);
   history.push(snapshot());
@@ -580,10 +683,13 @@ function commit(){
 function restoreSnap(s){
   const o = JSON.parse(s);
   state = {fluid: o.fluid, comps: o.comps, wires: o.wires};
+  if (o.settings !== undefined) state.settings = o.settings;
   idSeq = o.idSeq;
-  selection = null; pendingPort = null; wireDrag = null; boxSel = null; lastResult = null;
+  selection = null; lastResult = null; resetPointers();
   render();
 }
+// laufende Zeigeraktionen verwerfen: sie verweisen auf Komponenten per id
+function resetPointers(){ pendingPort = null; wireDrag = null; boxSel = null; drag = null; wpDrag = null; }
 function undo(){ if (historyIndex > 0) { historyIndex--; restoreSnap(history[historyIndex]); } }
 function redo(){ if (historyIndex < history.length - 1) { historyIndex++; restoreSnap(history[historyIndex]); } }
 
@@ -607,7 +713,8 @@ function portNames(comp) {
   let n = comp.params[spec.count_param];
   if (n === undefined || n === null || n === "") n = (p && p.default != null) ? p.default : 2;
   const out = spec.base.slice();
-  for (let i = 1; i <= Number(n); i++) out.push(spec.template.replace("{}", i));
+  const count = Math.min(Math.max(0, Math.floor(Number(n)) || 0), 99);   // Zeichnung begrenzen
+  for (let i = 1; i <= count; i++) out.push(spec.template.replace("{}", i));
   return out;
 }
 function rotXY(dx, dy, rot) {
@@ -660,6 +767,7 @@ function compWidth(comp) {
   return 60;
 }
 function absPort(comp, port) {
+  if (!comp) return {x: 0, y: 0};              // Leitung ohne Komponente (wird von validate gemeldet)
   const p = portPos(comp)[port];
   return p ? {x: comp.x + p.dx, y: comp.y + p.dy} : {x:comp.x, y:comp.y};
 }
@@ -853,19 +961,19 @@ function render() {
     const d = wireD(w);
     const meas = (isTapPort(w.a.comp, w.a.port) || isTapPort(w.b.comp, w.b.port))
       ? " measure" : "";
-    out += `<path class="wire ${w.color}${sel}${meas}" d="${d}"/>`;
+    out += `<path class="wire ${esc(w.color)}${sel}${meas}" d="${esc(d)}"/>`;
     out += flowArrow(w);
-    out += `<path class="wire-hit" data-wire="${i}" d="${d}"/>`;
+    out += `<path class="wire-hit" data-wire="${i}" d="${esc(d)}"/>`;
     if (sel && w.pts)                              // Knickpunkt-Griffe der Auswahl
       w.pts.forEach((p, k) => {
         out += `<rect class="wp" data-wire="${i}" data-wp="${k}"
-                x="${p.x - 4}" y="${p.y - 4}" width="8" height="8"/>`;
+                x="${esc(p.x - 4)}" y="${esc(p.y - 4)}" width="8" height="8"/>`;
       });
     if (sel && w.name) {                           // Name nur bei Selektion
       const [pa, pb] = wireEnds(w);
       const mid = w.pts && w.pts.length ? w.pts[Math.floor((w.pts.length - 1) / 2)]
                                         : {x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2};
-      out += `<text class="comp-label" x="${mid.x}" y="${mid.y - 8}"
+      out += `<text class="comp-label" x="${esc(mid.x)}" y="${esc(mid.y - 8)}"
               text-anchor="middle" fill="#0b7a3e">${esc(w.name)}</text>`;
     }
   }
@@ -873,7 +981,7 @@ function render() {
     const a = absPort(compById(wireDrag.from.comp), wireDrag.from.port);
     const tx = wireDrag.hover ? wireDrag.hover.x : wireDrag.mx;
     const ty = wireDrag.hover ? wireDrag.hover.y : wireDrag.my;
-    out += `<line x1="${a.x}" y1="${a.y}" x2="${tx}" y2="${ty}"
+    out += `<line x1="${esc(a.x)}" y1="${esc(a.y)}" x2="${esc(tx)}" y2="${esc(ty)}"
             stroke="#0b7a3e" stroke-width="2.5" stroke-dasharray="6 4"/>`;
   }
   if (boxSel && boxSel.active) {
@@ -884,11 +992,11 @@ function render() {
   }
   for (const c of state.comps) {
     const sel = isSelectedComp(c) ? " selected" : "";
-    out += `<g class="comp${sel}" data-comp="${c.id}" transform="translate(${c.x},${c.y})">`;
+    out += `<g class="comp${sel}" data-comp="${esc(c.id)}" transform="translate(${esc(c.x)},${esc(c.y)})">`;
     // unsichtbare Trefferfläche (Symbole mit Lücken bleiben klick-/hoverbar)
     const hw = Math.max(compWidth(c) / 2 + 6, 32);
     out += `<rect x="${-hw}" y="-32" width="${2 * hw}" height="64" fill="transparent"/>`;
-    out += `<g transform="rotate(${c.rot || 0})">` + uprightText(symbol(c), c.rot || 0) + `</g>`;
+    out += `<g transform="rotate(${esc(normRot(c.rot))})">` + uprightText(symbol(c), normRot(c.rot)) + `</g>`;
     out += `<text class="comp-label" x="0" y="44" text-anchor="middle">${esc(c.name)}</text>`;
     const rr = resultRows(c.name);
     if (rr.length) {
@@ -902,11 +1010,11 @@ function render() {
       const pend = ((pendingPort && pendingPort.comp===c.id && pendingPort.port===pn) ||
                     (wireDrag && wireDrag.hover && wireDrag.hover.comp===c.id &&
                      wireDrag.hover.port===pn)) ? " pending" : "";
-      out += `<circle class="port-hit-ring" data-comp="${c.id}" data-port="${pn}"
+      out += `<circle class="port-hit-ring" data-comp="${esc(c.id)}" data-port="${esc(pn)}"
               cx="${p.dx}" cy="${p.dy}" r="7" fill="transparent">
-              <title>${esc(c.name)}.${pn}</title></circle>
-              <circle class="port${pend}" data-comp="${c.id}" data-port="${pn}"
-              cx="${p.dx}" cy="${p.dy}" r="3"><title>${esc(c.name)}.${pn}</title></circle>`;
+              <title>${esc(c.name)}.${esc(pn)}</title></circle>
+              <circle class="port${pend}" data-comp="${esc(c.id)}" data-port="${esc(pn)}"
+              cx="${p.dx}" cy="${p.dy}" r="3"><title>${esc(c.name)}.${esc(pn)}</title></circle>`;
     }
     out += `</g>`;
   }
@@ -914,7 +1022,6 @@ function render() {
   renderInspector();
   autosave();
 }
-function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
 function compById(id){ return state.comps.find(c => c.id === id); }
 function fmt(v, d){ return (v === undefined || v === null || isNaN(v)) ? "–"
   : Number(v).toFixed(d === undefined ? 3 : d).replace(/\.?0+$/, m => m.includes(".") ? "" : m); }
@@ -933,6 +1040,7 @@ async function solveNow() {
     const resp = await fetch("solve", {method: "POST", body: exportYAML(),
                                        headers: {"Content-Type": "text/yaml"}});
     data = await resp.json();
+    if (!isObj(data) || typeof data.ok !== "boolean") throw new Error("keine Antwort des Editor-Servers");
   } catch (e) {
     lastResult = null;
     alert("Kein Rechen-Endpunkt erreichbar.\n\nDen Editor bitte über 'hydraulik serve' starten " +
@@ -1071,7 +1179,7 @@ function flowArrow(w) {
   const y = p[i].y + (p[i+1].y - p[i].y) * f;
   let ang = Math.atan2(p[i+1].y - p[i].y, p[i+1].x - p[i].x) * 180 / Math.PI;
   if (q < 0) ang += 180;                           // Rückströmung: umdrehen
-  return `<polygon class="wire-arrow ${w.color}" points="7,0 -6,4.2 -6,-4.2"
+  return `<polygon class="wire-arrow ${esc(w.color)}" points="7,0 -6,4.2 -6,-4.2"
           transform="translate(${round6(x)} ${round6(y)}) rotate(${round6(ang)})"/>`;
 }
 
@@ -1095,9 +1203,9 @@ function buildPalette(){
     for (const g of GRP_ORDER) {
       if (!groups[g]) continue;
       groups[g].sort((a, b) => a.label.localeCompare(b.label, "de"));
-      html += `<h3>${g}</h3>`;
+      html += `<h3>${esc(g)}</h3>`;
       for (const it of groups[g])
-        html += `<button class="pal-item" data-type="${it.type}" title="${esc(it.doc)}">${esc(it.label)}</button>`;
+        html += `<button class="pal-item" data-type="${esc(it.type)}" title="${esc(it.doc)}">${esc(it.label)}</button>`;
     }
   } else {
     html += `<h3>Vorlagen
@@ -1105,7 +1213,7 @@ function buildPalette(){
       <button class="tpl-io" id="tpl-import" title="Vorlagen aus JSON-Datei laden">⤒</button></h3>`;
     const names = [...Object.keys(BUILTIN_TEMPLATES), ...Object.keys(userTemplates).sort()];
     for (const n of names) {
-      const own = !!userTemplates[n];
+      const own = hasOwn(userTemplates, n);
       html += `<div class="tpl-row">
         <button class="pal-item" data-tpl="${esc(n)}"
           title="Einfügen: anklicken, dann auf die Zeichenfläche klicken">${esc(n)}</button>` +
@@ -1168,11 +1276,18 @@ document.getElementById("palette").addEventListener("change", ev => {
   f.text().then(t => {
     try {
       const data = JSON.parse(t);
+      if (!isObj(data)) throw new Error("erwartet wird ein JSON-Objekt {Name: Vorlage, …}");
       let n = 0;
-      for (const [name, tpl] of Object.entries(data))
-        if (tpl && Array.isArray(tpl.comps)) { userTemplates[name] = tpl; n++; }
+      const skipped = [];                  // nie ungeprüft übernehmen (fremde/andere Editor-Datei)
+      for (const [name, tpl] of Object.entries(data)) {
+        const problem = hasOwn(BUILTIN_TEMPLATES, name)
+          ? "Name einer mitgelieferten Vorlage" : templateProblem(tpl);
+        if (problem) { skipped.push(`'${name}' (${problem})`); continue; }
+        userTemplates[name] = tpl; n++;
+      }
       persistTemplates(); buildPalette();
-      setStatus(`${n} Vorlage(n) importiert.`);
+      setStatus(`${n} Vorlage(n) importiert.` +
+                (skipped.length ? ` Übersprungen: ${skipped.join("; ")}.` : ""));
     } catch (e) { alert("Vorlagen-Import fehlgeschlagen: " + e); }
   });
   ev.target.value = "";
@@ -1212,6 +1327,7 @@ function isTapPort(compId, port) {
 }
 function addWire(a, b) {
   if (a.comp === b.comp && a.port === b.port) return;
+  if (!compById(a.comp) || !compById(b.comp)) return;    // Komponente inzwischen gelöscht
   invalidate();
   if (isTapPort(a.comp, a.port) || isTapPort(b.comp, b.port)) {
     // Messleitung eines Fühlers: reine Verbindung (Knotenverschmelzung mit
@@ -1228,6 +1344,10 @@ function addWire(a, b) {
   commit();
 }
 svg.addEventListener("mousedown", ev => {
+  // Laufende Eingabe zuerst abschließen (noch für die BISHERIGE Auswahl). Erst
+  // danach darf die Auswahl wechseln — sonst bliebe das alte Formular stehen
+  // und weitere Eingaben träfen die falsche Komponente.
+  commitPendingInput();
   const pt = svgPoint(ev);
   const portEl = ev.target.closest(".port, .port-hit-ring");
   if (portEl) {
@@ -1290,10 +1410,11 @@ svg.addEventListener("mousedown", ev => {
   }
   if (placingTemplate) {
     const tpl = getTemplate(placingTemplate);
-    if (tpl) insertTemplate(deepClone(tpl), pt.x, pt.y);
+    const done = !!tpl && insertTemplate(deepClone(tpl), pt.x, pt.y);
     placingTemplate = null;               // Einmal-Einfügen: Modus sofort beenden,
     document.querySelectorAll(".pal-item").forEach(x => x.classList.remove("active"));
-    setStatus("Vorlage eingefügt – Komponenten anklicken zum Bearbeiten.");
+    setStatus(done ? "Vorlage eingefügt – Komponenten anklicken zum Bearbeiten."
+                   : "Vorlage nicht eingefügt.");
     return;                               // damit Folgeklicks Komponenten auswählen
   }
   if (placing) { addComp(placing, pt.x, pt.y); return; }
@@ -1380,7 +1501,9 @@ window.addEventListener("keydown", ev => {
   if ((ev.key === "Delete" || ev.key === "Backspace") && !inForm) {
     deleteSelection(); ev.preventDefault();
   }
-  if ((ev.key === "r" || ev.key === "R") && !inForm) rotateSelection();
+  // nur die blanke Taste r: Strg/Cmd+R (Seite neu laden) darf nichts drehen
+  if ((ev.key === "r" || ev.key === "R") && !inForm &&
+      !ev.ctrlKey && !ev.metaKey && !ev.altKey) rotateSelection();
   if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "z") {
     ev.shiftKey ? redo() : undo(); ev.preventDefault();
   }
@@ -1393,7 +1516,9 @@ window.addEventListener("keydown", ev => {
     pasteClipboard(); ev.preventDefault();
   }
   if ((ev.metaKey || ev.ctrlKey) && !inForm && ev.key.toLowerCase() === "d") {
-    copySelection(); pasteClipboard(); ev.preventDefault();
+    // Duplizieren nur mit Auswahl — sonst käme der alte Inhalt der Zwischenablage
+    if (selectedComps().length) { copySelection(); pasteClipboard(); }
+    ev.preventDefault();
   }
 });
 document.getElementById("btn-copy").onclick = copySelection;
@@ -1430,7 +1555,8 @@ function deleteSelection() {
     state.wires = state.wires.filter(w => !ids.has(w.a.comp) && !ids.has(w.b.comp));
     state.comps = state.comps.filter(c => !ids.has(c.id));
   }
-  selection = null; commit(); render();
+  // angefangene Leitung (erster Port-Klick) verwerfen: ihr Port kann gelöscht sein
+  selection = null; resetPointers(); commit(); render();
 }
 document.getElementById("btn-del").onclick = deleteSelection;
 
@@ -1438,16 +1564,17 @@ document.getElementById("btn-del").onclick = deleteSelection;
 function renderInspector() {
   const el = document.getElementById("inspector");
   // Läuft gerade eine Eingabe (Fokus in einem Formularfeld des Inspectors),
-  // wird das Formular NICHT neu aufgebaut – sonst verschluckt der DOM-Tausch
-  // Folgeklicks auf die Spinner-Pfeile der Zahlenfelder. Nur die Prüfliste
-  // wird aktualisiert; der nächste Render (Klick in die Zeichnung, Auswahl-
-  // wechsel, …) baut das Formular regulär neu.
+  // wird das Formular NICHT neu aufgebaut – sonst nähme der DOM-Tausch dem
+  // Feld den Fokus und verschluckte Folgeeingaben. Nur die Prüfliste wird
+  // aktualisiert; der nächste Render ohne Eingabefokus baut regulär neu.
+  // Das gilt nur, solange die Auswahl dieselbe ist wie beim Aufbau: nach einem
+  // Auswahlwechsel wird IMMER neu aufgebaut (sonst zeigte das Formular weiter
+  // die vorige Komponente und Eingaben träfen sie).
   const ae = document.activeElement;
-  if (!inspectorForce &&
-      (inspectorHold ||
-       (el.contains(ae) && (ae instanceof HTMLInputElement || ae instanceof HTMLSelectElement)
+  const typing = el.contains(ae) && (ae instanceof HTMLInputElement || ae instanceof HTMLSelectElement)
         && ae.dataset.kind !== "suffix" && ae.dataset.kind !== "choice"
-        && ae.dataset.mgroup === undefined))) {
+        && ae.dataset.mgroup === undefined;
+  if (!inspectorForce && inspectorBuiltFor === selKey() && (inspectorHold || typing)) {
     refreshIssues();
     return;
   }
@@ -1455,13 +1582,14 @@ function renderInspector() {
   if (selection && selection.kind === "comp") html += compForm(selection.ref);
   else if (selection && selection.kind === "wire") html += wireForm(selection.ref);
   else if (selection && selection.kind === "multi")
-    html += `<h3>Auswahl</h3><div class="hint">${selection.ids.size} Komponenten ausgewählt.<br>
+    html += `<h3>Auswahl</h3><div class="hint">${esc(selection.ids.size)} Komponenten ausgewählt.<br>
       Ziehen verschiebt gemeinsam · Strg+C kopiert (inkl. interner Leitungen) ·
       Strg+V fügt ein · Strg+D dupliziert · Entf löscht · Shift+Klick ergänzt/entfernt.</div>
       <div class="field"><button id="btn-save-tpl">Auswahl als Vorlage speichern…</button></div>`;
   html += `<h3>Prüfungen <span class="hint">(gesamte Zeichnung – klicken wählt aus)</span></h3>` +
           `<ul id="issues"></ul>`;
   el.innerHTML = html;
+  inspectorBuiltFor = selKey();
   refreshIssues();
   bindInspector();
 }
@@ -1469,7 +1597,7 @@ function refreshIssues() {
   const ul = document.getElementById("issues");
   if (!ul) return;
   ul.innerHTML = validate().map(i => `<li class="${i.err?'err':''}"` +
-    (i.comp !== undefined ? ` data-focus="${i.comp}"` : "") +
+    (i.comp !== undefined ? ` data-focus="${esc(i.comp)}"` : "") +
     `>${esc(i.msg)}</li>`).join("");
   ul.querySelectorAll("li[data-focus]").forEach(li => {
     li.onclick = () => {
@@ -1492,10 +1620,18 @@ function fluidForm() {
       <option value="custom"${f.mode==="custom"?" selected":""}>ρ/μ/cp direkt</option></select></div>` +
     (f.mode === "preset"
       ? `<div class="field"><label>Mitteltemperatur t_C [°C]</label>
-         <input type="number" id="fl-t" value="${f.t_C}"></div>`
-      : `<div class="field"><label>ρ [kg/m³]</label><input type="number" id="fl-rho" value="${f.rho}"></div>
-         <div class="field"><label>μ [Pa·s]</label><input type="number" id="fl-mu" value="${f.mu}" step="0.0001"></div>
-         <div class="field"><label>cp [J/(kg·K)]</label><input type="number" id="fl-cp" value="${f.cp}"></div>`);
+         <input type="text" inputmode="decimal" id="fl-t" value="${esc(f.t_C)}"></div>`
+      : `<div class="field"><label>Name <span class="hint">(nur Bericht)</span></label>
+         <input type="text" id="fl-name" spellcheck="false" placeholder="custom" value="${esc(f.name)}"></div>
+         <div class="field"><label>ρ [kg/m³]</label><input type="text" inputmode="decimal" id="fl-rho" value="${esc(f.rho)}"></div>
+         <div class="field"><label>μ [Pa·s]</label><input type="text" inputmode="decimal" id="fl-mu" value="${esc(f.mu)}"></div>
+         <div class="field"><label>cp [J/(kg·K)]</label><input type="text" inputmode="decimal" id="fl-cp" value="${esc(f.cp)}"></div>`) +
+    // settings-Block der importierten Datei: wird mitgerechnet und wieder exportiert
+    (state.settings !== undefined && state.settings !== null
+      ? `<div class="hint" id="settings-hint">Solver-Einstellungen aus der Datei (gelten beim
+         Rechnen und im Export): <code>${esc(YamlCore.scalar(state.settings))}</code>
+         <button id="settings-del" title="settings-Block entfernen (Standardwerte des Solvers)">entfernen</button></div>`
+      : "");
 }
 /* Modusabhängige Eingabefelder: je Komponententyp Gruppen von Betriebsarten.
    source = echter Parameter (z.B. pump.mode); ohne source wird der Modus aus
@@ -1601,9 +1737,9 @@ function paramsSection(c, type) {
   groups.forEach((g, gi) => {
     const act = activeModeOption(c, type, g, gi);
     html += `<div class="field"><label>${esc(g.label)}</label>
-      <select data-mgroup="${gi}" data-mtype="${type}">` +
+      <select data-mgroup="${esc(gi)}" data-mtype="${esc(type)}">` +
       (act ? "" : `<option value="" selected>– wählen –</option>`) +
-      g.options.map(o => `<option value="${o.key}"${act && act.key === o.key ? " selected" : ""}>${esc(o.de)}</option>`).join("") +
+      g.options.map(o => `<option value="${esc(o.key)}"${act && act.key === o.key ? " selected" : ""}>${esc(o.de)}</option>`).join("") +
       `</select></div>`;
     if (act) {
       if (act.list) html += pipesForm(c);
@@ -1653,15 +1789,15 @@ function migrateLegacyPipe(c) {                    // Altbestand: Einzelrohr →
 function pipesForm(c) {
   migrateLegacyPipe(c);
   const list = c.pipes || [];
-  let html = `<h3>Rohrabschnitte <span class="hint">(${list.length}, in Reihe)</span></h3>`;
+  let html = `<h3>Rohrabschnitte <span class="hint">(${esc(list.length)}, in Reihe)</span></h3>`;
   list.forEach((seg, i) => {
     html += `<div class="bems-box">` +
       SEG_FIELDS.map(f => `<div class="field">
-        <label>${f.de} <span class="hint">[${f.unit}]</span>${f.base === "length" ? ' <span class="req">*</span>' : ""}</label>
-        <input type="number" step="any" data-pipe="${segKey(f)}" data-i="${i}"
-               value="${segDisplay(seg, f)}"
+        <label>${esc(f.de)} <span class="hint">[${esc(f.unit)}]</span>${f.base === "length" ? ' <span class="req">*</span>' : ""}</label>
+        <input type="text" inputmode="decimal" data-pipe="${esc(segKey(f))}" data-i="${esc(i)}"
+               value="${esc(segDisplay(seg, f))}"
                placeholder="${f.base === "d_inner" ? "26" : f.base === "roughness" ? "0.007" : f.base === "zeta" ? "0" : ""}"></div>`).join("") +
-      `<button class="pipe-del" data-i="${i}">× Abschnitt entfernen</button></div>`;
+      `<button class="pipe-del" data-i="${esc(i)}">× Abschnitt entfernen</button></div>`;
   });
   html += `<div class="field"><button id="pipe-add">+ Rohrabschnitt hinzufügen</button></div>`;
   if (!list.length)
@@ -1672,14 +1808,14 @@ function pipesForm(c) {
 }
 function compForm(c) {
   const t = TYPES[c.type];
-  let html = `<h3>${esc((META[c.type]||{de:c.type}).de)} <span class="hint">(${c.type})</span></h3>
+  let html = `<h3>${esc((META[c.type]||{de:c.type}).de)} <span class="hint">(${esc(c.type)})</span></h3>
     <div class="field"><label>Name</label><input type="text" id="c-name" value="${esc(c.name)}"></div>
     <div class="tabs">
       <button class="tab${inspectorTab==="fluid"?" active":""}" data-tab="fluid">Fluid-Info</button>
       <button class="tab${inspectorTab==="bems"?" active":""}" data-tab="bems">BEMS-Info</button>
     </div>`;
   if (inspectorTab === "bems") return html + bemsForm(c);
-  html += `<div class="field"><label>Ausrichtung: ${c.rot || 0}°</label>
+  html += `<div class="field"><label>Ausrichtung: ${esc(c.rot || 0)}°</label>
       <button id="c-rot">↻ 90° drehen (Taste r)</button></div>
     <div class="field"><label>Teilstrecke (ts, optional)</label>
       <input type="text" id="c-ts" value="${esc(c.ts)}"></div>`;
@@ -1692,19 +1828,19 @@ function bemsForm(c) {
   const descSpec = t.params.find(p => p.name === "description");
   let html = descSpec ? paramField(c, descSpec) : "";
   const list = c.bems || [];
-  html += `<h3>Messpunkte <span class="hint">(${list.length} BEMS-Datenpunkte)</span></h3>`;
+  html += `<h3>Messpunkte <span class="hint">(${esc(list.length)} BEMS-Datenpunkte)</span></h3>`;
   list.forEach((e, i) => {
     html += `<div class="bems-box">
       <div class="field"><label>bems_id <span class="hint">(Datenpunkt-ID)</span></label>
-        <input type="text" data-bems="id" data-i="${i}" spellcheck="false"
-               placeholder="abfragbare BEMS-/Aedifion-ID…" value="${esc(e.id || "")}"></div>
+        <input type="text" data-bems="id" data-i="${esc(i)}" spellcheck="false"
+               placeholder="abfragbare BEMS-/Aedifion-ID…" value="${esc(e.id)}"></div>
       <div class="field"><label>bems_key <span class="hint">(Alias)</span></label>
-        <input type="text" data-bems="key" data-i="${i}" spellcheck="false"
-               placeholder="z.B. EXP_VENT_VE_T_VL" value="${esc(e.key || "")}"></div>
+        <input type="text" data-bems="key" data-i="${esc(i)}" spellcheck="false"
+               placeholder="z.B. EXP_VENT_VE_T_VL" value="${esc(e.key)}"></div>
       <div class="field"><label>description</label>
-        <input type="text" data-bems="description" data-i="${i}"
-               placeholder="Messgröße, Einbauort…" value="${esc(e.description || "")}"></div>
-      <button class="bems-del" data-i="${i}">× Messpunkt entfernen</button>
+        <input type="text" data-bems="description" data-i="${esc(i)}"
+               placeholder="Messgröße, Einbauort…" value="${esc(e.description)}"></div>
+      <button class="bems-del" data-i="${esc(i)}">× Messpunkt entfernen</button>
     </div>`;
   });
   html += `<div class="field"><button id="bems-add">+ Messpunkt hinzufügen</button></div>`;
@@ -1719,33 +1855,36 @@ function paramField(c, p) {
   const help = p.help ? ` title="${esc(p.help)}"` : "";
   if (p.choices) {
     const cur = c.params[p.name];
-    return `<div class="field"${help}><label>${p.name}${req}</label>
-      <select data-param="${p.name}" data-kind="choice">
+    return `<div class="field"${help}><label>${esc(p.name)}${req}</label>
+      <select data-param="${esc(p.name)}" data-kind="choice">
       <option value=""></option>` +
-      p.choices.map(ch => `<option${cur===ch?" selected":""}>${ch}</option>`).join("") +
+      p.choices.map(ch => `<option value="${esc(ch)}"${cur===ch?" selected":""}>${esc(ch)}</option>`).join("") +
       `</select></div>`;
   }
   if (p.group === "bool") {
-    return `<div class="field"${help}><label><input type="checkbox" data-param="${p.name}"
-      data-kind="bool"${c.params[p.name] ? " checked" : ""}> ${p.name}${req}</label></div>`;
+    // nur echtes true ist „an" (YAML 1.2: 'no'/'off' wären Zeichenketten, die der Loader meldet)
+    return `<div class="field"${help}><label><input type="checkbox" data-param="${esc(p.name)}"
+      data-kind="bool"${c.params[p.name] === true ? " checked" : ""}> ${esc(p.name)}${req}</label></div>`;
   }
   if (p.group === "str") {                   // Freitext (BEMS-IDs, Beschreibungen)
     const cur = c.params[p.name] ?? "";
-    return `<div class="field"${help}><label>${p.name}${req}</label>
-      <input type="text" data-param="${p.name}" data-kind="str" spellcheck="false"
-             value="${esc(String(cur))}" placeholder="${p.name.startsWith("bems") ? "BEMS-Datenpunkt…" : ""}"></div>`;
+    return `<div class="field"${help}><label>${esc(p.name)}${req}</label>
+      <input type="text" data-param="${esc(p.name)}" data-kind="str" spellcheck="false"
+             value="${esc(cur)}" placeholder="${p.name.startsWith("bems") ? "BEMS-Datenpunkt…" : ""}"></div>`;
   }
+  // Zahlenfelder sind Textfelder mit eigenem Parser (parseNum): Dezimalkomma
+  // und -punkt gelten in jeder Browser-Sprache gleich; type=number verschluckt
+  // das Komma je nach Sprache („1,5" → 15).
   if (p.group === "int" || p.group === "none") {
     const cur = firstKeyValue(c, [p.name]);
-    const ph = p.default != null ? ` placeholder="${p.default}"` : "";
-    const lim = (p.minv != null ? ` min="${p.minv}"` : "") +
-                (p.maxv != null ? ` max="${p.maxv}"` : "");
-    return `<div class="field"${help}><label>${p.name}${req}` +
+    const ph = p.default != null ? ` placeholder="${esc(p.default)}"` : "";
+    return `<div class="field"${help}><label>${esc(p.name)}${req}` +
       (p.group === "none" ? ` <span class="hint">[–]</span>` : "") +
       (p.minv != null || p.maxv != null
-        ? ` <span class="hint">[${p.minv ?? ""}…${p.maxv ?? ""}]</span>` : "") +
-      `</label><input type="number" data-param="${p.name}" data-kind="num" data-key="${p.name}"
-      ${p.group==="int"?'step="1"':""}${lim} value="${cur ?? ""}"${ph}></div>`;
+        ? ` <span class="hint">[${esc(p.minv ?? "")}…${esc(p.maxv ?? "")}]</span>` : "") +
+      `</label><input type="text" inputmode="${p.group === "int" ? "numeric" : "decimal"}"
+      data-param="${esc(p.name)}" data-kind="num" data-key="${esc(p.name)}"
+      value="${esc(cur ?? "")}"${ph}></div>`;
   }
   // Einheitengruppe: Zahl + Suffixwahl (Wahl bleibt auch ohne Wert erhalten)
   const keys = p.keys;
@@ -1753,16 +1892,13 @@ function paramField(c, p) {
                (c.suffix && c.suffix[p.name]) || keys[0];
   const factors = CATALOG.units[p.group];
   const sfx = used.slice(p.name.length + 1);
-  const ph = p.default != null ? ` placeholder="${round6(p.default / factors[sfx])}"` : "";
-  // min/max in der Anzeigeeinheit (minv/maxv sind SI) – begrenzt die Spinner-Pfeile
-  const lim = (p.minv != null ? ` min="${round6(p.minv / factors[sfx])}"` : "") +
-              (p.maxv != null ? ` max="${round6(p.maxv / factors[sfx])}"` : "");
-  return `<div class="field"${help}><label>${p.name}${req} <span class="hint">[${GROUP_LABEL[p.group] || p.group}]</span></label>
+  const ph = p.default != null ? ` placeholder="${esc(round6(p.default / factors[sfx]))}"` : "";
+  return `<div class="field"${help}><label>${esc(p.name)}${req} <span class="hint">[${esc(GROUP_LABEL[p.group] || p.group)}]</span></label>
     <div class="unitrow">
-      <input type="number" step="any" data-param="${p.name}" data-kind="unit" data-key="${used}"
-             value="${c.params[used] ?? ""}"${ph}${lim}>
-      <select data-param="${p.name}" data-kind="suffix" data-base="${p.name}">` +
-      keys.map(k => `<option value="${k}"${k===used?" selected":""}>${unitLabel(k.slice(p.name.length+1))}</option>`).join("") +
+      <input type="text" inputmode="decimal" data-param="${esc(p.name)}" data-kind="unit" data-key="${esc(used)}"
+             value="${esc(c.params[used] ?? "")}"${ph}>
+      <select data-param="${esc(p.name)}" data-kind="suffix" data-base="${esc(p.name)}">` +
+      keys.map(k => `<option value="${esc(k)}"${k===used?" selected":""}>${esc(unitLabel(k.slice(p.name.length+1)))}</option>`).join("") +
       `</select></div></div>`;
 }
 function firstKeyValue(c, keys){ for (const k of keys) if (c.params[k] !== undefined) return c.params[k]; }
@@ -1787,7 +1923,7 @@ function wireForm(w) {
   }
   html += `<div class="field"><label>Darstellung</label>
       <select id="w-color">` +
-      ["vl","rl","kvl","krl","n"].map(cl => `<option value="${cl}"${w.color===cl?" selected":""}>${label(cl)}</option>`).join("") +
+      ["vl","rl","kvl","krl","n"].map(cl => `<option value="${esc(cl)}"${w.color===cl?" selected":""}>${esc(label(cl))}</option>`).join("") +
       `</select></div>`;
   if (w.type === "conduit") {
     html += paramsSection(w, "conduit");
@@ -1798,7 +1934,7 @@ function wireForm(w) {
       Knickpunkt (Umlenkung); Griffe ziehen zum Verschieben; Doppelklick auf
       einen Griff entfernt ihn.</div>` +
     (w.pts && w.pts.length
-      ? `<div class="field"><button id="w-clearpts">Alle ${w.pts.length} Knickpunkte entfernen</button></div>`
+      ? `<div class="field"><button id="w-clearpts">Alle ${esc(w.pts.length)} Knickpunkte entfernen</button></div>`
       : "");
   return html;
 }
@@ -1807,11 +1943,28 @@ function portRef(end){ const c = compById(end.comp); return `${c ? c.name : "?"}
 function bindInspector() {
   const el = document.getElementById("inspector");
   const flMode = el.querySelector("#fl-mode");
-  if (flMode) flMode.onchange = () => { invalidate(); state.fluid.mode = flMode.value; commit(); render(); };
+  // Moduswechsel ändert die Felder (t_C ↔ ρ/μ/cp): Umbau erzwingen, obwohl das
+  // Auswahlfeld den Fokus hat
+  if (flMode) flMode.onchange = () => { invalidate(); state.fluid.mode = flMode.value; commit(); forceRender(); };
   for (const [id, key] of [["fl-t","t_C"],["fl-rho","rho"],["fl-mu","mu"],["fl-cp","cp"]]) {
     const inp = el.querySelector("#" + id);
-    if (inp) inp.onchange = () => { invalidate(); state.fluid[key] = Number(inp.value); commit(); autosave(); };
+    if (inp) inp.onchange = () => {
+      const v = parseNum(inp.value);
+      if (v === undefined || v === null) { badNumber(inp, v === undefined); return; }
+      inp.classList.remove("bad"); inp.value = String(v);
+      // render(): die Zeichnung zeigt sonst weiter die verworfenen Ergebnisse
+      invalidate(); state.fluid[key] = v; commit(); holdRender();
+    };
   }
+  const flName = el.querySelector("#fl-name");
+  if (flName) flName.onchange = () => {
+    const v = flName.value.trim();
+    invalidate();
+    if (v) state.fluid.name = v; else delete state.fluid.name;
+    commit(); holdRender();
+  };
+  const stDel = el.querySelector("#settings-del");
+  if (stDel) stDel.onclick = () => { commitPendingInput(); invalidate(); delete state.settings; commit(); forceRender(); };
   const wireSel = selection && selection.kind === "wire" ? selection.ref : null;
   if (wireSel) {
     const wc = el.querySelector("#w-color");
@@ -1825,35 +1978,40 @@ function bindInspector() {
   const c = selection && selection.kind === "comp" ? selection.ref
           : (wireSel && wireSel.type === "conduit" ? wireSel : null);
   if (!c) return;
-  const holdRender = () => {              // Wertänderung: Formular stehen lassen
-    inspectorHold = true;
-    try { render(); } finally { inspectorHold = false; }
-  };
   el.querySelectorAll(".tab").forEach(btn => btn.onclick = () => {
-    inspectorTab = btn.dataset.tab; renderInspector();
+    commitPendingInput();                // Registerwechsel auch bei fokussiertem Eingabefeld
+    inspectorTab = btn.dataset.tab;
+    inspectorForce = true;
+    try { renderInspector(); } finally { inspectorForce = false; }
   });
   el.querySelectorAll("[data-pipe]").forEach(inp => {
     inp.onchange = () => {
       if (!inp.isConnected || inspectorForce) return;
+      const v = parseNum(inp.value);
+      if (v === null) { badNumber(inp); return; }
+      inp.classList.remove("bad");
+      if (v !== undefined) inp.value = String(v);
       invalidate();
       const seg = c.pipes[Number(inp.dataset.i)];
       const key = inp.dataset.pipe, base = key.split("_")[0] === "d" ? "d_inner" : key.split("_")[0];
       Object.keys(seg).forEach(k => {               // alte Suffix-Varianten räumen
         if (k === base || k.startsWith(base + "_")) delete seg[k];
       });
-      if (inp.value.trim() !== "") seg[key] = Number(inp.value);
+      if (v !== undefined) seg[key] = v;
       commit(); holdRender();
     };
   });
   el.querySelectorAll(".pipe-del").forEach(btn => btn.onclick = () => {
+    commitPendingInput();                // erst die laufende Eingabe, dann die Liste ändern
     invalidate();
     c.pipes.splice(Number(btn.dataset.i), 1);
     if (!c.pipes.length) delete c.pipes;
-    commit(); renderInspector();
+    commit(); forceRender();             // render(): verworfene Ergebnisse weg + Autosave
   });
   const pipeAdd = el.querySelector("#pipe-add");
   if (pipeAdd) pipeAdd.onclick = () => {
-    invalidate(); (c.pipes = c.pipes || []).push({}); commit(); renderInspector();
+    commitPendingInput();
+    invalidate(); (c.pipes = c.pipes || []).push({}); commit(); forceRender();
   };
   el.querySelectorAll("select[data-mgroup]").forEach(sel => {
     sel.onchange = () => {
@@ -1905,14 +2063,16 @@ function bindInspector() {
     };
   });
   el.querySelectorAll(".bems-del").forEach(btn => btn.onclick = () => {
+    commitPendingInput();
     invalidate();
     c.bems.splice(Number(btn.dataset.i), 1);
     if (!c.bems.length) delete c.bems;
-    commit(); renderInspector();
+    commit(); forceRender();
   });
   const bemsAdd = el.querySelector("#bems-add");
   if (bemsAdd) bemsAdd.onclick = () => {
-    invalidate(); (c.bems = c.bems || []).push({}); commit(); renderInspector();
+    commitPendingInput();
+    invalidate(); (c.bems = c.bems || []).push({}); commit(); forceRender();
   };
   const nm = el.querySelector("#c-name");
   nm.onchange = () => {
@@ -1929,13 +2089,20 @@ function bindInspector() {
       // nachlaufende change-Events ersetzter/gerade ausgetauschter Felder
       // (Blur während des Modus-Umbaus) sind veraltet — ignorieren
       if (!inp.isConnected || inspectorForce) return;
-      invalidate();
       const kind = inp.dataset.kind, pname = inp.dataset.param;
+      let num;
+      if (kind === "num" || kind === "unit") {
+        num = parseNum(inp.value);
+        if (num === null) { badNumber(inp); return; }       // nichts ändern, Feld markieren
+        inp.classList.remove("bad");
+        if (num !== undefined) inp.value = String(num);     // zeigt, wie gelesen wurde (1,5 → 1.5)
+      }
+      invalidate();
       if (kind === "choice") { setOrDelete(c.params, pname, inp.value || undefined); }
       else if (kind === "bool") { c.params[pname] = inp.checked; }
       else if (kind === "str") { setOrDelete(c.params, pname, inp.value.trim() || undefined); }
-      else if (kind === "num") { setOrDelete(c.params, pname, inp.value === "" ? undefined : Number(inp.value)); }
-      else if (kind === "unit") { setOrDelete(c.params, inp.dataset.key, inp.value === "" ? undefined : Number(inp.value)); }
+      else if (kind === "num") { setOrDelete(c.params, pname, num); }
+      else if (kind === "unit") { setOrDelete(c.params, inp.dataset.key, num); }
       else if (kind === "suffix") {
         const t = TYPES[c.type], p = t.params.find(x => x.name === pname);
         const factors = CATALOG.units[p.group];
@@ -2013,6 +2180,20 @@ function validate() {
         issues.push({err:true, msg:`${w.name}: '${p.name}' über Maximum (${limitLabel(p, p.maxv)})`});
     }
   }
+  // Leitungen an Ports, die es nicht (mehr) gibt – z.B. nach dem Verkleinern von
+  // n_ports eines Verteilers/Speichers oder aus einer importierten Datei
+  for (const w of state.wires) {
+    for (const end of [w.a, w.b]) {
+      const c = compById(end.comp);
+      const line = w.name ? `Leitung ${w.name}` : "eine Leitung";
+      if (!c)
+        issues.push({err:true, msg:`${line} hängt an einer gelöschten Komponente – Leitung löschen`});
+      else if (!portNames(c).includes(end.port))
+        issues.push({err:true, comp:c.id,
+          msg:`${c.name}.${end.port}: diesen Port gibt es nicht (mehr), ${line} hängt daran – ` +
+              `Leitung löschen oder Portanzahl erhöhen`});
+    }
+  }
   if (!state.comps.length) issues.push({err:false, msg:"Noch keine Komponenten gezeichnet."});
   return issues;
 }
@@ -2025,19 +2206,26 @@ function exportYAML() {
   const f = state.fluid;
   let y = f.mode === "preset"
     ? `fluid: {preset: water, t_C: ${yamlScalar(f.t_C)}}\n`
-    : `fluid: {rho: ${yamlScalar(f.rho)}, mu: ${yamlScalar(f.mu)}, cp: ${yamlScalar(f.cp)}}\n`;
+    : `fluid: {${labelSet(f.name) ? `name: ${yamlScalar(f.name)}, ` : ""}rho: ${yamlScalar(f.rho)}, ` +
+      `mu: ${yamlScalar(f.mu)}, cp: ${yamlScalar(f.cp)}}\n`;
+  // settings-Block der Datei unverändert weiterreichen (auch unbekannte Schlüssel
+  // – geprüft wird im Loader/Server)
+  if (state.settings !== undefined && state.settings !== null)
+    y += `settings: ${yamlScalar(state.settings)}\n`;
   y += "\ncomponents:\n";
   const compEntry = c => {
-    const parts = [`type: ${c.type}`];
-    for (const [k, v] of Object.entries(c.params || {})) parts.push(`${k}: ${yamlScalar(v)}`);
-    if (c.ts) parts.push(`ts: ${JSON.stringify(c.ts)}`);
+    // Schlüssel und Texte ausnahmslos über YamlCore (Quoting/Escapes): ts und
+    // BEMS-Felder mit Steuerzeichen blieben sonst im eigenen Export unlesbar
+    const parts = [`type: ${yamlKey(c.type)}`];
+    for (const [k, v] of Object.entries(c.params || {})) parts.push(`${yamlKey(k)}: ${yamlScalar(v)}`);
+    if (labelSet(c.ts)) parts.push(`ts: ${labelOut(c.ts)}`);
     if (c.bems && c.bems.length)
       parts.push(`bems: [${c.bems.map(e => "{" +
-        ["id", "key", "description"].filter(f => e[f])
-          .map(f => `${f}: ${JSON.stringify(e[f])}`).join(", ") + "}").join(", ")}]`);
+        ["id", "key", "description"].filter(f => labelSet(e[f]))
+          .map(f => `${f}: ${labelOut(e[f])}`).join(", ") + "}").join(", ")}]`);
     if (c.pipes && c.pipes.length)
       parts.push(`pipes: [${c.pipes.map(seg => "{" +
-        Object.entries(seg).map(([k, v]) => `${k}: ${yamlScalar(v)}`).join(", ")
+        Object.entries(seg).map(([k, v]) => `${yamlKey(k)}: ${yamlScalar(v)}`).join(", ")
         + "}").join(", ")}]`);
     return `  ${yamlKey(c.name)}: {${parts.join(", ")}}\n`;
   };
@@ -2065,20 +2253,39 @@ function exportYAML() {
 
 /* ---------- YAML Import ------------------------------------------------ */
 function normalizeDoc(raw) {                 // geparstes Dokument (Server oder lokal) absichern
-  const obj = v => v && typeof v === "object" && !Array.isArray(v) ? v : null;
-  const doc = obj(raw) || {};
-  const lay = obj(doc.layout) || {};
-  const comps = {};
-  for (const [name, spec] of Object.entries(obj(doc.components) || {}))
-    if (obj(spec)) comps[name] = spec;
+  const doc = isObj(raw) ? raw : {};
+  const lay = isObj(doc.layout) ? doc.layout : {};
+  const comps = Object.create(null);         // ohne Prototyp: jeder Name ist ein gewöhnlicher Schlüssel
+  for (const [name, spec] of Object.entries(isObj(doc.components) ? doc.components : {}))
+    if (isObj(spec)) comps[name] = spec;
   return {
-    fluid: obj(doc.fluid),
+    fluid: isObj(doc.fluid) ? doc.fluid : null,
+    settings: doc.settings,                  // unverändert durchreichen (prüft der Loader)
     components: comps,
     connections: (Array.isArray(doc.connections) ? doc.connections : [])
       .filter(Array.isArray).map(c => c.map(String)),
-    layout: {components: obj(lay.components) || {},
-             wires: (Array.isArray(lay.wires) ? lay.wires : []).filter(obj)},
+    layout: {components: isObj(lay.components) ? lay.components : {},
+             wires: (Array.isArray(lay.wires) ? lay.wires : []).filter(isObj)},
   };
+}
+// Import nur, wenn der Text eine Schaltung ist — sonst bliebe nach dem Laden
+// eine leere Zeichnung (und ein leeres Autosave) zurück
+function importableDoc(raw) {
+  if (!isObj(raw))
+    throw new Error("Eingabe muss ein Mapping mit 'components' und 'connections' sein – " +
+                    "nichts importiert, die Zeichnung bleibt unverändert.");
+  if (!isObj(raw.components))
+    throw new Error("Kein Abschnitt 'components' (Mapping name → {type, …}) gefunden – " +
+                    "nichts importiert, die Zeichnung bleibt unverändert.");
+  return normalizeDoc(raw);
+}
+// Eckdaten eines Layout-Eintrags: nur Zahlen (fremde Dateien!)
+function layoutPts(raw) {
+  let arr = raw;
+  if (typeof raw === "string") { try { arr = JSON.parse(raw); } catch (e) { return []; } }
+  return (Array.isArray(arr) ? arr : [])
+    .filter(q => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1]))
+    .map(q => ({x: q[0], y: q[1]}));
 }
 async function importYAML(text) {
   // Bevorzugt der Server-Parser (yamlio: vollständiges YAML 1.2 samt Loader-
@@ -2090,89 +2297,157 @@ async function importYAML(text) {
   try {
     const resp = await fetch("normalize", {method: "POST", body: text,
                                              headers: {"Content-Type": "text/yaml"}});
-    if (resp.ok) data = await resp.json();
+    // JSON-Antworten des eigenen Servers auch bei Fehlerstatus lesen (z.B. „zu groß")
+    if (resp.ok || (resp.headers.get("Content-Type") || "").includes("application/json"))
+      data = await resp.json();
   } catch (e) { data = null; }
-  if (data && !data.ok) throw new Error(data.error);
-  loadDoc(normalizeDoc(data ? data.doc : YamlCore.parse(text)));
-  return data ? (data.issues || []) : null;
+  // nur Antworten mit ok: true/false stammen vom Editor-Server; alles andere
+  // (fremder Webserver, statische Datei) → lokaler Parser
+  const server = isObj(data) && typeof data.ok === "boolean";
+  if (server && !data.ok) throw new Error(data.error);
+  loadDoc(importableDoc(server ? data.doc : YamlCore.parse(text)));
+  return server ? (Array.isArray(data.issues) ? data.issues : []) : null;
 }
 function loadDoc(doc) {
   state = {fluid: {mode: "preset", t_C: 50, rho: 998, mu: 0.001, cp: 4180}, comps: [], wires: []};
-  idSeq = 1; selection = null; pendingPort = null; lastResult = null;
+  idSeq = 1; selection = null; lastResult = null; resetPointers();
+  if (doc.settings !== undefined && doc.settings !== null) state.settings = deepClone(doc.settings);
   if (doc.fluid) {
-    if (doc.fluid.preset) state.fluid = {mode:"preset", t_C: doc.fluid.t_C ?? 50,
-                                          rho:998, mu:0.001, cp:4180};
-    else state.fluid = {mode:"custom", t_C:50, rho:doc.fluid.rho ?? 998,
-                        mu:doc.fluid.mu ?? 0.001, cp:doc.fluid.cp ?? 4180};
+    const f = doc.fluid;
+    if (hasOwn(f, "preset")) state.fluid = {mode:"preset", t_C: f.t_C ?? 50,
+                                            rho:998, mu:0.001, cp:4180};
+    else {
+      state.fluid = {mode:"custom", t_C:50, rho:f.rho ?? 998, mu:f.mu ?? 0.001, cp:f.cp ?? 4180};
+      if (labelSet(f.name)) state.fluid.name = f.name;     // Bezeichnung im Bericht
+    }
   }
   // Verbindungsleitungen (conduit) werden als Linien rekonstruiert, nicht platziert
   const conduitNames = new Set(Object.keys(doc.components)
     .filter(n => doc.components[n].type === "conduit"));
   const boxNames = Object.keys(doc.components).filter(n => !conduitNames.has(n));
+  const layComps = doc.layout.components;
   const grid = Math.ceil(Math.sqrt(Math.max(boxNames.length, 1)));
   boxNames.forEach((name, i) => {
     const spec = doc.components[name];
     const type = spec.type;
-    if (!TYPES[type]) { alert(`Unbekannter Typ '${type}' bei '${name}' – übersprungen.`); return; }
-    const c = {id: idSeq++, type, name, ts: spec.ts !== undefined ? String(spec.ts) : "",
+    if (!hasType(type)) { alert(`Unbekannter Typ '${type}' bei '${name}' – übersprungen.`); return; }
+    const c = {id: idSeq++, type, name, ts: labelIn(spec.ts),
                x: 120 + (i % grid) * 160, y: 100 + Math.floor(i / grid) * 140, rot: 0, params: {}};
-    if (Array.isArray(spec.bems) && spec.bems.length) c.bems = spec.bems;
-    if (Array.isArray(spec.pipes) && spec.pipes.length) c.pipes = spec.pipes;
+    const bems = bemsIn(spec.bems), pipes = listIn(spec.pipes);
+    if (bems.length) c.bems = bems;
+    if (pipes.length) c.pipes = pipes;
     for (const [k, v] of Object.entries(spec))
       if (k !== "type" && k !== "ts" && k !== "bems" && k !== "pipes") c.params[k] = v;
-    const lay = doc.layout.components[name];
-    if (lay && lay.x !== undefined) { c.x = lay.x; c.y = lay.y; c.rot = lay.rot || 0; }
+    const lay = hasOwn(layComps, name) ? layComps[name] : null;
+    if (isObj(lay)) {                         // nur Zahlen übernehmen (fremde Dateien)
+      c.x = numOr(lay.x, c.x); c.y = numOr(lay.y, c.y); c.rot = normRot(lay.rot);
+    }
     state.comps.push(c);
   });
-  const wireMeta = {};
+  const wireMeta = new Map();
   for (const w of doc.layout.wires) {
-    if (w.name) wireMeta["name:" + w.name] = w;
-    wireMeta[`${w.a}|${w.b}`] = w;
+    if (labelSet(w.name)) wireMeta.set("name:" + w.name, w);
+    wireMeta.set(`${w.a}|${w.b}`, w);
   }
   const applyMeta = (wire, meta) => {
-    wire.color = meta.color || "n";
-    if (meta.pts) {
-      try {
-        const arr = typeof meta.pts === "string" ? JSON.parse(meta.pts) : meta.pts;
-        wire.pts = arr.map(xy => ({x: xy[0], y: xy[1]}));
-      } catch (e) { /* Knickpunkte sind rein visuell – notfalls ignorieren */ }
-    }
+    wire.color = meta && typeof meta.color === "string" ? meta.color : "n";
+    const pts = meta ? layoutPts(meta.pts) : [];
+    if (pts.length) wire.pts = pts;           // Knickpunkte sind rein visuell
   };
-  // 1. Verbindungsleitungen: Endpunkte über <name>.in / <name>.out finden
-  const consumed = new Set();
+  /* Verbindungen. „Verbinden = Knoten verschmelzen": jede Gruppe aus
+     connections verschmilzt ihre Ports (2 oder mehr), Gruppen mit gemeinsamem
+     Port bilden EINEN Knoten. Im Editor hängt jedes Ende einer
+     Verbindungsleitung an genau einem Komponenten-Port; die übrigen Ports
+     des Knotens werden als einfache Verbindungen (Verschmelzen) gezeichnet,
+     damit kein Mitglied einer Gruppe verloren geht. */
+  const endOf = new Map();                    // "lt1.in" → Leitungsname
+  for (const name of conduitNames) { endOf.set(name + ".in", name); endOf.set(name + ".out", name); }
+  const boxRef = new Map();                   // Port-Referenz → geparst | null (Cache)
+  const isBox = r => {
+    if (endOf.has(r)) return false;
+    if (!boxRef.has(r)) boxRef.set(r, parseRef(r));
+    return !!boxRef.get(r);
+  };
+  const parent = new Map();                   // Knoten: Union-Find über die Referenztexte
+  const find = r => {
+    if (!parent.has(r)) parent.set(r, r);
+    let root = r;
+    while (parent.get(root) !== root) root = parent.get(root);
+    while (parent.get(r) !== root) { const next = parent.get(r); parent.set(r, root); r = next; }
+    return root;
+  };
+  for (const conn of doc.connections) for (const r of conn) parent.set(find(r), find(conn[0]));
+  // Anschluss-Port je Leitungsende: ein Komponenten-Port derselben Gruppe,
+  // sonst einer desselben Knotens (über andere Gruppen)
+  const attach = new Map();
+  for (const conn of doc.connections) {
+    const box = conn.find(isBox);
+    if (box === undefined) continue;
+    for (const r of conn) if (endOf.has(r) && !attach.has(r)) attach.set(r, box);
+  }
+  for (const r of endOf.keys()) {
+    if (attach.has(r) || !parent.has(r)) continue;
+    for (const conn of doc.connections) {
+      const box = conn.find(x => isBox(x) && find(x) === find(r));
+      if (box !== undefined) { attach.set(r, box); break; }
+    }
+  }
+  // 1. Verbindungsleitungen
+  const problems = [];
   for (const name of conduitNames) {
-    let aRef = null, bRef = null;
-    doc.connections.forEach((conn, k) => {
-      if (conn.includes(name + ".in")) { aRef = conn.find(r => r !== name + ".in"); consumed.add(k); }
-      if (conn.includes(name + ".out")) { bRef = conn.find(r => r !== name + ".out"); consumed.add(k); }
-    });
-    const a = aRef && parseRef(aRef), b = bRef && parseRef(bRef);
-    if (!a || !b) { alert(`Verbindungsleitung '${name}': Endpunkte nicht gefunden – übersprungen.`); continue; }
+    const aRef = attach.get(name + ".in"), bRef = attach.get(name + ".out");
+    if (aRef === undefined || bRef === undefined) {
+      const why = [".in", ".out"].filter(e => !attach.has(name + e)).map(e => {
+        const r = name + e;
+        if (!parent.has(r)) return `${r} ist nicht verbunden`;
+        const others = [...endOf.keys()].filter(x => x !== r && parent.has(x) && find(x) === find(r));
+        return others.length ? `${r} hängt nur an ${others.join(", ")} (Leitung an Leitung)`
+                             : `${r} hängt an keinem Komponenten-Port`;
+      });
+      problems.push(`'${name}': ${why.join("; ")}`);
+      continue;
+    }
     const spec = doc.components[name];
-    const wire = {type: "conduit", name, ts: spec.ts !== undefined ? String(spec.ts) : "",
-                  params: {}, a, b, color: "n"};
-    if (Array.isArray(spec.bems) && spec.bems.length) wire.bems = spec.bems;
-    if (Array.isArray(spec.pipes) && spec.pipes.length) wire.pipes = spec.pipes;
+    const wire = {type: "conduit", name, ts: labelIn(spec.ts), params: {},
+                  a: {...boxRef.get(aRef)}, b: {...boxRef.get(bRef)}, color: "n"};
+    const bems = bemsIn(spec.bems), pipes = listIn(spec.pipes);
+    if (bems.length) wire.bems = bems;
+    if (pipes.length) wire.pipes = pipes;
     for (const [k, v] of Object.entries(spec))
       if (k !== "type" && k !== "ts" && k !== "bems" && k !== "pipes") wire.params[k] = v;
-    applyMeta(wire, wireMeta["name:" + name] || wireMeta[`${aRef}|${name}.in`] || {});
+    applyMeta(wire, wireMeta.get("name:" + name) || wireMeta.get(`${aRef}|${name}.in`));
     state.wires.push(wire);
   }
-  // 2. Übrige Verbindungen: einfache Linien (Verschmelzen, aus Alt-Dateien)
-  doc.connections.forEach((conn, k) => {
-    if (consumed.has(k)) return;
-    for (let i = 1; i < conn.length; i++) {          // n Ports → n−1 Kanten (Stern)
-      const a = parseRef(conn[0]), b = parseRef(conn[i]);
-      if (!a || !b) continue;
-      const wire = {a, b, color: "n"};
-      applyMeta(wire, wireMeta[`${conn[0]}|${conn[i]}`] || {});
+  // 2. Übrige Mitglieder jeder Gruppe: einfache Verbindungen (Stern um den
+  //    ersten Port). Ein Leitungsende zählt mit seinem Anschluss-Port, damit
+  //    auch Gruppen wie [a.out, lt1.in, b.in] vollständig bleiben.
+  const wired = new Set();
+  for (const conn of doc.connections) {
+    const reps = [];
+    for (const r of conn) {
+      const rep = endOf.has(r) ? attach.get(r) : (isBox(r) ? r : undefined);
+      if (rep !== undefined && !reps.includes(rep)) reps.push(rep);
+    }
+    for (let i = 1; i < reps.length; i++) {
+      const key = reps[0] < reps[i] ? reps[0] + "\n" + reps[i] : reps[i] + "\n" + reps[0];
+      if (wired.has(key)) continue;           // dieselbe Verbindung nicht doppelt zeichnen
+      wired.add(key);
+      const wire = {a: {...boxRef.get(reps[0])}, b: {...boxRef.get(reps[i])}, color: "n"};
+      applyMeta(wire, wireMeta.get(`${reps[0]}|${reps[i]}`) || wireMeta.get(`${reps[i]}|${reps[0]}`));
       state.wires.push(wire);
     }
-  });
+  }
   commit();
   render();
+  if (problems.length)
+    alert(`${problems.length} Verbindungsleitung(en) nicht darstellbar – übersprungen:\n` +
+          problems.slice(0, 12).join("\n") + (problems.length > 12 ? "\n…" : "") +
+          `\n\nIm Editor hängt jedes Leitungsende an einem Komponenten-Port; zwischen zwei ` +
+          `Leitungen bitte ein Bauteil (z.B. ein T-Stück) setzen.`);
 }
 function parseRef(ref) {
+  // Namen dürfen Punkte enthalten ("HK 1.OG"): am LETZTEN Punkt trennen – wie
+  // der Loader (rsplit) und portRef() beim Export
   const i = ref.lastIndexOf(".");
   if (i < 0) return null;
   const c = state.comps.find(x => x.name === ref.slice(0, i));
@@ -2239,7 +2514,7 @@ document.getElementById("dlg-fileinput").onchange = ev => {
 document.getElementById("btn-new").onclick = () => {
   if (confirm("Zeichnung verwerfen?")) { localStorage.removeItem("hydraulik_editor");
     state = {fluid:{mode:"preset",t_C:50,rho:998,mu:0.001,cp:4180}, comps:[], wires:[]};
-    idSeq = 1; selection = null; lastResult = null; commit(); render(); }
+    idSeq = 1; selection = null; lastResult = null; resetPointers(); commit(); render(); }
 };
 
 /* ---------- Autosave ------------------------------------------------------- */

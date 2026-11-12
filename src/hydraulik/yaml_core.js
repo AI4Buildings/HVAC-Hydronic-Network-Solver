@@ -17,10 +17,27 @@
    Dokumente), lehnt er mit Meldung und Verweis auf den Server-Parser ab —
    er liest nie still etwas anderes als yamlio.
 
+   Zeichenregeln (gleicher Vertrag wie yamlio):
+   - Leerraum ist NUR das Leerzeichen (Tabulatoren außerhalb von Strings lehnt
+     dieser Parser ab); Zeilenumbrüche sind LF, CRLF, CR. Geschütztes
+     Leerzeichen (U+00A0) und ein U+FEFF mitten im Text sind gewöhnliche
+     Zeichen und gehören zum Skalar/Schlüssel; ein BOM entfällt nur ganz am
+     Dateianfang.
+   - Rohe Steuerzeichen sind überall ein Fehler: C0 außer TAB/LF/CR, DEL, C1
+     (inkl. NEL U+0085), U+2028/U+2029 sowie U+FFFE/U+FFFF und einzelne
+     Surrogate — in "…" als Escape schreiben (\u0085, \x7f).
+   - Ganzzahlen jenseits von ±(2^53 − 1) werden abgelehnt statt ungenau gelesen.
+   - Zusätzlich abgelehnt: Zeilen ab Spalte 0, die mit dem Dokumentende '...'
+     beginnen; in mehrzeiligen {…}/[…] eine Fortsetzungszeile, die mit '- '
+     beginnt, und ein ungequoteter Skalar, der über einen Kommentar (er
+     beendet den Skalar, in yamlio ein Syntaxfehler) oder eine Leerzeile
+     (yamlio faltet sie zu einem Zeilenumbruch) hinweg weiterläuft.
+
    Schreiben: Zahlen in Exponentenschreibweise immer mit Punkt und Vorzeichen
-   (5.0e-7, auch für YAML-1.1-Werkzeuge eine Zahl); Strings, die als Zahl,
+   (5.0e-7, auch für YAML-1.1-Werkzeuge eine Zahl); ganzzahlige Werte jenseits
+   von 2^53 als Gleitkommazahl (9.007199254740992e+15); Strings, die als Zahl,
    Wahrheitswert oder null gelesen würden (auch YAML-1.1-Wörter yes/no/on/off),
-   werden gequotet. */
+   werden gequotet, Steuerzeichen als Escape geschrieben. */
 const YamlCore = (() => {
   const RE_NULL = /^(?:~|null|Null|NULL|)$/;
   const RE_TRUE = /^(?:true|True|TRUE)$/;
@@ -30,20 +47,39 @@ const YamlCore = (() => {
   const YAML11_WORDS = new Set(["yes", "no", "on", "off", "y", "n"]);
   const SERVER_HINT = " – für beliebiges YAML den Editor über 'hydraulik serve' starten.";
 
-  function fail(no, msg) { return new Error(no ? `YAML (Zeile ${no}): ${msg}` : `YAML: ${msg}`); }
+  // Rohe Steuerzeichen (mit /u trifft der Surrogatbereich nur EINZELNE Surrogate)
+  const RE_CTRL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u2028\u2029\uFFFE\uFFFF\uD800-\uDFFF]/u;
+  // interne Marker (können im Text nicht vorkommen, s. RE_CTRL) hinter einem
+  // Zeilenumbruch in einem mehrzeiligen Flow-Wert: CBRK = davor stand ein
+  // Kommentar (er beendet den Skalar, wie in yamlio), BBRK = davor lag eine
+  // Leerzeile (yamlio faltet sie zu einem Zeilenumbruch — hier nicht unterstützt)
+  const CBRK = "\u0001", BBRK = "\u0002";
+  const trimSp = s => s.replace(/^ +| +$/g, "");       // nur Leerzeichen, nie U+00A0 & Co.
+  const trimEndSp = s => s.replace(/ +$/, "");
+
+  function fail(no, msg) {
+    msg = String(msg).replace(/[\u0001\u0002]/g, "");
+    return new Error(no ? `YAML (Zeile ${no}): ${msg}` : `YAML: ${msg}`);
+  }
   function unsupported(no, what) {
     return fail(no, `${what} wird vom Editor-Parser nicht unterstützt${SERVER_HINT}`);
   }
 
   /* --- Skalare -------------------------------------------------------------- */
-  function resolvePlain(raw) {               // ungequoteter Skalar → Core-Schema-Wert
+  function resolvePlain(raw, no) {           // ungequoteter Skalar → Core-Schema-Wert
     if (RE_NULL.test(raw)) return null;
     if (RE_TRUE.test(raw)) return true;
     if (RE_FALSE.test(raw)) return false;
     if (RE_INT.test(raw)) {
-      if (raw.startsWith("0o")) return parseInt(raw.slice(2), 8);
-      if (raw.startsWith("0x")) return parseInt(raw.slice(2), 16);
-      return Number(raw);
+      const v = raw.startsWith("0o") ? parseInt(raw.slice(2), 8)
+              : raw.startsWith("0x") ? parseInt(raw.slice(2), 16) : Number(raw);
+      // jenseits von ±(2^53 − 1) rechnet JavaScript nicht mehr exakt — ablehnen
+      // statt einen anderen Wert zu lesen als yamlio
+      if (!Number.isSafeInteger(v))
+        throw fail(no, `Ganzzahl ${raw} liegt außerhalb des exakt darstellbaren Bereichs ` +
+                       `(±2^53) – Kennungen bitte als Zeichenkette in Anführungszeichen, ` +
+                       `große Zahlenwerte als Gleitkommazahl (z.B. 1.0e+20) schreiben`);
+      return v;
     }
     if (RE_FLOAT.test(raw)) {
       const low = raw.toLowerCase();
@@ -63,7 +99,15 @@ const YamlCore = (() => {
     let out = "";
     for (let i = p.i + 1; i < p.s.length; i++) {
       const ch = p.s[i];
-      if (ch === "\"") { p.i = i + 1; return out; }
+      if (ch === "\"") {
+        // \ud83d\ude00 ergibt ein Zeichen (Paar); ein einzelnes Surrogat ist kein Zeichen
+        if (/[\uD800-\uDFFF]/u.test(out))
+          throw fail(p.no, "Zeichenkette mit einzelnem Surrogat (\\ud800…\\udfff) – ein " +
+                           "unvollständiges Zeichen; Zeichen außerhalb der BMP als Paar " +
+                           "(\"\\ud83d\\ude00\") oder direkt schreiben");
+        p.i = i + 1;
+        return out;
+      }
       if (ch !== "\\") { out += ch; continue; }
       const e = p.s[++i];
       if (e in ESC) { out += ESC[e]; continue; }
@@ -91,8 +135,9 @@ const YamlCore = (() => {
     throw unsupported(p.no, "Ein nicht geschlossener bzw. mehrzeiliger String in '…'");
   }
 
-  // Leerraum: Leerzeichen bzw. "\n" (verbindet die Zeilen mehrzeiliger Flow-Werte)
-  const ws = c => c === " " || c === "\n";
+  // Leerraum: Leerzeichen bzw. "\n" (verbindet die Zeilen mehrzeiliger Flow-Werte;
+  // CBRK steht zusätzlich nach einem Kommentar bzw. einer Leerzeile)
+  const ws = c => c === " " || c === "\n" || c === CBRK || c === BBRK;
   const wsEnd = c => c === undefined || ws(c);
 
   // Rohtext eines ungequoteten Skalars; nachlaufender Leerraum bleibt stehen
@@ -107,9 +152,15 @@ const YamlCore = (() => {
     }
     while (i > start && ws(p.s[i - 1])) i--;
     const raw = p.s.slice(start, i);
+    if (raw.includes(CBRK))                  // ein Kommentar beendet den Skalar (wie in yamlio)
+      throw fail(p.no, `nach dem Kommentar läuft der Wert '${raw.slice(0, raw.indexOf("\n"))}' ` +
+                       `in der Folgezeile weiter – fehlt ein ',' (oder steht die schließende ` +
+                       `Klammer im Kommentar)?`);
+    if (raw.includes(BBRK))
+      throw unsupported(p.no, "Eine Leerzeile innerhalb eines mehrzeiligen Skalars");
     p.i = i;
     p.multiline = raw.includes("\n");
-    return raw.replace(/ *\n */g, " ").trim();                 // mehrzeilig → gefaltet
+    return raw.replace(/ *\n */g, " ");                        // mehrzeilig → gefaltet
   }
 
   function skip(p) { while (ws(p.s[p.i])) p.i++; }
@@ -149,7 +200,7 @@ const YamlCore = (() => {
     if (ch === "\"") return readDouble(p);
     if (ch === "'") return readSingle(p);
     if (ch !== undefined) checkIndicator(p, inFlow);
-    return resolvePlain(readPlain(p, inFlow));
+    return resolvePlain(readPlain(p, inFlow), p.no);
   }
 
   // Schlüssel: Originaltext (gequotet → Inhalt), nie typaufgelöst
@@ -277,7 +328,7 @@ const YamlCore = (() => {
       }
       if ((ch === "\"" || ch === "'") && opens(i)) { q = ch; continue; }
       if (ch === "#" && (i === 0 || s[i - 1] === " " || s[i - 1] === "\t" || i - 1 === edge))
-        return {text: s.slice(0, i), depth: depth - depth0, q, tab};
+        return {text: s.slice(0, i), depth: depth - depth0, q, tab, comment: true};
       if (ch === "\t") tab = true;
       if ((ch === "{" || ch === "[") && (depth > 0 || opens(i))) { depth++; edge = i; }
       else if ((ch === "}" || ch === "]") && depth > 0) { depth--; edge = i; }
@@ -285,7 +336,7 @@ const YamlCore = (() => {
       else if (ch === ":" && depth > 0 && i - 1 === edge && "\"'".includes(s[i - 1]))
         edge = i;                            // {"a":…}: ':' direkt nach Quote ist Struktur
     }
-    return {text: s, depth: depth - depth0, q, tab};
+    return {text: s, depth: depth - depth0, q, tab, comment: false};
   }
 
   function logicalLines(text) {
@@ -298,16 +349,31 @@ const YamlCore = (() => {
       // wie ruamel auch in Leer-/Kommentarzeilen: Tabulator nur in Strings und Kommentaren
       if (lead.includes("\t")) throw fail(no, "Tabulator in der Einrückung – YAML erlaubt nur Leerzeichen");
       if (sc.tab) throw unsupported(no, "Ein Tabulator außerhalb eines Strings (bitte Leerzeichen)");
-      if (!sc.text.trim()) continue;
+      if (!trimSp(sc.text)) continue;
       const indent = lead.length;
-      let body = sc.text.trim(), depth = sc.depth;
+      let body = trimSp(sc.text), depth = sc.depth;
       if (sc.q) throw unsupported(no, "Ein mehrzeiliger String");
+      let brk = sc.comment ? CBRK : "";      // Kommentar beendet einen Skalar am Zeilenende
       while (depth > 0) {                    // mehrzeiliger Flow-Wert: Folgezeilen anhängen
         if (++n >= raw.length) throw fail(no, "Klammer '{' bzw. '[' wird nicht geschlossen");
+        if (/^(?:---|\.\.\.)(?:[ \t]|$)/.test(raw[n]))
+          throw fail(n + 1, "Dokumentmarke ('---' bzw. '...') innerhalb von {…}/[…]");
         const cont = scanLine(raw[n], depth);
         if (cont.q) throw unsupported(n + 1, "Ein mehrzeiliger String");
         if (cont.tab) throw unsupported(n + 1, "Ein Tabulator außerhalb eines Strings (bitte Leerzeichen)");
-        if (cont.text.trim()) { body += "\n" + cont.text.trim(); depth += cont.depth; }
+        const t = trimSp(cont.text);
+        if (!t) {                            // Kommentar- bzw. Leerzeile: Skalar läuft hier nicht weiter
+          brk = cont.comment ? CBRK : (brk || BBRK);
+          continue;
+        }
+        if (t === "-" || t.startsWith("- "))
+          throw fail(n + 1, `Zeile beginnt mit '- ', obwohl die in Zeile ${no} geöffnete Klammer ` +
+                            `'[' bzw. '{' noch offen ist – fehlt die schließende Klammer (steht ` +
+                            `sie in einem Kommentar)? Mehrzeilige Werte, deren Fortsetzung mit ` +
+                            `'- ' beginnt, liest dieser Parser nicht`);
+        body += "\n" + brk + t;
+        depth += cont.depth;
+        brk = cont.comment ? CBRK : "";
       }
       out.push({no, indent, text: body});
     }
@@ -352,7 +418,7 @@ const YamlCore = (() => {
       const ln = L[i], sep = mapSep(ln.text);
       if (sep < 0) throw fail(ln.no, `'schlüssel: wert' erwartet, erhalten: '${ln.text}'`);
       if (sep === 0) throw unsupported(ln.no, "Ein leerer Schlüssel (': …')");
-      const kp = {s: ln.text.slice(0, sep).trimEnd(), i: 0, no: ln.no};
+      const kp = {s: trimEndSp(ln.text.slice(0, sep)), i: 0, no: ln.no};
       let k;
       if (kp.s[0] === "\"" || kp.s[0] === "'") {
         k = parseKeyText(kp, false);
@@ -361,7 +427,7 @@ const YamlCore = (() => {
         checkIndicator({s: ln.text, i: 0, no: ln.no}, false);    // '-: 1' ist ein Schlüssel
         k = {key: kp.s, quoted: false};
       }
-      const rest = ln.text.slice(sep + 1).trim();
+      const rest = ln.text.slice(sep + 1).replace(/^[ \n\u0001\u0002]+|[ \n\u0001\u0002]+$/g, "");
       let v;
       i++;
       if (rest === "") {
@@ -399,10 +465,20 @@ const YamlCore = (() => {
   }
 
   function parse(text) {
+    text = String(text);
+    const bad = RE_CTRL.exec(text);
+    if (bad) {
+      const cp = bad[0].codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
+      const no = text.slice(0, bad.index).split(/\r\n|\r|\n/).length;
+      throw fail(no, `Steuerzeichen U+${cp} ist als Rohzeichen nicht erlaubt – bitte entfernen ` +
+                     `oder in einem String in doppelten Anführungszeichen als Escape schreiben ` +
+                     `(z.B. "\\u${cp.toLowerCase()}")`);
+    }
     const L = logicalLines(text);
     if (L.length && L[0].text === "---") L.shift();          // Dokumentanfang erlaubt
     for (const ln of L) {
-      if (ln.text === "---" || ln.text.startsWith("--- ") || ln.text === "...")
+      if (ln.text === "---" || ln.text.startsWith("--- ") || ln.text === "..." ||
+          (ln.indent === 0 && ln.text.startsWith("... ")))
         throw fail(ln.no, "mehrere Dokumente ('---') – bitte genau ein Dokument je Datei");
       if (ln.text.startsWith("%")) throw unsupported(ln.no, "Eine YAML-Direktive (%…)");
     }
@@ -418,17 +494,25 @@ const YamlCore = (() => {
     if (v === Infinity) return ".inf";
     if (v === -Infinity) return "-.inf";
     if (Object.is(v, -0)) return "-0.0";                 // String(-0) wäre "0"
-    const s = String(v);
+    // ganzzahlig, aber jenseits von 2^53: als Gleitkommazahl schreiben — die
+    // Ziffernfolge von String(v) wäre eine ANDERE Ganzzahl (und wird beim Lesen abgelehnt)
+    const s = Number.isInteger(v) && Math.abs(v) > Number.MAX_SAFE_INTEGER
+      ? v.toExponential() : String(v);
     const m = s.match(/^(-?\d+)(\.\d+)?e([+-]?)(\d+)$/);
     return m ? `${m[1]}${m[2] || ".0"}e${m[3] || "+"}${m[4]}` : s;
   }
 
+  function plainIsString(s) {
+    try { return typeof resolvePlain(s) === "string"; } catch (e) { return false; }
+  }
   function string(v) {
-    const s = String(v);
-    if (/^[A-Za-z_][A-Za-z0-9_.\-]*$/.test(s) && typeof resolvePlain(s) === "string" &&
+    // ein einzelnes Surrogat ist kein Zeichen (beide Parser lehnen es ab) → U+FFFD
+    const s = String(v).replace(/[\uD800-\uDFFF]/gu, "\uFFFD");
+    if (/^[A-Za-z_][A-Za-z0-9_.\-]*$/.test(s) && plainIsString(s) &&
         !YAML11_WORDS.has(s.toLowerCase())) return s;
-    // JSON-String = gültiger YAML-Doppelquote-String; nicht druckbare Zeichen escapen
-    return JSON.stringify(s).replace(/[\u007f-\u009f\u2028\u2029\uFEFF]/g,
+    // JSON-String = gültiger YAML-Doppelquote-String (C0 und einzelne Surrogate
+    // escapt JSON.stringify); übrige nicht druckbare Zeichen ebenfalls escapen
+    return JSON.stringify(s).replace(/[\u007f-\u009f\u2028\u2029\uFEFF\uFFFE\uFFFF]/g,
       c => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
   }
 
