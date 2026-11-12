@@ -61,6 +61,13 @@ class Radiator(TwoPortComponent):
             errs.append("Entweder 'kv_m3h' ODER 'c_Pa_m3h2' angeben – nicht beides.")
         if self.c is not None and self.c <= 0.0:
             errs.append("Der C-Wert muss positiv sein.")
+        if (self.q_nom is None and self.q_prescribed == 0.0
+                and self.kv is None and self.c is None):
+            # Default-Widerstand = 10 kPa beim Nennvolumenstrom aus der Leistung:
+            # mit Leistung 0 gibt es keinen Nennvolumenstrom (Division durch 0)
+            errs.append("Bei 'q_prescribed_kW' = 0 ohne 'q_nom_kW' fehlt die Grundlage für den "
+                        "hydraulischen Widerstand – 'q_nom_kW' (Nennleistung des Heizkörpers) "
+                        "oder 'kv_m3h' bzw. 'c_Pa_m3h2' angeben.")
         if self.t_ret_nom >= self.t_sup_nom:
             errs.append("t_ret_nom_C muss kleiner als t_sup_nom_C sein.")
         if self.t_room >= self.t_ret_nom:

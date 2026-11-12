@@ -59,7 +59,7 @@ def static_pressure_bc(comp, b: NetworkBuilder, p: float, t: float, d_inner) -> 
     if d_inner is not None:
         area = math.pi * d_inner ** 2 / 4.0
     else:
-        others = [(c, pn) for c, pn in b.same_node_ports("port") if not c.measurement_tap]
+        others = [(c, pn) for c, pn in b.same_node_ports("port") if not c.is_tap_port(pn)]
         if len(others) == 1:
             area = others[0][0].port_flow_area(others[0][1]) or None
         elif any(c.port_flow_area(pn) for c, pn in others):

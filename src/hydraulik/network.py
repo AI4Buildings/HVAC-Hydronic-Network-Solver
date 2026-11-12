@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from .components.base import CoeffFn, Component, ThermalFn
 from .components.registry import COMPONENT_REGISTRY
-from .exceptions import NetworkValidationError, SingularNetworkError
+from .exceptions import ComponentParamError, NetworkValidationError, SingularNetworkError
 from .fluids import Fluid, WATER_DEFAULT
 
 
@@ -151,11 +151,13 @@ class _Builder:
         self._notices.append(text)
 
     def same_node_ports(self, port_name: str) -> list[tuple[Component, str]]:
-        """Alle ANDEREN Komponenten-Anschlüsse, die mit diesem Port zu einem
-        Knoten verschmolzen sind (über alle Verbindungseinträge)."""
-        el = self.port(port_name)
+        """Alle ANDEREN Komponenten-Anschlüsse, die über Verbindungseinträge
+        mit diesem Port verbunden sind (transitiv über alle Einträge). Stand
+        VOR den bauteilinternen Verschmelzungen (alias: Verteiler, idealer
+        Knoten) und damit unabhängig von der Baureihenfolge der Komponenten:
+        die Gruppe beschreibt die Stelle, an der der Port angeschlossen ist."""
         own = (self.comp, port_name)
-        return [x for x in self._node_ports.get(self.uf.find(el), []) if x != own]
+        return [x for x in self._node_ports.get(self.port(port_name), []) if x != own]
 
 
 class Network:
@@ -182,7 +184,10 @@ class Network:
         self.connections.append(tuple(str(p) for p in port_refs))
 
     # ------------------------------------------------------------------
-    def compile(self) -> CompiledNetwork:
+    def compile(self, settings=None) -> CompiledNetwork:
+        """Netz prüfen und in Knoten/Kanten übersetzen. `settings`
+        (SolverSettings) liefert den Referenzdruck p_ref für Teilnetze ohne
+        Druckvorgabe; ohne Angabe gilt dessen Standardwert."""
         errors: list[str] = []
         notices: list[str] = []
 
@@ -201,9 +206,12 @@ class Network:
             for ref in conn:
                 if ref in all_ports:
                     valid_refs.append(ref)
-                    connected_ports.add(ref)
                 else:
                     errors.append(self._port_error(ref, all_ports))
+            # verbunden ist ein Port erst mit einem ANDEREN Port: der Eintrag
+            # [x.out, x.out] ließe das Rohrende sonst unbemerkt offen
+            if len(set(conn)) >= 2:
+                connected_ports.update(valid_refs)
             for other in valid_refs[1:]:
                 uf.union(valid_refs[0], other)
 
@@ -216,15 +224,19 @@ class Network:
                 lst = partner_map.setdefault(r, [])
                 for o in refs:
                     if o != r:
-                        cname, pname = o.split(".", 1)
+                        cname, pname = o.rsplit(".", 1)   # Namen dürfen Punkte enthalten
                         entry = (self.components[cname], pname)
                         if entry not in lst:
                             lst.append(entry)
 
-        node_ports: dict[str, list[tuple[Component, str]]] = {}
+        # Verbindungsgruppe je Port: alle über Verbindungseinträge verbundenen
+        # Anschlüsse (Stand vor den bauteilinternen alias-Verschmelzungen)
+        groups: dict[str, list[tuple[Component, str]]] = {}
         for c in self.components.values():
             for pn in c.port_names():
-                node_ports.setdefault(uf.find(f"{c.name}.{pn}"), []).append((c, pn))
+                groups.setdefault(uf.find(f"{c.name}.{pn}"), []).append((c, pn))
+        node_ports: dict[str, list[tuple[Component, str]]] = {
+            f"{c.name}.{pn}": members for members in groups.values() for c, pn in members}
 
         # 2. Komponenten bauen (interne Knoten/Kanten, Randbedingungen)
         raw_edges: list[_RawEdge] = []
@@ -322,7 +334,10 @@ class Network:
             raise NetworkValidationError(errors)
 
         # 6. Druckinsel-Analyse (Zusammenhang über druckempfindliche Kanten)
-        self._analyse_islands(nodes, edges, notices)
+        if settings is None:
+            from .solver.settings import SolverSettings
+            settings = SolverSettings()
+        self._analyse_islands(nodes, edges, notices, float(settings.p_ref))
 
         return CompiledNetwork(fluid=self.fluid, nodes=nodes, edges=edges,
                                components=dict(self.components), notices=notices)
@@ -331,7 +346,7 @@ class Network:
     def _port_error(self, ref: str, all_ports: set[str]) -> str:
         if "." not in ref:
             return (f"Ungültige Port-Referenz '{ref}' – erwartetes Format 'komponente.port'.")
-        comp_name, port = ref.split(".", 1)
+        comp_name, port = ref.rsplit(".", 1)          # Namen dürfen Punkte enthalten
         if comp_name not in self.components:
             hint = difflib.get_close_matches(comp_name, list(self.components), n=1)
             sug = f" Meinten Sie '{hint[0]}'?" if hint else ""
@@ -343,10 +358,12 @@ class Network:
                 f"hat keinen Port '{port}'. Gültige Ports: {', '.join(valid)}.{sug}")
 
     @staticmethod
-    def _analyse_islands(nodes: list[Node], edges: list[HydraulicEdge], notices: list[str]):
+    def _analyse_islands(nodes: list[Node], edges: list[HydraulicEdge], notices: list[str],
+                         p_ref: float = 150e3):
         """Je Zusammenhangskomponente des druckempfindlichen Teilgraphen muss
-        genau ein Druckanker existieren; feste Volumenströme müssen je Insel
-        bilanzieren (sonst ist das Gleichungssystem widersprüchlich)."""
+        genau ein Druckanker existieren (sonst Referenzdruck p_ref); feste
+        Volumenströme müssen je Insel bilanzieren (sonst ist das
+        Gleichungssystem widersprüchlich)."""
         uf = _UnionFind()
         for n in nodes:
             uf.add(str(n.index))
@@ -363,11 +380,12 @@ class Network:
             has_real_bc = any(n.p_bc is not None and not n.is_auto_ref for n in members)
             if not any(n.pinned for n in members):
                 ref = members[0]
-                ref.p_bc = 150e3
+                ref.p_bc = p_ref
                 ref.is_auto_ref = True
                 notices.append(
                     f"Kein Druck vorgegeben im Teilnetz um '{ref.label}' – Referenzdruck "
-                    f"150 kPa dort gesetzt (geschlossener Kreis, nur Druckdifferenzen relevant).")
+                    f"{p_ref / 1e3:g} kPa dort gesetzt (geschlossener Kreis, nur "
+                    f"Druckdifferenzen relevant).")
             if has_real_bc:
                 continue  # offene Grenze kann jede Bilanz aufnehmen
             balance = sum(n.flow_bc for n in members)
@@ -406,7 +424,7 @@ class Network:
         from .results import build_result
 
         settings = settings or SolverSettings()
-        compiled = self.compile()
+        compiled = self.compile(settings)
         hyd = solve_hydraulics_checked(compiled, settings)
         if thermal:
             th = solve_thermal(compiled, hyd, settings)
@@ -421,9 +439,13 @@ def component_from_dict(name: str, spec: dict) -> Component:
     """Erzeugt eine Komponente aus einem YAML-/JSON-Dict ({'type': ..., params...})."""
     spec = dict(spec)
     type_name = spec.pop("type", None)
-    if not type_name:
+    if type_name is None or type_name == "":
         raise NetworkValidationError(
             [f"Komponente '{name}': Schlüssel 'type' fehlt. "
+             f"Verfügbare Typen: {', '.join(sorted(COMPONENT_REGISTRY))}"])
+    if not isinstance(type_name, str):
+        raise NetworkValidationError(
+            [f"Komponente '{name}': 'type' muss eine Zeichenkette sein, erhalten: {type_name!r}. "
              f"Verfügbare Typen: {', '.join(sorted(COMPONENT_REGISTRY))}"])
     cls = COMPONENT_REGISTRY.get(type_name)
     if cls is None:
@@ -432,4 +454,27 @@ def component_from_dict(name: str, spec: dict) -> Component:
         raise NetworkValidationError(
             [f"Komponente '{name}': unbekannter Typ '{type_name}'.{sug} "
              f"Verfügbare Typen: {', '.join(sorted(COMPONENT_REGISTRY))}"])
-    return cls(name, **spec)
+    # Schlüssel, die nicht als Parameter übergeben werden können: 'name'/'self'
+    # (Konstruktor-Argumente — der Name ist der Schlüssel des Eintrags) und
+    # Nicht-Zeichenketten (dict aus der Python-API) — als gesammelte Meldung
+    # statt TypeError aus dem Konstruktoraufruf
+    extra: list[str] = []
+    for key in list(spec):
+        if not isinstance(key, str):
+            extra.append(f"Parametername {key!r} muss eine Zeichenkette sein.")
+            del spec[key]
+        elif key in ("name", "self"):
+            extra.append(
+                f"Unbekannter Parameter '{key}' für Typ '{type_name}'."
+                + (" Der Komponentenname ist der Schlüssel des Eintrags "
+                   "(components: {<name>: {type: …}})." if key == "name" else ""))
+            del spec[key]
+    try:
+        comp = cls(name, **spec)
+    except ComponentParamError as exc:
+        if extra:
+            raise ComponentParamError(name, exc.messages + extra) from None
+        raise
+    if extra:
+        raise ComponentParamError(name, extra)
+    return comp

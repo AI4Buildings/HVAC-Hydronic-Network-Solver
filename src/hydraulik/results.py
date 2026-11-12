@@ -139,14 +139,21 @@ class SolutionResult:
             h2 = f"{'Sensor':<20}{'Typ':<24}{'Messwerte':<38}{'BEMS (Key / ID)'}"
             lines.append(h2)
             lines.append("-" * 100)
-            unit = {"t_C": "°C", "p_kPa": "kPa (ü, statisch)", "p_dyn_kPa": "kPa (dyn.)",
-                    "dp_kPa": "kPa (statisch)", "q_m3h": "m³/h",
-                    "m_dot_kg_s": "kg/s", "t_leitung_C": "°C", "t_ref_C": "°C",
-                    "q_dot_kW": "kW"}
+            # Messwert-Schlüssel → (Kurzname, Einheit)
+            unit = {"t_C": ("t", "°C"), "p_kPa": ("p", "kPa (ü, statisch)"),
+                    "p_dyn_kPa": ("p_dyn", "kPa (dyn.)"), "dp_kPa": ("dp", "kPa (statisch)"),
+                    "q_m3h": ("q", "m³/h"), "m_dot_kg_s": ("m_dot", "kg/s"),
+                    "t_leitung_C": ("t_leitung", "°C"), "t_ref_C": ("t_ref", "°C"),
+                    "q_dot_kW": ("q_dot", "kW")}
             for s in self.sensors:
-                vals = "  ".join(f"{k.rsplit('_', 1)[0] if k in unit else k}="
-                                 f"{v:.3f} {unit.get(k, '')}".strip()
-                                 for k, v in s.readings.items())
+                def fmt(k, v, readings=s.readings):
+                    label, u = unit.get(k, (k, ""))
+                    # ohne bekannte Geschwindigkeit an der Messstelle ist der
+                    # Messwert der Knotendruck (Totaldruck), nicht statisch
+                    if k == "p_kPa" and "p_dyn_kPa" not in readings:
+                        u = "kPa (ü, Knotendruck)"
+                    return f"{label}={v:.3f} {u}".strip()
+                vals = "  ".join(fmt(k, v) for k, v in s.readings.items())
                 ids = "; ".join(e.get("key") or e.get("id") or "" for e in s.bems)
                 lines.append((f"{s.name:<20}{s.type_name:<24}" + vals.ljust(38)
                               + ("  " + ids if ids else "")).rstrip())

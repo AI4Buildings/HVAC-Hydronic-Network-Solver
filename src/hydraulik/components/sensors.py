@@ -39,45 +39,76 @@ class _TapSensor(Component):
 
     def build(self, b: NetworkBuilder) -> None:
         self._partners = {}
+        self._node_ports = {}
         for p in self.port_names():
             b.port(p)
-            self._partners[p] = [(c, pn) for c, pn in b.partners(p) if not c.measurement_tap]
+            self._partners[p] = [(c, pn) for c, pn in b.partners(p) if not c.is_tap_port(pn)]
+            self._node_ports[p] = [(c, pn) for c, pn in b.same_node_ports(p)
+                                   if not c.is_tap_port(pn)]
 
 
-def _port_flow(net, hyd, comp, port: str, node_of) -> float:
-    """Betrag des Volumenstroms durch den Anschluss comp.port [m³/s]."""
+def _port_flow(net, hyd, comp, port: str, node_of) -> float | None:
+    """Betrag des Volumenstroms durch den Anschluss comp.port [m³/s]; None,
+    wenn das Bauteil an diesem Knoten keine eigene Kante hat (Rand mit
+    Volumenstrom-Vorgabe, Verteiler, idealer Knoten) — der Durchfluss durch
+    den Anschluss ist dann aus dem Bauteil selbst nicht bestimmbar."""
     n = node_of(f"{comp.name}.{port}")
-    q = 0.0
+    q, found = 0.0, False
     for e in net.edges:
         if e.component is comp and e.node_from != e.node_to:
             if e.node_to == n:
                 q += float(hyd.q[e.index])
+                found = True
             elif e.node_from == n:
                 q -= float(hyd.q[e.index])
-    return abs(q)
+                found = True
+    return abs(q) if found else None
 
 
-def static_pressure(net, hyd, node_of, ref: str, partners, d_inner) -> tuple[float, float | None]:
+def static_pressure(net, hyd, node_of, ref: str, partners, d_inner,
+                    node_ports=()) -> tuple[float, float | None]:
     """Statischer Überdruck an der Messstelle [Pa] und dynamischer Anteil
-    ρw²/2 [Pa] (None, wenn kein Querschnitt bekannt — dann statisch = Knoten-
-    druck). Knotendrücke sind Totaldrücke; die Geschwindigkeit stammt aus dem
-    Anschluss, an dem die Messleitung hängt (erster Partner mit bekanntem
-    Querschnitt), oder aus d_inner mit dem Volumenstrom dieses Anschlusses."""
+    ρw²/2 [Pa] (None, wenn keine Geschwindigkeit bestimmbar ist — dann gilt
+    der Knotendruck). Knotendrücke sind Totaldrücke.
+
+    Querschnitt und Volumenstrom der Messstelle, in dieser Reihenfolge:
+    1. d_inner angegeben: Querschnitt daraus; Volumenstrom des direkt
+       verbundenen Anschlusses, an dem die Messleitung hängt — hat dessen
+       Bauteil dort keine Kante (Rand mit Volumenstrom-Vorgabe, Verteiler),
+       der des EINZIGEN durchströmten Anschlusses der Messstelle.
+    2. direkt verbundener Anschluss mit bekanntem Querschnitt (Rohr,
+       Rohrmodell-Leitung, Idelchik-T-Stück).
+    3. wie beim Druckrand: liegt an der Messstelle GENAU EIN Anschluss mit
+       bekanntem Querschnitt, gilt dessen Geschwindigkeit — im Schaltbild-
+       Editor hängt die Messleitung immer an einem Bauteilanschluss (Pumpe,
+       Ventil, Rand), die Leitung selbst ist ein eigener Verbindungseintrag.
+       Bei mehreren Leitungen (Knotenpunkt) ist die Geschwindigkeit nicht
+       definiert: Knotendruck.
+    `node_ports` sind die über Verbindungseinträge mit der Messstelle
+    verbundenen Anschlüsse (Builder.same_node_ports, ohne Messanschlüsse)."""
     p_node = float(hyd.p[node_of(ref)])
-    loc = None
+    q = area = None
     if d_inner is not None:
-        if partners:
-            loc = (partners[0][0], partners[0][1], math.pi * d_inner ** 2 / 4.0)
-    else:
+        area = math.pi * d_inner ** 2 / 4.0
         for comp, port in partners:
-            area = comp.port_flow_area(port)
-            if area:
-                loc = (comp, port, area)
+            q = _port_flow(net, hyd, comp, port, node_of)
+            if q is not None:
                 break
-    if loc is None:
+        if q is None:
+            flows = [f for comp, port in node_ports
+                     if (f := _port_flow(net, hyd, comp, port, node_of)) is not None]
+            q = flows[0] if len(flows) == 1 else None
+    else:
+        loc = next(((c, pn, a) for c, pn in partners if (a := c.port_flow_area(pn))), None)
+        if loc is None:
+            with_area = [(c, pn, a) for c, pn in node_ports if (a := c.port_flow_area(pn))]
+            loc = with_area[0] if len(with_area) == 1 else None
+        if loc is not None:
+            comp, port, area = loc
+            q = _port_flow(net, hyd, comp, port, node_of)
+    if q is None or area is None:
         return p_node, None
-    comp, port, area = loc
-    w = _port_flow(net, hyd, comp, port, node_of) / area
+    w = q / area
     p_dyn = net.fluid.rho * w * w / 2.0
     return p_node - p_dyn, p_dyn
 
@@ -105,8 +136,11 @@ class PressureSensor(_TapSensor):
     """Drucksensor: statischer Überdruck (gauge) an der Messstelle, wie ein
     realer Transmitter an der Wandanbohrung: p_Knoten − ρw²/2 (Knotendrücke
     sind Totaldrücke). w aus dem Querschnitt der Leitung, an der die
-    Messleitung hängt, bzw. aus d_inner; ohne bekannten Querschnitt
-    (Behälter, Sammler, ideale Verbindung) gilt der Knotendruck."""
+    Messleitung hängt — dem direkt verbundenen Anschluss oder, wie beim
+    Druckrand, der einzigen Leitung mit bekanntem Querschnitt an der
+    Messstelle — bzw. aus d_inner; ohne bekannten Querschnitt (Behälter,
+    Sammler, ideale Verbindung, Knotenpunkt mehrerer Leitungen) gilt der
+    Knotendruck (dann ohne Messwert p_dyn)."""
 
     d_inner: float | None
 
@@ -117,7 +151,8 @@ class PressureSensor(_TapSensor):
 
     def measure(self, net, hyd, th, node_of) -> dict:
         p, p_dyn = static_pressure(net, hyd, node_of, f"{self.name}.port",
-                                   self._partners.get("port", []), self.d_inner)
+                                   self._partners.get("port", []), self.d_inner,
+                                   self._node_ports.get("port", []))
         out = {"p_kPa": p / 1e3}
         if p_dyn is not None:
             out["p_dyn_kPa"] = p_dyn / 1e3
@@ -147,9 +182,11 @@ class PressureDiffSensor(_TapSensor):
 
     def measure(self, net, hyd, th, node_of) -> dict:
         p_plus, _ = static_pressure(net, hyd, node_of, f"{self.name}.plus",
-                                    self._partners.get("plus", []), self.d_inner_plus)
+                                    self._partners.get("plus", []), self.d_inner_plus,
+                                    self._node_ports.get("plus", []))
         p_minus, _ = static_pressure(net, hyd, node_of, f"{self.name}.minus",
-                                     self._partners.get("minus", []), self.d_inner_minus)
+                                     self._partners.get("minus", []), self.d_inner_minus,
+                                     self._node_ports.get("minus", []))
         return {"dp_kPa": (p_plus - p_minus) / 1e3}
 
 
@@ -197,6 +234,9 @@ class EnergyMeter(TwoPortComponent):
 
     def ideal_connection(self) -> tuple[str, str] | None:
         return ("in", "out")              # Durchflussteil quasi-ideal; t_ref ist Anzapfung
+
+    def is_tap_port(self, port: str) -> bool:
+        return port == "t_ref"            # reiner Fühleranschluss, kein Durchfluss
 
     def build(self, b: NetworkBuilder) -> None:
         super().build(b)          # Durchflussteil in → out

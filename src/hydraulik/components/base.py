@@ -153,6 +153,14 @@ class Component(ABC):
     #: und zählen bei der Bestimmung des Anschlussquerschnitts nicht mit
     measurement_tap: bool = False
 
+    def is_tap_port(self, port: str) -> bool:
+        """True, wenn DIESER Anschluss ein reiner Messanschluss ist. Default:
+        alle Anschlüsse eines Fühlers (measurement_tap); Bauteile mit Kante
+        UND Fühleranschluss (Wärmemengenzähler: t_ref) überschreiben das je
+        Port — sonst zählte ihr Fühler als durchströmtes Bauteil und nähme
+        z.B. einem Druckrand am Leitungsende den statischen Druckbezug."""
+        return self.measurement_tap
+
     def port_flow_area(self, port: str) -> float | None:
         """Strömungsquerschnitt [m²] am Anschluss, falls das Bauteil ihn kennt
         (Rohr, Verbindungsleitung im Rohrmodell, Idelchik-T-Stück) — daraus
