@@ -358,6 +358,163 @@ def test_zwei_zuluftventilatoren_station_bleibt_zuluftzustand():
     assert st["wrg1.zul_in"]["t_C"] > -5.0                  # erster trägt die Ventilatorwärme
 
 
+# ===================== Fachentscheidungen 2026-11 (Runde 2) ======================
+
+def test_vorheizer_vor_der_wrg_wird_abgelehnt():
+    """Der Vorheizer ist im Modell das Register NACH der WRG. Vor der WRG
+    gezeichnet heizte er bis zum Zuluft-Sollwert vor und legte die Rückgewinnung
+    still (−12 °C: 46,7 statt 8,1 kW Heizlast, WRG aus). Jetzt Validierungs-
+    fehler mit Verweis auf 'frostschutz'."""
+    C = _rand(t_aul=-12.0, wrg="ROT_SORP")
+    C.update({"vhr": {"type": "vorheizer"}, "kr": {"type": "kuehler"},
+              "nhr": {"type": "nachheizer"}, "nhr_abl": {"type": "nachheizer"}})
+    falsch = _kette(["aul", "vhr", "wrg1", "kr", "nhr", "zul"],
+                    ["abl", "wrg1", "nhr_abl", "fol"], C)
+    with pytest.raises(h.NetworkValidationError) as exc:
+        solve_air(falsch)
+    text = str(exc.value)
+    assert "'vhr' (vorheizer) liegt im Zuluftstrang vor der WRG" in text
+    assert "'frostschutz'" in text and "preheater" in text
+    assert "'nhr_abl'" in text and len(exc.value.messages) == 2        # gesammelt
+    del C["nhr_abl"]
+    richtig = solve_air(_kette(["aul", "wrg1", "vhr", "kr", "nhr", "zul"],
+                               ["abl", "wrg1", "fol"], C))
+    assert richtig["leistungen"]["wrg_kW"] > 30.0
+    # Frostschutz vor der WRG bleibt der vorgesehene Weg
+    C["fs"] = {"type": "frostschutz", "modus": "preheater", "t_fs_C": -3.0}
+    r = solve_air(_kette(["aul", "fs", "wrg1", "vhr", "kr", "nhr", "zul"],
+                         ["abl", "wrg1", "fol"], C))
+    assert r["komponenten"]["fs"]["q_heizen_kW"] > 0.0
+
+
+def _entfeuchter_doc(**kr_extra):
+    """Platte + Kühler + Nachheizer; Zuluft fest 22,3 °C / 34,3 % (Taupunkt 5,84 °C)."""
+    C = _rand(t_aul=25.0, rh_aul=60.0, t_abl=24.0, rh_abl=50.0)
+    C["zul"] = {"type": "zuluft", "v_m3h": 4500, "regelung": "fest", "t_C": 22.3, "rh": 34.3}
+    C.update({"kr": {"type": "kuehler", **kr_extra}, "nhr": {"type": "nachheizer"}})
+    return _kette(["aul", "wrg1", "kr", "nhr", "zul"], ["abl", "wrg1", "fol"], C)
+
+
+def test_kuehler_kaltwasser_vorlauftemperatur():
+    """Neuer Parameter kuehler.t_kw (Schlüssel t_kw_C, Default 6 °C). Verlangt
+    der Feuchte-Sollwert einen tieferen Taupunkt, entfeuchtet der Kühler bis zur
+    Sättigung bei der Vorlauftemperatur und die Antwort trägt einen Hinweis
+    (vorher: keine Entfeuchtung, Zuluft 70,6 % statt 34,3 %, kein Hinweis)."""
+    r = solve_air(_entfeuchter_doc())
+    assert r["plant"]["T_KW"] == 6.0
+    x_s6 = float(ma.xs(6.0, 1e5)) * 1e3
+    assert r["zuluft"]["x_gkg"] == pytest.approx(x_s6, abs=1e-4)
+    assert r["stationen"]["nhr.in"]["t_C"] == pytest.approx(6.0, abs=1e-3)   # Kühleraustritt
+    hinweis = [s for s in r["hinweise"] if "Kaltwasser-Vorlauftemperatur" in s]
+    assert len(hinweis) == 1
+    assert "'kr'" in hinweis[0] and "Taupunkt von 5,8 °C" in hinweis[0] and "6,0 °C" in hinweis[0]
+    assert "t_kw_C" in hinweis[0]
+    # tieferer Vorlauf: Sollwert erreicht, kein Hinweis
+    r = solve_air(_entfeuchter_doc(t_kw_C=4.0))
+    assert r["zuluft"]["phi_pct"] == pytest.approx(34.3, abs=0.05)
+    assert not any("Kaltwasser" in s or "Sollband" in s for s in r["hinweise"])
+    # höherer Vorlauf: entsprechend feuchter, mit Hinweis
+    r = solve_air(_entfeuchter_doc(t_kw_C=12.0))
+    assert r["zuluft"]["x_gkg"] == pytest.approx(float(ma.xs(12.0, 1e5)) * 1e3, abs=1e-4)
+    assert any("Kaltwasser-Vorlauftemperatur (12,0 °C)" in s for s in r["hinweise"])
+    # Bereichsgrenze des Parameters
+    with pytest.raises(h.NetworkValidationError, match="t_kw_C"):
+        load_air(_entfeuchter_doc(t_kw_C=40.0))
+
+
+def test_kaltwasser_default_aendert_gewoehnliche_entfeuchtung_nicht():
+    """Taupunkt des Sollbands (12,5 °C) über der Vorlauftemperatur: Ergebnis
+    unabhängig von t_kw, kein Hinweis."""
+    def doc(**kr_extra):
+        C = _rand(t_aul=30.0, rh_aul=60.0, t_abl=26.0, rh_abl=50.0)
+        C["zul"].update({"rh_min": 40, "rh_max": 55})
+        C.update({"kr": {"type": "kuehler", **kr_extra}, "nhr": {"type": "nachheizer"}})
+        return _kette(["aul", "wrg1", "kr", "nhr", "zul"], ["abl", "wrg1", "fol"], C)
+    a, b = solve_air(doc()), solve_air(doc(t_kw_C=10.0))
+    assert a["leistungen"] == b["leistungen"] and a["zuluft"] == b["zuluft"]
+    assert a["zuluft"]["phi_pct"] == pytest.approx(55.0, abs=0.3)
+    assert not any("Kaltwasser" in s for s in a["hinweise"] + b["hinweise"])
+
+
+def _umluft_doc(zul, v_uml=3000.0, sfp=2000.0):
+    C = _rand()
+    C["zul"].update({"rh_min": 1, "rh_max": 90})
+    C.update({"ven": {"type": "ventilator_luft", "sfp": sfp},
+              "uml": {"type": "umluft", "v_m3h": v_uml}, "nhr": {"type": "nachheizer"}})
+    return _kette(zul, ["abl", "wrg1", "fol"], C)
+
+
+@pytest.mark.parametrize("v_uml", [1500.0, 3000.0, 4500.0])
+def test_umluft_ventilator_nach_der_mischkammer(v_uml):
+    """Anlage mit Umluft, Ventilator am Stranganfang gezeichnet: bilanziert
+    wird er nach der Mischkammer. Die WRG sieht Außenluft ohne Ventilator-
+    wärme, der Abschnitt nach der Umluft trägt Mischung + volle Ventilator-
+    wärme f_rec·P_el (vorher kam nur der Außenluftanteil an; bei 100 % Umluft
+    nichts), und der Hinweis nennt die Mischkammer."""
+    r = solve_air(_umluft_doc(["aul", "ven", "wrg1", "uml", "nhr", "zul"], v_uml))
+    st = r["stationen"]
+    m = 4500 / 3600 * 1e5 / (287.0 * (273.0 + 21.0))
+    q_fan = 0.6 * 2000.0 * 4500 / 3.6e6                                  # 1,5 kW
+    assert r["komponenten"]["ven"]["p_el_kW"] == pytest.approx(2.5)      # SFP · V̇_Zuluft
+    assert st["wrg1.zul_in"]["t_C"] == pytest.approx(-5.0)               # keine Ventilatorwärme
+    t_misch = (st["uml.in"]["t_C"] * (4500 - v_uml) + 22.0 * v_uml) / 4500
+    assert st["nhr.in"]["t_C"] == pytest.approx(t_misch + q_fan / m, abs=2e-3)
+    assert st["nhr.in"]["v_m3h"] == pytest.approx(4500.0)
+    assert st["uml.in"]["v_m3h"] == pytest.approx(4500.0 - v_uml)
+    hinweis = [s for s in r["hinweise"] if "Ventilator" in s]
+    assert len(hinweis) == 1 and "nach der Mischkammer" in hinweis[0]
+    assert "Stranganfang" not in hinweis[0]
+    # Energiebilanz der Zuluft über den ganzen Strang: Lasten + f_rec·P_el
+    x_aul, x_abl = st["aul.out"]["x_gkg"], st["abl.out"]["x_gkg"]
+    z = r["zuluft"]
+    zugefuehrt = (m * _h(z["t_C"], z["x_gkg"]) - m * (4500 - v_uml) / 4500 * _h(-5.0, x_aul)
+                  - m * v_uml / 4500 * _h(22.0, x_abl))
+    lasten = r["leistungen"]["wrg_kW"] + r["leistungen"]["heizen_gesamt_kW"] \
+        - r["leistungen"]["kuehlen_kW"]
+    assert zugefuehrt == pytest.approx(lasten + q_fan, abs=0.15)
+
+
+def test_umluft_ventilator_direkt_nach_der_mischkammer_gezeichnet():
+    """Ist der Ventilator dort gezeichnet, wo der Kern ihn bilanziert, zeigen
+    die Stationen Mischung und Ventilatorerwärmung getrennt, ohne Hinweis."""
+    r = solve_air(_umluft_doc(["aul", "wrg1", "uml", "ven", "nhr", "zul"]))
+    st = r["stationen"]
+    m = 4500 / 3600 * 1e5 / (287.0 * (273.0 + 21.0))
+    t_misch = (st["uml.in"]["t_C"] * 1500 + 22.0 * 3000) / 4500
+    assert st["ven.in"]["t_C"] == pytest.approx(t_misch, abs=2e-3)
+    assert st["nhr.in"]["t_C"] == pytest.approx(t_misch + 1.5 / m, abs=2e-3)
+    assert not any("Ventilator" in s for s in r["hinweise"])
+    # gleiche Rechnung wie mit dem Ventilator am Stranganfang
+    ref = solve_air(_umluft_doc(["aul", "ven", "wrg1", "uml", "nhr", "zul"]))
+    assert r["leistungen"] == ref["leistungen"] and r["zuluft"] == ref["zuluft"]
+
+
+def test_umluft_fortluft_aus_wrg_bilanz():
+    """Fortluftstation bei Umluft nach der WRG und Ventilator am Stranganfang:
+    Feuchte- und Energiebilanz der WRG gegen den Außenluftzustand (der
+    Kettenzustand „nach Ventilator“ gilt hier nach der Mischkammer)."""
+    C = _rand(wrg="ROT_SORP")
+    C.update({"ven": {"type": "ventilator_luft", "sfp": 2000.0},
+              "uml": {"type": "umluft", "v_m3h": 2250.0}, "nhr": {"type": "nachheizer"}})
+    r = solve_air(_kette(["aul", "ven", "wrg1", "uml", "nhr", "zul"], ["abl", "wrg1", "fol"], C))
+    st = r["stationen"]
+    zu_ein, zu_aus = st["wrg1.zul_in"], st["wrg1.zul_out"]
+    ab_ein, ab_aus = st["wrg1.abl_in"], st["wrg1.abl_out"]
+    assert zu_ein["v_m3h"] == ab_ein["v_m3h"] == pytest.approx(2250.0)
+    assert ab_ein["x_gkg"] - ab_aus["x_gkg"] == pytest.approx(
+        zu_aus["x_gkg"] - zu_ein["x_gkg"], abs=2e-3)
+    assert (_h(ab_ein["t_C"], ab_ein["x_gkg"]) - _h(ab_aus["t_C"], ab_aus["x_gkg"])
+            == pytest.approx(_h(zu_aus["t_C"], zu_aus["x_gkg"])
+                             - _h(zu_ein["t_C"], zu_ein["x_gkg"]), abs=0.02))
+    assert -5.0 < ab_aus["t_C"] < 22.0
+
+
+def test_ohne_umluft_bleibt_der_hinweis_stranganfang():
+    r = solve_air(_doc())                                    # Ventilator am Strangende
+    hinweis = [s for s in r["hinweise"] if "Ventilator" in s]
+    assert len(hinweis) == 1 and "Stranganfang" in hinweis[0] and "Mischkammer" not in hinweis[0]
+
+
 # =================================== Meldungen ===================================
 
 def test_strangfehler_richtungsbewusst():

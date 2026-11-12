@@ -20,7 +20,8 @@ import numpy as np
 from . import moist_air as ma
 from .vka_chain import (Setpoints, fan, wheel, preheater, cooler,
                        spray_humidifier, reheater, adiabatic_cooler,
-                       frost_protection, steam_humidifier, plate_recovery)
+                       frost_protection, steam_humidifier, plate_recovery,
+                       DX_ENTF_TOL, T_KW_DEFAULT)
 from .kvs import kvs_recovery
 
 
@@ -40,6 +41,9 @@ class PlantConfig:
     has_adiab_exhaust: bool = False   # exhaust-side adiabatic cooling
     eta_bef: float = 0.9
     T_H2O: float = 15.0         # humidifier water temperature [C]
+    # chilled-water supply temperature of the cooler [C] = lowest dew point the
+    # ideal coil can reach (L18; MATLAB: fixed 6 C)
+    T_KW: float = T_KW_DEFAULT
     V_nom_m3h: float = 10000.0  # design flow for the wheel
     p_atm: float = 1e5
     # --- extensions: WRG type, frost protection, humidifier type, KVS ---------
@@ -124,6 +128,19 @@ def run_plant(cfg: PlantConfig, sp: Setpoints, ops: list[OperatingPoint]):
         sfp_zul = cfg.SFP * (1.0 - cfg.SFP_exh_frac) if cfg.exhaust_fan_before_wrg else cfg.SFP
         T1, x1, m_dot, Q_fan, dTv = fan(op.T_AUL, x_aul, V, sfp_zul, cfg.f_rec,
                                         T_set_mean, cfg.p_atm)
+        # Abweichung vom MATLAB-Original (Prüfung 2026-11, L19): bei Anlagen
+        # MIT Umluft sitzt der Zuluftventilator nach der Mischkammer
+        # (Außenluft → Mischkammer → Ventilator → Zuluft) und fördert den
+        # vollen Zuluftstrom. Seine Wärme f_rec·P_el wird deshalb direkt nach
+        # der Umluftbeimischung auf den vollen Massenstrom aufgeprägt — am
+        # Stranganfang kam nur der Außenluftanteil V̇_AUL/V̇_ZUL davon an (bei
+        # 3000 von 4500 m³/h Umluft 0,5 von 1,5 kW; bei 100 % Umluft nichts).
+        # Frostschutz und WRG vor der Mischung sehen damit Außenluft ohne
+        # Ventilatorwärme. Anlagen OHNE Umluft bleiben auf dem validierten
+        # Pfad (Ventilator am Stranganfang).
+        fan_nach_uml = bool(cfg.has_uml and "UML_Byp" in order)
+        if fan_nach_uml:
+            T1 = op.T_AUL
 
         # exhaust state entering the WRG
         rho = cfg.p_atm / (287.0 * (273.0 + T_set_mean))
@@ -147,6 +164,7 @@ def run_plant(cfg: PlantConfig, sp: Setpoints, ops: list[OperatingPoint]):
         eta_hr = eta_xr = n_rot = 0.0
         RWZ_kvs = float("nan"); V_M_kvs = 0.0
         T2 = x2 = None
+        KR_limit = False
 
         FS_Byp = False
         # Umluft-Bypass: recirculate m_dot_UML of room air. Components upstream
@@ -154,9 +172,10 @@ def run_plant(cfg: PlantConfig, sp: Setpoints, ops: list[OperatingPoint]):
         # downstream see the full flow (faithful to the V_dot_*_calc rules).
         m_dot_UML = (cfg.V_UML_m3h / 3600.0 * rho) if cfg.has_uml else 0.0
         uml_seen = False
-        # Der Zuluftventilator ist oben bereits bilanziert; sein Token wird
-        # übersprungen, WO es auch steht (früher order[1:]: fehlte das Token,
-        # entfiel stattdessen die erste echte Komponente, z.B. die WRG — L4)
+        # Der Zuluftventilator ist oben bereits bilanziert (mit Umluft: nach
+        # der Mischkammer, L19); sein Token wird übersprungen, WO es auch
+        # steht (früher order[1:]: fehlte das Token, entfiel stattdessen die
+        # erste echte Komponente, z.B. die WRG — L4)
         for comp in order:
             if comp == "Vent_ZUL":
                 continue
@@ -174,6 +193,14 @@ def run_plant(cfg: PlantConfig, sp: Setpoints, ops: list[OperatingPoint]):
                         T = ma.T_h_phi(ma.h(T, x), 1.0, cfg.p_atm)
                         x = float(ma.xs(T, cfg.p_atm))
                 uml_seen = True
+                if fan_nach_uml:
+                    # L19: Zuluftventilator direkt nach der Mischkammer.
+                    # chain["UML_Byp"] = Zustand nach der Mischung,
+                    # chain["Vent_ZUL"] = Zustand nach dem Ventilator.
+                    chain_T[comp], chain_x[comp] = T, x
+                    T = T + dTv
+                    chain_T["Vent_ZUL"], chain_x["Vent_ZUL"] = T, x
+                    continue
             elif comp == "FS":
                 if cfg.fs_type == 2:          # bypass: VHR takes over frost duty
                     FS_Byp = (m_dot > 0 and T < cfg.T_FS_Grenz)
@@ -239,9 +266,18 @@ def run_plant(cfg: PlantConfig, sp: Setpoints, ops: list[OperatingPoint]):
                 bef_after_kr = "Bef" in order[ci + 1:]
                 SprBef_n_KR = 1 if (bef_after_kr and Bef_ZUL == 1) else 0
                 DBef_n_KR = 1 if (bef_after_kr and Bef_ZUL == 2) else 0
+                x_vor_KR = x
                 T, x, Q["KR"] = cooler(T, x, flow, sp, dT_corr, KR_Entf=1,
                                        SprBef_n_KR=SprBef_n_KR,
-                                       DBef_n_KR=DBef_n_KR, h_H2O=h_H2O)
+                                       DBef_n_KR=DBef_n_KR, h_H2O=h_H2O,
+                                       T_Entf_bnd=cfg.T_KW)
+                # L18: Feuchte-Sollwert verlangt einen Taupunkt unter der
+                # Kaltwasser-Vorlauftemperatur — die Luft verlässt den Kühler
+                # feuchter als die obere Feuchtegrenze (Kennzeichen für den
+                # Hinweis an den Nutzer)
+                x_grenze = sp.x_max_Tmax + DX_ENTF_TOL
+                KR_limit = bool(x_vor_KR > x_grenze and x > x_grenze
+                                and ma.Ts(sp.x_max_Tmax, cfg.p_atm) <= cfg.T_KW)
             elif comp == "Bef":
                 if cfg.bef_type == 2:
                     T, x, m_w, Q["Bef"] = steam_humidifier(T, x, flow, sp,
@@ -262,7 +298,7 @@ def run_plant(cfg: PlantConfig, sp: Setpoints, ops: list[OperatingPoint]):
             T_sup=T, x_sup=x, phi_sup=phi_sup,
             x_sup_gkg=x * 1000.0, phi_sup_pct=phi_sup * 100.0,
             T_wheel=T2, x_wheel=x2, eta_hr=eta_hr, eta_xr=eta_xr, n_rot=n_rot,
-            RWZ_KVS_ges=RWZ_kvs, V_M_KVS=V_M_kvs,
+            RWZ_KVS_ges=RWZ_kvs, V_M_KVS=V_M_kvs, KR_limit=KR_limit,
             m_dot=m_dot, Q_fan=Q_fan, m_dot_Bef=m_w,
             m_water_kg_h=m_w * 3600.0,
             T_eta_wheel=T_eta, x_eta_wheel=x_eta,

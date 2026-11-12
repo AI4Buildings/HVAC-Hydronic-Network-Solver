@@ -113,7 +113,7 @@ def _f0(out: dict, key: str):
 
 def _station_map(plant: AirPlant, zul_pairs: list, abl_pairs: list, cfg: dict,
                  out: dict, aul, abl_t: float, abl_rh: float, uml,
-                 fan_moved: bool, v_sup: float, v_exh: float,
+                 fan_exakt, v_sup: float, v_exh: float,
                  rho: float) -> dict:
     """Luftzustand (ϑ, x, φ, V̇) je Kanalabschnitt beider Stränge.
 
@@ -146,20 +146,27 @@ def _station_map(plant: AirPlant, zul_pairs: list, abl_pairs: list, cfg: dict,
             stations[peer[ref]] = rec
 
     v_uml = (uml.v * 3600.0) if uml is not None else 0.0
-    order = cfg.get("order") or []
+    order = list(cfg.get("order") or [])
+    if v_uml > 0.0 and "UML_Byp" in order and "Vent_ZUL" in order:
+        # wirksame Reihenfolge des Kerns bei Umluft (L19): der Ventilator
+        # folgt der Mischkammer — sein Kettenzustand ist dann NICHT der
+        # Zustand am Stranganfang
+        order.remove("Vent_ZUL")
+        order.insert(order.index("UML_Byp") + 1, "Vent_ZUL")
 
     # Zuluftstrang: Zustand fortschreiben; das gezeichnete Token liefert den
     # Zustand NACH der Komponente. Den Kernzustand „nach Ventilator“ trägt nur
-    # der ERSTE gezeichnete Ventilator, und nur wenn er am Stranganfang sitzt:
-    # ein an den Stranganfang normierter Ventilator (fan_moved) und jeder
-    # weitere Ventilator ändern den angezeigten Zustand nicht — ihre Wärme
-    # steckt modellbedingt bereits in den stromab liegenden Zuständen. (Ein
-    # zweiter Ventilator setzte die Station früher auf „nach dem ersten
-    # Ventilator“ zurück: Zuluftstation −4 °C statt 20 °C.)
+    # der Ventilator, der dort gezeichnet ist, wo der Kern ihn bilanziert
+    # (fan_exakt: ohne Umluft am Stranganfang, mit Umluft direkt nach der
+    # Mischkammer — L19). Jeder andere gezeichnete Ventilator ändert den
+    # angezeigten Zustand nicht — seine Wärme steckt modellbedingt bereits in
+    # den stromab liegenden Zuständen. (Ein zweiter Ventilator setzte die
+    # Station früher auf „nach dem ersten Ventilator“ zurück: Zuluftstation
+    # −4 °C statt 20 °C.)
     x_aul = float(ma.rh_to_x(aul.t, aul.rh, p))
     t_cur, x_cur = aul.t, x_aul
     uml_seen = False
-    fan_seen = False
+    mit_umluft = v_uml > 0.0
     for comp, in_ref in zul_pairs:
         v_seg = v_sup - (0.0 if (uml_seen or uml is None) else v_uml)
         put(in_ref, t_cur, x_cur, v_seg)
@@ -167,10 +174,15 @@ def _station_map(plant: AirPlant, zul_pairs: list, abl_pairs: list, cfg: dict,
             uml_seen = True
         tok = TOKEN.get(comp.type_name)
         if tok == "Vent_ZUL":
-            if not fan_moved and not fan_seen and tok in ch_t:
+            if comp is fan_exakt and tok in ch_t:
                 t_cur, x_cur = float(ch_t[tok]), float(ch_x[tok])
-            fan_seen = True
-        elif tok and tok in ch_t:
+            continue
+        if tok == "UML_Byp" and mit_umluft and fan_exakt is None:
+            # Ventilator nicht direkt nach der Mischkammer gezeichnet: der
+            # Abschnitt nach der Umluft trägt bereits den Kernzustand nach
+            # Mischung UND Ventilator
+            tok = "Vent_ZUL"
+        if tok and tok in ch_t:
             t_cur, x_cur = float(ch_t[tok]), float(ch_x[tok])
 
     # Abluftstrang: Raumzustand bis zur WRG (nach gezeichnetem Abluftventilator
@@ -357,12 +369,12 @@ def solve_air(source) -> dict:
     # WICHTIG: Der Rechenkern ist für die Ventilatorposition am STRANGANFANG
     # validiert (Energy-Rotorregelung findet sonst u.U. keine zulässige
     # Drehzahl und fällt auf n_rot = 0 zurück). Die Ventilatorwärme wird
-    # daher immer am Stranganfang bilanziert; die gezeichnete Reihenfolge
-    # der Konditionierungskomponenten bleibt erhalten.
+    # daher ohne Umluft immer am Stranganfang bilanziert, mit Umluft direkt
+    # nach der Mischkammer (L19); die gezeichnete Reihenfolge der
+    # Konditionierungskomponenten bleibt erhalten.
     tokens = [TOKEN[c.type_name] for c in zul_chain if c.type_name in TOKEN]
     order = ((["Vent_ZUL"] if "Vent_ZUL" in tokens else [])
              + [t for t in tokens if t != "Vent_ZUL"])
-    fan_moved = "Vent_ZUL" in tokens and tokens[0] != "Vent_ZUL"
 
     # Je Typ höchstens eine Konditionierungskomponente im Zuluftstrang: der
     # Kern legt Lasten und Kettenzustände je Token ab — eine zweite Komponente
@@ -382,7 +394,18 @@ def solve_air(source) -> dict:
         return je_typ[typ][0] if typ in je_typ else None
 
     frost, bef, uml = erste("frostschutz"), erste("befeuchter"), erste("umluft")
+    kr = erste("kuehler")
     present = set(je_typ)
+    # Der Vorheizer ist im Modell das Register NACH der WRG. Vor der WRG
+    # gezeichnet heizte er die Außenluft bis zum Zuluft-Sollwert vor und legte
+    # die Rückgewinnung still (46,7 statt 8,1 kW Heizlast, WRG aus) — der
+    # Frostschutz der WRG ist die eigene Komponente 'frostschutz'.
+    wrg_pos_zul = zul_chain.index(wrg)
+    errors += [f"'{c.name}' (vorheizer) liegt im Zuluftstrang vor der WRG — im Modell ist "
+               f"der Vorheizer das Register NACH der WRG und heizt auf den Zuluft-"
+               f"Sollwert. Bitte hinter der WRG einzeichnen; für den Frostschutz der "
+               f"WRG die Komponente 'frostschutz' (Modus 'preheater') verwenden."
+               for c in je_typ.get("vorheizer", []) if zul_chain.index(c) < wrg_pos_zul]
     # Aktive Komponenten wirken nur im Zuluftstrang (Rechenkern); im
     # Abluftstrang gezeichnet wurden sie bisher halb angewandt (z.B. Befeuchter
     # global gesetzt, aber nie gerechnet — änderte trotzdem die VHR/NHR-
@@ -395,6 +418,21 @@ def solve_air(source) -> dict:
     zul_fans = [c for c in zul_chain if c.type_name == "ventilator_luft"]
     abl_fans = [c for c in abl_chain if c.type_name == "ventilator_luft"]
     wrg_pos_abl = abl_chain.index(wrg)
+    # Wo bilanziert der Kern den Zuluftventilator? Ohne Umluft am Strang-
+    # anfang, mit Umluft direkt nach der Mischkammer (L19). fan_exakt ist der
+    # Ventilator, der genau dort gezeichnet ist (deklarative Elemente wie
+    # Filter dürfen dazwischen liegen); sonst ist die gezeichnete Position
+    # dokumentarisch (Hinweis).
+    mit_umluft = uml is not None and uml.v > 0.0
+    aktive = [c for c in zul_chain if c.type_name in TOKEN]
+    fan_exakt = None
+    if mit_umluft:
+        nach_uml = aktive[aktive.index(uml) + 1:]
+        if nach_uml and nach_uml[0].type_name == "ventilator_luft":
+            fan_exakt = nach_uml[0]
+    elif aktive and aktive[0].type_name == "ventilator_luft":
+        fan_exakt = aktive[0]
+    fan_moved = bool(zul_fans) and fan_exakt is None
     cfg = {
         "wrg": wrg.typ,
         "components": [tok for name, tok in (("vorheizer", "VHR"), ("kuehler", "KR"),
@@ -409,6 +447,8 @@ def solve_air(source) -> dict:
     }
     if frost is not None:
         cfg["T_FS"] = frost.t_fs
+    if kr is not None:
+        cfg["T_KW"] = kr.t_kw           # Kaltwasser-Vorlauftemperatur (L18)
     if wrg.eta_hr_n:
         cfg["eta_hr_N"] = wrg.eta_hr_n
     if wrg.eta_xr_n:
@@ -477,7 +517,13 @@ def solve_air(source) -> dict:
                 "des typischen Gültigkeitsbereichs der WRG-Kennlinienkorrektur "
                 "(≈ ±30 %); Übertragungsgrade werden physikalisch auf "
                 "≤ min(1, V̇_Abluft/V̇_Zuluft) der WRG-Ströme begrenzt.")
-    if fan_moved:
+    if fan_moved and mit_umluft:
+        hinweise.append("Bei Anlagen mit Umluft wird der Zuluftventilator nach der "
+                        "Mischkammer bilanziert (Außenluft → Mischkammer → Ventilator → "
+                        "Zuluft; Modellkonvention des Rechenkerns): er fördert den vollen "
+                        "Zuluftstrom, seine Wärme geht in die Mischluft. Die gezeichnete "
+                        "Ventilatorposition ist dokumentarisch.")
+    elif fan_moved:
         hinweise.append("Ventilatorwärme wird am Stranganfang bilanziert "
                         "(Modellkonvention des Rechenkerns); die gezeichnete "
                         "Ventilatorposition ist dokumentarisch.")
@@ -538,13 +584,28 @@ def solve_air(source) -> dict:
            else 1e5 / (287.0 * (273.0 + t_set_mean)))
     stationen = _station_map(plant, zul_pairs, abl_pairs, cfg, out,
                              aul, abl.t, abl_rh_st if abl_rh_st is not None else 50.0,
-                             uml, fan_moved, v_sup, v_exh_eff, rho)
+                             uml, fan_exakt, v_sup, v_exh_eff, rho)
 
     # Hinweis, wenn der erreichte Zuluftzustand außerhalb des Sollbands liegt
     if zul.regelung == "raum":
         t_lo, t_hi, rh_lo, rh_hi = zul.t_min, zul.t_max, None, None
     else:
         t_lo, t_hi, rh_lo, rh_hi = _sollband(zul)
+    # Kühler an der Kaltwasser-Grenze (L18): der Feuchte-Sollwert verlangt
+    # einen Taupunkt unter der Kaltwasser-Vorlauftemperatur
+    if kr is not None and (f("KR_dew_limited") or 0.0) > 0.5:
+        x_grenz = float(ma.xs(kr.t_kw, 1e5)) * 1e3
+        taupunkt = ""
+        if rh_hi is not None:
+            t_tau = float(ma.Ts(float(ma.x(t_hi, rh_hi / 100.0, 1e5)), 1e5))
+            taupunkt = f" von {_fmt(t_tau)} °C"
+        hinweise.append(
+            f"'{kr.name}': der Feuchte-Sollwert verlangt einen Taupunkt{taupunkt} unter "
+            f"der Kaltwasser-Vorlauftemperatur ({_fmt(kr.t_kw)} °C) — der Kühler "
+            f"entfeuchtet nur bis zur Sättigung bei dieser Temperatur "
+            f"({_fmt(x_grenz, 2)} g/kg), die Luft bleibt feuchter als die obere "
+            f"Feuchtegrenze. Kaltwasser-Vorlauftemperatur ('t_kw_C') senken oder die "
+            f"obere Feuchtegrenze anheben.")
     t_aus = t_zul < t_lo - TOL_T_BAND or t_zul > t_hi + TOL_T_BAND
     rh_aus = rh_lo is not None and (phi_zul < max(rh_lo, 1.0) - TOL_RH_BAND
                                     or phi_zul > rh_hi + TOL_RH_BAND)

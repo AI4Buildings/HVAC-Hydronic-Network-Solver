@@ -154,7 +154,7 @@ def simulate_room(plant, T_AUL, hum_AUL,
                    "Q_heat_total_kW", "Q_cool_KR_kW", "Q_recovery_WRG_kW",
                    "Q_humid_Bef_kW", "water_kg_h"]
     state_arrays = ["T_sup_C", "x_sup_gkg", "phi_sup_pct", "eta_hr", "eta_xr",
-                    "n_rot", "RWZ_KVS"]
+                    "n_rot", "RWZ_KVS", "KR_dew_limited"]
     # Zusatzausgaben von simulate() (Stationszustände für Schema-Anzeigen),
     # soweit vorhanden: sie gehören zum SELBEN Betriebspunkt wie die Lasten
     extra_arrays = ["T_eta_wheel_C", "x_eta_wheel_gkg", "m_dot_kg_s"]

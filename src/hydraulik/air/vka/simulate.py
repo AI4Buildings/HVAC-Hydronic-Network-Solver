@@ -40,6 +40,10 @@ def build_config(spec: dict) -> PlantConfig:
       humidifier     'none'|'spray'|'steam'
       frost          'none'|'preheater'|'bypass'   (bypass needs a VHR)
       T_FS           frost limit [C]               (default -3.0)
+      T_KW           chilled-water supply temperature of the cooler [C]
+                     (default 6.0) = lowest dew point the ideal coil reaches;
+                     a humidity setpoint needing a lower dew point is only met
+                     down to saturation at T_KW (output KR_dew_limited)
       adiab_exhaust  bool   (only ROT_HYG/ROT_NH)
       recirculation_m3h  Umluft-Bypass flow [m3/h]
       SFP, f_rec, V_nom_m3h, eta_bef, T_H2O
@@ -77,6 +81,7 @@ def build_config(spec: dict) -> PlantConfig:
         SFP_exh_frac=float(spec.get("SFP_exh_frac", 0.5)),
         eta_bef=float(spec.get("eta_bef", 0.9)),
         T_H2O=float(spec.get("T_H2O", 100.0 if bef_type == 2 else 15.0)),
+        T_KW=float(spec.get("T_KW", 6.0)),
         V_nom_m3h=float(spec.get("V_nom_m3h", 10000.0)),
         V_M_KVS_N=float(spec.get("V_M_KVS_N", 2.5)),
         RWZ_KVS_ZUL_N=rwz, RWZ_KVS_ABL_N=rwz, V_ZUL_KVS_N=V_WT, V_ABL_KVS_N=V_WT,
@@ -187,7 +192,10 @@ def simulate(plant, T_AUL, hum_AUL, T_ABL, hum_ABL,
         T_sup_C, x_sup_gkg, phi_sup_pct,
         Q_heat_VHR_kW, Q_heat_NHR_kW, Q_heat_FS_kW, Q_heat_total_kW,
         Q_cool_KR_kW, Q_recovery_WRG_kW, Q_humid_Bef_kW, water_kg_h,
-        eta_hr, eta_xr, n_rot, RWZ_KVS
+        eta_hr, eta_xr, n_rot, RWZ_KVS,
+        KR_dew_limited (1 = the humidity setpoint needs a dew point below the
+        chilled-water supply temperature T_KW; the air leaves the cooler more
+        humid than the upper limit)
     plus 'totals' (period sums): heating_kWh, cooling_kWh, recovery_kWh,
         humid_kWh, water_kg, hours (whole period), operating_hours (flow>0
         and no NaN input).
@@ -287,8 +295,9 @@ def simulate(plant, T_AUL, hum_AUL, T_ABL, hum_ABL,
     on = valid & (Vs > 0) & (Ve > 0)
     OFF = dict(T_sup=np.nan, x_sup_gkg=np.nan, phi_sup_pct=np.nan,
                m_water_kg_h=0.0, eta_hr=np.nan, eta_xr=np.nan, n_rot=0.0,
-               RWZ_KVS_ges=np.nan)  # Q_* keys absent → col() reads them as 0.0
-    GAP = dict(OFF, m_water_kg_h=np.nan, n_rot=np.nan,
+               RWZ_KVS_ges=np.nan,
+               KR_limit=0.0)  # Q_* keys absent → col() reads them as 0.0
+    GAP = dict(OFF, m_water_kg_h=np.nan, n_rot=np.nan, KR_limit=np.nan,
                **{f"Q_{k}": np.nan for k in ("VHR", "NHR", "FS", "KR", "WRG", "Bef")})
 
     def op_i(i):
@@ -327,7 +336,8 @@ def simulate(plant, T_AUL, hum_AUL, T_ABL, hum_ABL,
         water_kg_h=col(lambda r: r["m_water_kg_h"]),
         eta_hr=col(lambda r: r["eta_hr"]), eta_xr=col(lambda r: r["eta_xr"]),
         n_rot=col(lambda r: r["n_rot"]),
-        RWZ_KVS=col(lambda r: r["RWZ_KVS_ges"]))
+        RWZ_KVS=col(lambda r: r["RWZ_KVS_ges"]),
+        KR_dew_limited=col(lambda r: r["KR_limit"]))
     # Stationszustände (Zustand NACH jedem order-Token) für Schema-Anzeigen;
     # Zusatzausgabe ohne Einfluss auf die validierten Größen oben.
     out["chain"] = [{"T": r.get("chain_T"), "x_gkg": r.get("chain_x_gkg")}

@@ -192,9 +192,18 @@ class Vorheizer(AirComponent):
 
 @register_air("kuehler")
 class Kuehler(AirComponent):
-    """Kühler (KR) mit Entfeuchtung; die Leistung ist Ergebnis."""
+    """Kühler (KR) mit Entfeuchtung; die Leistung ist Ergebnis.
 
-    PARAMS = ()
+    Entfeuchtet wird höchstens bis zur Sättigung bei der Kaltwasser-
+    Vorlauftemperatur t_kw (tiefster erreichbarer Taupunkt)."""
+
+    PARAMS = (
+        Param("t_kw", "temperature", default=6.0, minv=-10.0, maxv=25.0,
+              help="Kaltwasser-Vorlauftemperatur = tiefster erreichbarer Taupunkt des "
+                   "idealen Kühlers (verlangt der Feuchte-Sollwert einen tieferen "
+                   "Taupunkt, wird nur bis zur Sättigung bei dieser Temperatur "
+                   "entfeuchtet)"),
+    )
 
 
 @register_air("nachheizer")

@@ -33,6 +33,11 @@ H_EVAP = 2500.0  # h_H2O for spray/steam water enthalpy term (kJ/kg) — see not
 #: Feuchteband (L16, s. preheater/reheater).
 DX_ENTF_TOL = 0.03e-3
 
+#: Default der Kaltwasser-Vorlauftemperatur [°C] des Kühlers = tiefster
+#: erreichbarer Taupunkt des idealen Kühlers (MATLAB: fester Wert T_Entf_bnd;
+#: seit L18 Anlagenparameter T_KW)
+T_KW_DEFAULT = 6.0
+
 
 def _x_at_phi(T, phi, p):
     return ma.x(T, phi, p)
@@ -219,11 +224,13 @@ def preheater(T_in, x_in, m_dot, sp: Setpoints, dT_corr, eta_bef, h_H2O,
 
 def cooler(T_in, x_in, m_dot, sp: Setpoints, dT_corr, KR_Entf=1,
            SprBef_n_KR=0, DBef_n_KR=0, h_H2O=0.0,
-           dx_Entf_tol=DX_ENTF_TOL, T_Entf_bnd=6.0):
+           dx_Entf_tol=DX_ENTF_TOL, T_Entf_bnd=T_KW_DEFAULT):
     """KR cooling register. Faithful 1:1 port of the KR inline block
     (VKA main script lines ~2332-2447). Branch order matches MATLAB exactly
     (elseif cascade). SprBef_n_KR / DBef_n_KR flag whether a spray / steam
-    humidifier follows the cooler. Returns (T_out, x_out, Q_dot_kW).
+    humidifier follows the cooler. T_Entf_bnd = chilled-water supply
+    temperature = lowest dew point the ideal coil can reach (plant parameter
+    T_KW, L18). Returns (T_out, x_out, Q_dot_kW).
 
     Only the dehumidification branch carries the recondensation term in Q
     (-m*dx_Entf*(-1)*4.18*T_out); all other branches use plain m*(h_in-h_out).
@@ -246,7 +253,18 @@ def cooler(T_in, x_in, m_dot, sp: Setpoints, dT_corr, KR_Entf=1,
                 dx_Entf = sp.x_max_Tmax - x_in
                 T_out = ma.Ts(sp.x_max_Tmax, p); x_out = sp.x_max_Tmax
             else:
-                if T_in > Tlim_max:
+                # Abweichung vom MATLAB-Original (Prüfung 2026-11, L18): liegt
+                # der für x_max nötige Taupunkt unter der Kaltwasser-Vorlauf-
+                # temperatur T_Entf_bnd, entfeuchtete MATLAB gar nicht (nur
+                # sensible Kühlung auf T_max) — Zuluft 53 % statt 34 %. Der
+                # ideale Kühler kommt aber bis zur Sättigung bei der Vorlauf-
+                # temperatur: jetzt Entfeuchtung bis zu dieser Grenze (nie
+                # über x_in, nie heizend); erst wenn auch sie nichts abscheidet,
+                # bleibt es bei der sensiblen Kühlung.
+                x_grenz = float(ma.xs(T_Entf_bnd, p))
+                if x_grenz < x_in and T_Entf_bnd < T_in:
+                    T_out, x_out = T_Entf_bnd, x_grenz
+                elif T_in > Tlim_max:
                     T_out = min(T_in, Tlim_max); x_out = x_in
                 else:
                     T_out, x_out = T_in, x_in

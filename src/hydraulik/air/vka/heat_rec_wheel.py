@@ -112,8 +112,21 @@ def _eff_factors(c, q_V_SUP, q_V_ETA, v_hr_eff, n_rot, n_rot_max, f_ODA_min,
     eta_hr = min(eta_cap, eta_hr_nom * f_q * f_v * f_n)
 
     # --- latent: condensation potential -------------------------------------
-    # choose evap/cond streams by sign of (T_e - T_ETA_dis_out)
-    if T_e > T_ETA_dis_out:
+    # Abweichung vom MATLAB-Original (Prüfung 2026-11, L17): MATLAB wählt den
+    # feuchteabgebenden ("cond") und den feuchteaufnehmenden ("evap") Strom
+    # nach dem Vorzeichen von (T_e − T_ETA_dis_out). Bei T_AUL ≈ T_ABL und
+    # feuchter Außenluft sprang damit eta_xr (0,58 → 0,70), obwohl das
+    # treibende Gefälle x_ETA − x_ODA nicht null ist — Austrittszustand und
+    # Lasten sprangen mit (32,9 kW → 0,6 kW zwischen 22,00 und 22,02 °C).
+    # Maßgebend ist die RICHTUNG DES FEUCHTEGEFÄLLES: Spender ist der Strom
+    # mit der höheren absoluten Feuchte am Rotoreintritt, Empfänger der
+    # andere; Kondensationspotential = x_Spender − x_s(T_Empfänger). Wo die
+    # Zuordnung wechselt (x_ODA = x_ETA), ist der Feuchteübertrag
+    # eta_xr·(x_ETA − x_ODA) null — der Austrittszustand bleibt stetig. Im
+    # gewöhnlichen Winterfall (außen kälter UND trockener) und Sommerfall
+    # (außen wärmer UND feuchter) ändert sich nichts. T_e/T_ETA_dis_out
+    # bleiben in der Signatur, gehen aber nicht mehr in die Zuordnung ein.
+    if x_ODA_preh > x_ETA_hr_in:
         T_calc_evap = T_ETA_hr_in
         x_calc_cond = x_ODA_preh
         q_calc_evap = q_V_ETA_ahu
@@ -246,6 +259,13 @@ def energy_control(c, n_rot_max, f_q, f_v, f_dx_x, f_q_x, f_v_x,
         dT[m_dehum] = np.maximum(T_SUP_hr_req_min - T_out[m_dehum], T_out[m_dehum] - T_SUP_hr_req_max)
 
         if np.max(x_out) > x_SUP_hr_req_max_Tmax:
+            # Bezug ist der Taupunkt der oberen Feuchtegrenze x_max —
+            # BEWUSST unabhängig von der Kaltwasser-Vorlauftemperatur des
+            # Kühlers (L18): der Term hält den Rotor davon ab, die Zuluft über
+            # x_max zu befeuchten. Mit dem (wärmeren) realen Kühleraustritt
+            # gerechnet verschwände er gerade dann, wenn der Kühler nicht mehr
+            # entfeuchten kann — der Rotor liefe voll und die Zuluft läge über
+            # dem Feuchteband (geprüft: T_KW 16 °C → 10,0 statt ≤ 9,2 g/kg).
             h_KR_out = hx(Ts(x_SUP_hr_req_max_Tmax, p_atm), x_SUP_hr_req_max_Tmax)
         else:
             h_KR_out = h_Entf

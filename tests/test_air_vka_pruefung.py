@@ -1,4 +1,4 @@
-"""Lüftungskern: Befunde L1–L12 der Solver-Prüfung 2026-10 und L13–L16 der
+"""Lüftungskern: Befunde L1–L12 der Solver-Prüfung 2026-10 und L13–L19 der
 Prüfung 2026-11 (Abweichungen vom MATLAB-Original, je mit physikalischer
 Begründung).
 
@@ -15,6 +15,7 @@ import hydraulik as h
 from hydraulik.air import solve_air
 from hydraulik.air.vka import moist_air as ma
 from hydraulik.air.vka import simulate
+from hydraulik.air.vka.heat_rec_wheel import _ROTOR_CONSTANTS, _eff_factors
 from hydraulik.air.vka.kvs import _counterflow_rwz, kvs_recovery
 from hydraulik.air.vka.simulate import build_config
 from hydraulik.air.vka.vka_chain import (DX_ENTF_TOL, Setpoints, adiabatic_cooler, cooler,
@@ -354,8 +355,10 @@ def test_frostschutz_leistung_mit_umluft_stromab():
     r = run_plant(build_config(spec), Setpoints(20, 22, 0.40, 0.55),
                   [OperatingPoint(-15.0, 80, 22, 30, 4500)])[0]
     m_aussen = r["m_dot"] * (4500 - 3000) / 4500
-    dh = (_h(r["chain_T"]["FS"], r["chain_x"]["FS"])
-          - _h(r["chain_T"]["Vent_ZUL"], r["chain_x"]["Vent_ZUL"]))
+    # Eintritt des Frostschutzes = Außenluft (SFP = 0; mit Umluft sitzt der
+    # Ventilator ohnehin nach der Mischkammer, L19)
+    x_aul = float(ma.x(-15.0, 0.80, 1e5))
+    dh = _h(r["chain_T"]["FS"], r["chain_x"]["FS"]) - _h(-15.0, x_aul)
     assert r["chain_T"]["FS"] == pytest.approx(0.0)
     assert r["Q_FS"] == pytest.approx(m_aussen * dh, rel=1e-9)
     # ohne Umluft unverändert: voller Zuluftstrom
@@ -437,3 +440,217 @@ def test_zuluftfeuchte_im_band_am_rand_der_entfeuchtung(wrg):
     o = simulate(spec, 16.5, rh, 22, 40, 20, 22, 40, 55, V_sup_m3h=4500)
     assert float(np.max(o["phi_sup_pct"])) <= 55.0 + 0.5
     assert float(np.min(o["T_sup_C"])) >= 20.0 - 1e-6
+
+
+# --- L17: Feuchteübertragung des Rotors nach der Richtung des Feuchtegefälles ----
+
+def _x_s_rotor(T):
+    """Sättigungsfeuchte wie im Rotormodell (Magnus 611,2/17,62)."""
+    p_s = 611.2 * np.exp(17.62 * T / (243.12 + T))
+    return 0.622 * p_s / (1e5 - p_s)
+
+
+@pytest.mark.parametrize("fall, T_oda, x_oda, T_eta, x_eta, spender", [
+    ("Winter: kälter und trockener", -5.0, 2e-3, 22.0, 7e-3, "eta"),
+    ("Sommer: wärmer und feuchter", 32.0, 16e-3, 24.0, 10e-3, "oda"),
+    ("mild-feucht: kälter, aber feuchter", 20.0, 13e-3, 22.0, 7e-3, "oda"),
+    ("heiß-trocken: wärmer, aber trockener", 32.0, 5e-3, 24.0, 10e-3, "eta"),
+])
+def test_rotor_feuchtezuordnung_nach_feuchtegefaelle(fall, T_oda, x_oda, T_eta, x_eta, spender):
+    """Spender ist der Strom mit der höheren absoluten Feuchte, Empfänger der
+    andere: Kondensationspotential = x_Spender − x_s(T_Empfänger); die
+    Volumenströme folgen derselben Zuordnung. MATLAB ordnete nach dem
+    Temperaturvorzeichen zu — im Winter- und Sommerfall dasselbe, im
+    mild-feuchten und heiß-trockenen Fall vertauscht."""
+    c = _ROTOR_CONSTANTS["ROT_SORP"]
+    v_sup, v_eta = 10000.0, 8000.0
+    f = _eff_factors(c, v_sup, v_eta, 1.0, 20.0, 20.0, 1.0, c["v_hr_nom"], T_oda, T_eta,
+                     T_eta, x_eta, T_oda, x_oda, v_eta, v_sup, 1e5, "ROT_SORP")
+    x_sp, T_emp, q_sp, q_emp = ((x_oda, T_eta, v_sup, v_eta) if spender == "oda"
+                                else (x_eta, T_oda, v_eta, v_sup))
+    assert f["f_dx_x"] == pytest.approx(
+        min(1.0, max(0.0, c["C6"] * (x_sp - _x_s_rotor(T_emp)) + c["C7"])), abs=1e-12)
+    assert f["f_q_x"] == pytest.approx(1.0 - c["C9"] * (q_sp - q_emp) / q_emp, abs=1e-12)
+    assert 0.0 < f["f_dx_x"] < 1.0                           # nicht geklemmt: aussagekräftig
+
+
+_VOLLKLIMA = {"components": ["VHR", "KR", "NHR"], "humidifier": "steam", "SFP": 3430,
+              "V_nom_m3h": 4500, "order": ["Vent_ZUL", "WRG", "VHR", "Bef", "KR", "NHR"]}
+
+
+@pytest.mark.parametrize("wrg", ["ROT_SORP", "ROT_HYG"])
+def test_rotor_stetig_ueber_t_aul_gleich_t_abl(wrg):
+    """Feuchte Außenluft (90 %), T_AUL läuft durch T_ABL = 22 °C: Rotoraustritt
+    und Lasten bleiben stetig. Vorher sprang eta_xr an dieser Stelle (Sorptions-
+    rotor 0,58 → 0,70), der Rotoraustritt um 1,0 g/kg und die Summe aus Kühl-
+    und Nachheizleistung von 32,9 auf 0,6 kW."""
+    T = np.arange(21.5, 22.5001, 0.02)
+    o = simulate(dict(_VOLLKLIMA, wrg=wrg), T, 90.0, 22.0, 40.0, 20, 22, 40, 55, V_sup_m3h=4500)
+    last = o["Q_heat_total_kW"] + o["Q_cool_KR_kW"] + o["Q_humid_Bef_kW"]
+    x_wrg = np.array([c["x_gkg"]["WRG"] for c in o["chain"]])
+    assert float(np.max(np.abs(np.diff(last)))) < 0.5
+    assert float(np.max(np.abs(np.diff(x_wrg)))) < 0.1
+    assert float(np.max(np.abs(np.diff(o["eta_xr"])))) < 0.02
+    assert float(np.max(np.abs(np.diff(o["x_sup_gkg"])))) < 0.05
+
+
+@pytest.mark.parametrize("wrg", ["ROT_SORP", "ROT_HYG", "ROT_NH"])
+@pytest.mark.parametrize("T_aul", [15.0, 28.0])
+def test_rotor_stetig_ueber_x_aul_gleich_x_abl(wrg, T_aul):
+    """Am Wechsel der Zuordnung (x_AUL = x_ABL) ist der Feuchteübertrag
+    eta_xr·(x_ABL − x_AUL) null: eta_xr darf dort springen, der Rotoraustritt
+    und die Lasten nicht; Feuchte fließt immer dem Gefälle nach."""
+    x_abl = float(ma.rh_to_x(24.0, 45.0))
+    x_aul = x_abl + np.arange(-60, 61) * 0.01
+    o = simulate({"wrg": wrg, "components": ["KR", "NHR"], "SFP": 0, "V_nom_m3h": 4500},
+                 T_aul, x_aul, 24.0, x_abl, 20, 24, 30, 65, V_sup_m3h=4500, humidity="x")
+    dx = np.array([c["x_gkg"]["WRG"] for c in o["chain"]]) - x_aul      # Übertrag an die Zuluft
+    last = o["Q_heat_total_kW"] + o["Q_cool_KR_kW"]
+    assert abs(float(dx[60])) < 1e-9                         # x_AUL = x_ABL: kein Übertrag
+    assert np.all(dx[:60] >= -1e-12) and np.all(dx[61:] <= 1e-12)        # dem Gefälle nach
+    assert np.all(np.abs(dx) <= np.abs(x_abl - x_aul) + 1e-12)           # nie über das Gefälle hinaus
+    assert float(np.max(np.abs(np.diff(dx)))) < 0.02
+    assert float(np.max(np.abs(np.diff(last)))) < 0.2
+
+
+# --- L18: Kaltwasser-Vorlauftemperatur des Kühlers -------------------------------
+
+def test_kuehler_entfeuchtet_bis_zur_kaltwassergrenze():
+    """Verlangt x_max einen Taupunkt unter der Kaltwasser-Vorlauftemperatur,
+    entfeuchtet der Kühler bis zur Sättigung bei dieser Temperatur (vorher gar
+    nicht: Zuluft 12,1 statt 5,9 g/kg). Bilanz wie im normalen Entfeuchtungs-
+    zweig; nie über x_ein, nie heizend."""
+    sp = Setpoints(22.3, 22.3, 0.343, 0.343)                 # x_max 5,81 g/kg, Taupunkt 5,84 °C
+    T_tau = float(ma.Ts(sp.x_max_Tmax, 1e5))
+    assert 5.0 < T_tau < 6.0
+    T_in, x_in = 25.0, 12e-3
+
+    def bilanz(T, x):
+        return _h(T_in, x_in) - _h(T, x) + (x - x_in) * 4.18 * T
+
+    T, x, Q = cooler(T_in, x_in, 1.0, sp, 0.0)               # Default 6 °C: an der Grenze
+    assert T == 6.0 and x == pytest.approx(float(ma.xs(6.0, 1e5)), rel=1e-12)
+    assert sp.x_max_Tmax < x < x_in and Q == pytest.approx(bilanz(T, x), abs=1e-9)
+    T, x, Q = cooler(T_in, x_in, 1.0, sp, 0.0, T_Entf_bnd=4.0)           # tiefer: Sollwert erreicht
+    assert T == pytest.approx(T_tau) and x == sp.x_max_Tmax
+    T, x, Q = cooler(T_in, x_in, 1.0, sp, 0.0, T_Entf_bnd=12.0)          # höher: früher begrenzt
+    assert T == 12.0 and x == pytest.approx(float(ma.xs(12.0, 1e5)), rel=1e-12)
+    assert Q == pytest.approx(bilanz(T, x), abs=1e-9) and Q > 0.0
+    # Grenze scheidet nichts ab (x_s(T_KW) ≥ x_ein): nur sensible Kühlung auf T_max
+    T, x, Q = cooler(T_in, 7e-3, 1.0, sp, 0.0, T_Entf_bnd=12.0)
+    assert T == pytest.approx(22.3) and x == 7e-3 and Q > 0.0
+    # Luft kälter als das Kaltwasser: der Kühler heizt nie
+    T, x, Q = cooler(5.9, 7e-3, 1.0, sp, 0.0)
+    assert (T, x, Q) == (5.9, 7e-3, 0.0)
+
+
+def test_kaltwasser_vorlauf_ohne_einfluss_ueber_dem_taupunkt():
+    """Liegt der Taupunkt von x_max über der Vorlauftemperatur, ändert sie
+    nichts (Default 6 °C = bisheriges Verhalten)."""
+    sp = Setpoints(20, 22, 0.40, 0.55)                       # Taupunkt 12,5 °C
+    ref = cooler(30.0, 14e-3, 1.0, sp, 0.0)
+    assert ref[1] == sp.x_max_Tmax
+    for t_kw in (-5.0, 6.0, 10.0, 12.4):
+        assert cooler(30.0, 14e-3, 1.0, sp, 0.0, T_Entf_bnd=t_kw) == ref
+
+
+def test_kaltwasser_vorlauf_als_anlagenparameter():
+    """Anlagenparameter T_KW (simulate/Skill-API): Zuluft-Sollwert 22,3 °C/34,3 %
+    (Taupunkt 5,84 °C). Default 6 °C: Sättigung bei 6 °C und Kennzeichen
+    KR_dew_limited; 4 °C: Sollwert erreicht; 12 °C: entsprechend feuchter."""
+    spec = {"wrg": "PLATE", "components": ["KR", "NHR"], "SFP": 0, "V_nom_m3h": 4500}
+
+    def lauf(**extra):
+        return simulate(dict(spec, **extra), 25.0, 60.0, 24.0, 50.0, 22.3, 22.3, 34.3, 34.3,
+                        V_sup_m3h=4500)
+    o = lauf()
+    assert float(o["x_sup_gkg"][0]) == pytest.approx(float(ma.xs(6.0, 1e5)) * 1e3, rel=1e-9)
+    assert float(o["KR_dew_limited"][0]) == 1.0 and float(o["T_sup_C"][0]) == pytest.approx(22.3)
+    assert float(o["Q_cool_KR_kW"][0]) > 40.0                # vorher 3,2 kW (nur sensibel)
+    o = lauf(T_KW=4.0)
+    assert float(o["phi_sup_pct"][0]) == pytest.approx(34.3, abs=0.05)
+    assert float(o["KR_dew_limited"][0]) == 0.0
+    o = lauf(T_KW=12.0)
+    assert float(o["x_sup_gkg"][0]) == pytest.approx(float(ma.xs(12.0, 1e5)) * 1e3, rel=1e-9)
+    assert float(o["KR_dew_limited"][0]) == 1.0
+    # Band mit Taupunkt 12,5 °C: T_KW bis 12 °C ohne Einfluss, 14 °C begrenzt
+    band = dict(T_AUL=30.0, hum_AUL=60.0, T_ABL=26.0, hum_ABL=50.0, T_sup_min=20, T_sup_max=22,
+                hum_sup_min=40, hum_sup_max=55, V_sup_m3h=4500)
+    a, b = simulate(spec, **band), simulate(dict(spec, T_KW=12.0), **band)
+    for k in ("T_sup_C", "x_sup_gkg", "Q_cool_KR_kW", "Q_heat_total_kW", "KR_dew_limited"):
+        assert float(a[k][0]) == float(b[k][0]), k
+    c = simulate(dict(spec, T_KW=14.0), **band)
+    assert float(c["x_sup_gkg"][0]) == pytest.approx(float(ma.xs(14.0, 1e5)) * 1e3, rel=1e-9)
+    assert float(c["Q_cool_KR_kW"][0]) < float(a["Q_cool_KR_kW"][0])
+
+
+def test_rotorregelung_haelt_feuchteband_unabhaengig_vom_kaltwasser():
+    """Die Rotorregelung zielt weiter auf x_max, auch wenn der Kühler wegen
+    einer hohen Kaltwasser-Vorlauftemperatur nicht entfeuchten könnte: sie
+    drosselt den Rotor, statt die Zuluft über das Feuchteband zu befeuchten."""
+    spec = {"wrg": "ROT_SORP", "components": ["VHR", "KR", "NHR"], "humidifier": "steam",
+            "SFP": 0, "V_nom_m3h": 4500}
+    a = simulate(dict(spec, T_KW=6.0), -5.0, 20.0, 24.0, 75.0, 20, 22, 40, 55, V_sup_m3h=4500)
+    b = simulate(dict(spec, T_KW=16.0), -5.0, 20.0, 24.0, 75.0, 20, 22, 40, 55, V_sup_m3h=4500)
+    assert float(b["n_rot"][0]) == float(a["n_rot"][0]) < 20.0
+    assert float(b["phi_sup_pct"][0]) <= 55.0 + 0.5 and float(b["KR_dew_limited"][0]) == 0.0
+
+
+# --- L19: Zuluftventilator nach der Mischkammer (Anlagen mit Umluft) -------------
+
+def _umluft_anlage(v_uml, sfp=2000.0, comps=("NHR",), frost="none", order=None):
+    spec = dict(wrg="PLATE", components=list(comps), SFP=sfp, recirculation_m3h=v_uml,
+                frost=frost, T_FS=0.0,
+                order=order or ["Vent_ZUL", "WRG", "UML_Byp"] + list(comps))
+    r = run_plant(build_config(spec), Setpoints(20, 22, 0.40, 0.55),
+                  [OperatingPoint(-5.0, 80, 22, 40, 4500)])[0]
+    return r, float(ma.x(-5.0, 0.80, 1e5)), float(ma.x(22.0, 0.40, 1e5))
+
+
+@pytest.mark.parametrize("v_uml", [1500.0, 3000.0, 4500.0])
+def test_ventilatorwaerme_nach_der_mischkammer(v_uml):
+    """Mit Umluft fördert der Zuluftventilator den vollen Zuluftstrom nach der
+    Mischkammer; f_rec·P_el geht vollständig in die Mischluft (vorher am
+    Stranganfang nur der Außenluftanteil: 0,5 von 1,5 kW bei 3000 von 4500 m³/h,
+    bei 100 % Umluft nichts)."""
+    r, x_aul, x_abl = _umluft_anlage(v_uml)
+    m, m_aussen, m_uml = r["m_dot"], r["m_dot"] * (4500 - v_uml) / 4500, r["m_dot"] * v_uml / 4500
+    q_fan = 0.6 * 2000.0 / 1000.0 * 4500 / 3600                          # f_rec·P_el = 1,5 kW
+    ch_T, ch_x = r["chain_T"], r["chain_x"]
+    assert r["Q_fan"] == pytest.approx(q_fan)
+    # Ventilator direkt nach der Mischung, auf dem vollen Massenstrom
+    assert m * 1.0 * (ch_T["Vent_ZUL"] - ch_T["UML_Byp"]) == pytest.approx(q_fan, rel=1e-9)
+    assert ch_T["UML_Byp"] == pytest.approx(
+        (ch_T["WRG"] * (4500 - v_uml) + 22.0 * v_uml) / 4500, abs=1e-9)
+    # WRG vor der Mischung sieht Außenluft OHNE Ventilatorwärme
+    assert r["Q_WRG"] == pytest.approx(m_aussen * (_h(ch_T["WRG"], x_aul) - _h(-5.0, x_aul)),
+                                       abs=1e-9)
+    # Energiebilanz der Zuluft über den ganzen Strang (Mischung nach T: ±0,1 kW)
+    zugefuehrt = m * _h(r["T_sup"], r["x_sup"]) - m_aussen * _h(-5.0, x_aul) - m_uml * _h(22.0, x_abl)
+    lasten = r["Q_WRG"] + r.get("Q_NHR", 0.0)
+    assert zugefuehrt == pytest.approx(lasten + q_fan * (1 + 1.85 * ch_x["UML_Byp"]), abs=0.12)
+
+
+def test_volle_umluft_gibt_raumluft_plus_ventilatorerwaermung():
+    r, _, x_abl = _umluft_anlage(4500.0, comps=())
+    assert r["x_sup"] == pytest.approx(x_abl, rel=1e-12)
+    assert r["T_sup"] == pytest.approx(22.0 + 1.5 / r["m_dot"], rel=1e-12)   # vorher exakt 22,0
+
+
+def test_frostschutz_vor_der_mischkammer_sieht_aussenluft():
+    """Frostschutz und WRG vor der Mischung: Eintritt ist die Außenluft ohne
+    Ventilatorwärme (vorher Außenluft + Ventilatorerwärmung)."""
+    r, x_aul, _ = _umluft_anlage(3000.0, frost="preheater",
+                                 order=["Vent_ZUL", "FS", "WRG", "UML_Byp", "NHR"])
+    m_aussen = r["m_dot"] * 1500 / 4500
+    assert r["chain_T"]["FS"] == pytest.approx(0.0)
+    assert r["Q_FS"] == pytest.approx(m_aussen * (_h(0.0, x_aul) - _h(-5.0, x_aul)), rel=1e-9)
+
+
+def test_ohne_umluft_ventilator_am_stranganfang():
+    """Anlagen ohne Umluft bleiben auf dem validierten Pfad."""
+    r, x_aul, _ = _umluft_anlage(0.0, order=["Vent_ZUL", "WRG", "NHR"])
+    assert r["chain_T"]["Vent_ZUL"] == pytest.approx(-5.0 + 1.5 / r["m_dot"], rel=1e-12)
+    assert r["Q_WRG"] == pytest.approx(
+        r["m_dot"] * (_h(r["chain_T"]["WRG"], x_aul) - _h(r["chain_T"]["Vent_ZUL"], x_aul)),
+        abs=1e-9)
