@@ -23,13 +23,13 @@ from .fluids import Fluid, WATER_DEFAULT, water_at
 from .network import Network
 from .results import SolutionResult
 from .solver.settings import SolverSettings
-from .yaml_loader import load, load_settings
+from .yaml_loader import load, load_checked, load_settings
 from .yamlio import load_document
 
 __version__ = "0.6.0"          # muss mit pyproject.toml übereinstimmen (Test)
 
 __all__ = [
-    "Network", "load", "load_settings", "load_document", "SolverSettings", "SolutionResult",
+    "Network", "load", "load_checked", "load_settings", "load_document", "SolverSettings", "SolutionResult",
     "Fluid", "water_at", "WATER_DEFAULT", "components",
     "HydraulikError", "NetworkValidationError", "SingularNetworkError",
     "ConvergenceError", "ComponentParamError", "ComponentModelError",

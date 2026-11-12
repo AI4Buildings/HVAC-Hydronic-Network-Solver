@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
-from .exceptions import HydraulikError
-from .yaml_loader import load, load_settings
+from .exceptions import HydraulikError, NetworkValidationError
+from .yaml_loader import NOT_A_MAPPING, load_checked
+from .yamlio import canonical_json, load_document
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -37,27 +39,25 @@ def main(argv: list[str] | None = None) -> int:
     sv.add_argument("--no-open", action="store_true", help="Browser nicht automatisch öffnen")
 
     args = parser.parse_args(argv)
+    try:
+        return _dispatch(args)
+    except HydraulikError as exc:
+        print(f"FEHLER: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        # Schreiben/Lesen gescheitert (Zielordner fehlt, keine Rechte, Port belegt …)
+        where = f" '{exc.filename}'" if exc.filename else ""
+        print(f"FEHLER: Datei-/Systemfehler{where}: {exc.strerror or exc}", file=sys.stderr)
+        return 1
+
+
+def _dispatch(args) -> int:
     if args.cmd == "editor":
         from .editor import build_air_editor, build_editor
         if args.luft and args.out == "hydraulik_editor.html":
             args.out = "lueftung_editor.html"
         path = build_air_editor(args.out) if args.luft else build_editor(args.out)
         print(f"Editor erzeugt: {path}  (im Browser öffnen; Rechnen im GUI: 'editor server')")
-        return 0
-    if args.cmd == "export":
-        from .yamlio import canonical_json, load_document
-        try:
-            doc = load_document(args.file)
-            if args.luft:
-                from .air import load_air
-                load_air(doc)
-            else:
-                load(doc)
-                load_settings(doc)
-        except HydraulikError as exc:
-            print(f"FEHLER: {exc}", file=sys.stderr)
-            return 1
-        _write(canonical_json(doc), args.out, "JSON")
         return 0
     if args.cmd == "schema":
         from .schema import json_schema
@@ -68,14 +68,25 @@ def main(argv: list[str] | None = None) -> int:
         from .server import serve
         serve(port=args.port, open_browser=not args.no_open)
         return 0
-    try:
-        net = load(args.file)
-        settings = load_settings(args.file)
-        result = net.solve(settings)
-    except HydraulikError as exc:
-        print(f"FEHLER: {exc}", file=sys.stderr)
-        return 1
 
+    # run/export: das Argument ist IMMER ein Dateipfad (nie YAML-Text) und wird
+    # genau einmal gelesen — fehlende Datei → „nicht gefunden“, /dev/stdin und
+    # Prozess-Substitution funktionieren.
+    doc = load_document(Path(args.file))
+    if not isinstance(doc, dict):       # gelesenen Inhalt nie erneut als Quelle (Pfad/Text) deuten
+        raise NetworkValidationError([NOT_A_MAPPING])
+    if args.cmd == "export":
+        if args.luft:
+            from .air import load_air
+            load_air(doc)
+        else:
+            load_checked(doc)           # Parameter, settings UND Einbindung (compile)
+        _write(canonical_json(doc), args.out, "JSON")
+        return 0
+
+    # Fehler aus Parametern, settings und Verbindungen in EINER Liste
+    net, settings = load_checked(doc)
+    result = net.solve(settings)
     if args.json:
         print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))
     else:

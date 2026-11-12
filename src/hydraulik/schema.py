@@ -197,16 +197,19 @@ def json_schema(kind: str = "hydraulik") -> dict:
         "allOf": [{"if": {"properties": {"type": {"const": t}}, "required": ["type"]},
                    "then": {"$ref": f"#/$defs/type:{t}"}} for t in types],
     }
-    port_ref = {"type": "string", "pattern": r"^[^.]+\.[^.]+$",
-                "description": "Port-Referenz 'komponente.port'"}
+    # Komponentennamen dürfen Punkte enthalten ("HK 1.OG", "TS1.1"); der Port
+    # steht hinter dem LETZTEN Punkt (Portnamen enthalten keinen)
+    port_ref = {"type": "string", "pattern": r"^[\s\S]+\.[^.]+$",
+                "description": "Port-Referenz 'komponente.port' – der Port folgt auf den "
+                               "letzten Punkt (Komponentennamen dürfen Punkte enthalten)"}
     conn_items: dict = {"type": "array", "items": port_ref, "minItems": 2}
     if air:
         conn_items["maxItems"] = 2
     props: dict = {
         "components": {
             "type": "object", "minProperties": 1,
-            "propertyNames": {"pattern": r"^[^.]+$",
-                              "description": "Komponentenname ohne Punkt (Trenner in 'komponente.port')"},
+            "propertyNames": {"minLength": 1,
+                              "description": "Komponentenname: nicht leer; Punkte sind erlaubt"},
             "additionalProperties": {"$ref": "#/$defs/component"},
             "description": "Komponenten: Name → {type, Parameter}. Namen sind immer Zeichenketten.",
         },
@@ -218,10 +221,13 @@ def json_schema(kind: str = "hydraulik") -> dict:
                                "≥ 3 Ports bzw. mehrfach genutzte Ports = Verzweigung. ")
                             + f"Existenz von Komponente und Port {LOADER}."),
         },
+        # ohne Typvorgabe: der Loader übergeht den Block vollständig (auch
+        # layout: null oder Fremdinhalt) — das Schema lehnt nichts ab, was er liest
         "layout": {
-            "type": "object",
-            "description": "Zeichnungskoordinaten des Schema-Editors – vom Rechenkern ignoriert.",
-            "properties": {"components": {"type": "object"}, "wires": {"type": "array"}},
+            "description": "Zeichnungskoordinaten des Schema-Editors ({components: {name: "
+                           "{x, y, …}}, wires: […]}) – vom Rechenkern ignoriert und nicht "
+                           "geprüft. Nur 'hydraulik export --json' verlangt auch hier "
+                           "endliche Zahlen.",
         },
     }
     if not air:

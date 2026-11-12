@@ -15,6 +15,11 @@ class ComponentParamError(HydraulikError):
         body = "\n".join(f"  {i+1}. {m}" for i, m in enumerate(self.messages))
         super().__init__(f"Ungültige Parameter für Komponente '{component}':\n{body}")
 
+    def __reduce__(self):
+        # pickle/copy rufen sonst __init__(formatierter Text) auf — mit den
+        # ursprünglichen Argumenten neu aufbauen (multiprocessing-Pools)
+        return (type(self), (self.component, self.messages))
+
 
 class NetworkValidationError(HydraulikError):
     """Sammelt ALLE Validierungsfehler eines Netzes / einer YAML-Datei.
@@ -27,6 +32,11 @@ class NetworkValidationError(HydraulikError):
         self.messages = list(messages)
         body = "\n".join(f"  {i+1}. {m}" for i, m in enumerate(self.messages))
         super().__init__(f"Netzwerk-Validierung fehlgeschlagen ({len(self.messages)} Fehler):\n{body}")
+
+    def __reduce__(self):
+        # sonst baut pickle/copy den Fehler aus dem formatierten Text neu auf
+        # (list("Netzwerk-…") → ein „Fehler“ je Buchstabe)
+        return (type(self), (self.messages,))
 
 
 class SingularNetworkError(HydraulikError):
@@ -50,6 +60,10 @@ class ComponentModelError(HydraulikError):
             f"Komponente '{component}' (Typ '{type_name}'): {model} Modell fehlgeschlagen "
             f"bei {operating_point} — {type(cause).__name__}: {cause}. Der Betriebspunkt "
             f"liegt vermutlich außerhalb des Modellbereichs; Parameter und Betriebsfall prüfen.")
+
+    def __reduce__(self):
+        return (type(self), (self.component, self.type_name, self.model,
+                             self.operating_point, self.cause))
 
 
 class ConvergenceError(HydraulikError):

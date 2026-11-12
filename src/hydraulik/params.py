@@ -8,7 +8,10 @@ gehalten (Pa, m³/s, kg/s, W, m, °C).
 from __future__ import annotations
 
 import math
+import numbers
 from dataclasses import dataclass
+
+import numpy as np
 
 # Suffix -> Faktor zur SI-Einheit. Erster Eintrag = bevorzugte Anzeige.
 # Reihenfolge je Gruppe: HVAC-übliche Einheit ZUERST (= Default-Anzeige im
@@ -106,22 +109,20 @@ def parse_params(type_name: str, specs: tuple[Param, ...], kwargs: dict) -> tupl
             values[spec.name] = raw
             continue
         if spec.group == "bool":
-            if not isinstance(raw, bool):
+            if not is_bool(raw):
                 errors.append(f"'{key}' muss true/false sein, erhalten: {raw!r}"
                               + yaml11_bool_hint(raw))
                 continue
-            values[spec.name] = raw
+            values[spec.name] = bool(raw)
             continue
         if spec.group == "int":
             # ganzzahlige Floats (2.0, 1e3) wie JSON Schema 'integer' zulassen
-            if isinstance(raw, float) and raw.is_integer():
-                raw = int(raw)
-            if isinstance(raw, bool) or not isinstance(raw, int):
+            val = as_int(raw)
+            if val is None:
                 errors.append(f"'{key}' muss eine Ganzzahl sein, erhalten: {raw!r}")
                 continue
-            val = raw
         else:
-            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            if not is_number(raw):
                 errors.append(f"'{key}' muss eine Zahl sein, erhalten: {raw!r}")
                 continue
             factor = 1.0 if spec.group == "none" else UNIT_GROUPS[spec.group][key[len(spec.name) + 1:]]
@@ -131,6 +132,13 @@ def parse_params(type_name: str, specs: tuple[Param, ...], kwargs: dict) -> tupl
                 errors.append(f"'{key}' = {raw!r} ist keine endliche Zahl "
                               f"(inf/nan bzw. Überlauf sind unzulässig).")
                 continue
+            # Grenzen sind SI-Werte, die Eingabe trägt eine Einheit: der
+            # Rundungsfehler der Umrechnung (0.36 kg/h → 9.999…e-05 kg/s bei
+            # Minimum 1e-4) darf einen Wert GENAU an der Grenze nicht ablehnen
+            if factor != 1.0:
+                for limit in (spec.minv, spec.maxv):
+                    if limit is not None and math.isclose(val, limit, rel_tol=_LIMIT_RTOL, abs_tol=0.0):
+                        val = float(limit)
 
         if spec.minv is not None and val < spec.minv:
             errors.append(f"'{key}' = {raw} liegt unter dem Minimum ({_fmt_limit(spec.minv, spec, key)}).")
@@ -154,8 +162,39 @@ def parse_params(type_name: str, specs: tuple[Param, ...], kwargs: dict) -> tupl
     return values, errors
 
 
+#: relative Toleranz, mit der ein Wert an einer Bereichsgrenze als „auf der
+#: Grenze“ gilt (Rundung der Einheitenumrechnung; 0 bleibt exakt)
+_LIMIT_RTOL = 1e-9
+
+
+def is_bool(raw) -> bool:
+    """Wahrheitswert: bool oder numpy.bool_ (Python-API)."""
+    return isinstance(raw, (bool, np.bool_))
+
+
+def is_number(raw) -> bool:
+    """Reelle Zahl, kein Wahrheitswert: int/float sowie Zahlentypen der
+    Python-API (numpy.int64, numpy.float32, Fraction). Zeichenketten,
+    Decimal und None sind keine Zahl."""
+    return isinstance(raw, numbers.Real) and not is_bool(raw)
+
+
+def as_int(raw) -> int | None:
+    """Ganzzahl (auch numpy.int64) oder ganzzahliger Float (2.0, 1e3) → int;
+    sonst None."""
+    if not is_number(raw):
+        return None
+    if isinstance(raw, numbers.Integral):
+        return int(raw)
+    try:
+        val = float(raw)
+    except OverflowError:
+        return None
+    return int(val) if math.isfinite(val) and val.is_integer() else None
+
+
 def finite_float(raw) -> float | None:
-    """int/float → float; None bei inf/nan oder Überlauf (z.B. Ganzzahl 10**400)."""
+    """Zahl → float; None bei inf/nan oder Überlauf (z.B. Ganzzahl 10**400)."""
     try:
         val = float(raw)
     except OverflowError:

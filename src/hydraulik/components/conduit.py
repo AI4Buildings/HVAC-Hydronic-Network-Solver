@@ -88,8 +88,23 @@ class Conduit(TwoPortComponent):
     LIST_PARAMS = {"pipes": PIPE_SEGMENT_PARAMS}      # Rohrmodell als Abschnittsliste
 
     def __init__(self, name: str, **kwargs):
-        self.pipes = _parse_pipes(str(name), kwargs.pop("pipes", None))
-        super().__init__(name, **kwargs)
+        # Fehler der pipes-Liste MIT den übrigen Parameterfehlern sammeln
+        # (ein Durchgang), statt vor deren Prüfung abzubrechen
+        pipe_errors: list[str] = []
+        try:
+            self.pipes = _parse_pipes(str(name), kwargs.pop("pipes", None))
+        except ComponentParamError as exc:
+            self.pipes, pipe_errors = [], exc.messages
+        #: pipes angegeben (auch fehlerhaft) — zählt in check_params als Hydraulik-Angabe
+        self._pipes_given = bool(self.pipes or pipe_errors)
+        try:
+            super().__init__(name, **kwargs)
+        except ComponentParamError as exc:
+            if not pipe_errors:
+                raise
+            raise ComponentParamError(str(name), pipe_errors + exc.messages) from None
+        if pipe_errors:
+            raise ComponentParamError(str(name), pipe_errors)
 
     def check_params(self):
         errs = []
@@ -97,7 +112,7 @@ class Conduit(TwoPortComponent):
         has_dp, has_q = self.dp is not None, self.q is not None
         if has_dp != has_q:
             errs.append("Auslegungspunkt unvollständig: 'dp_kPa' und 'q_m3h' gemeinsam angeben.")
-        modes = sum([has_c, has_dp and has_q, has_len, bool(self.pipes)])
+        modes = sum([has_c, has_dp and has_q, has_len, self._pipes_given])
         if modes > 1:
             errs.append("Höchstens EINE Hydraulik-Angabe: 'c_Pa_m3h2' ODER "
                         "Auslegungspunkt 'dp_kPa'+'q_m3h' ODER Rohrmodell "
