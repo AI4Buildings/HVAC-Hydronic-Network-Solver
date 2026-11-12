@@ -104,11 +104,14 @@ Jedes Skript endet mit `ERGEBNIS: alles ok` bzw. listet die Fehler.
 
 ```bash
 python tools/vka_skill_abgleich.py [~/.claude/skills/vka-effizienz-en16798/scripts]
+python tools/vka_skill_abgleich.py --schreiben   # Kern-Dateien des Skills aus dem Repo erzeugen
 ```
 
 Vergleicht `src/hydraulik/air/vka/` mit der Skill-Kopie. Die Importform
 (relativ/absolut) und die Zusatzausgabe der Stationszustände werden dabei
-ausgeglichen. Stand 2026-11-12: identisch, inklusive der Korrekturen L1–L16.
+ausgeglichen. Stand 2026-11-12: identisch, inklusive der Korrekturen L1–L19.
 Liegt der Skill auf einem neuen Rechner in einer älteren Fassung vor, zeigt
-der Diff die fehlenden Korrekturen. Nach dem Nachziehen im Skill
-`python3 validate_vka.py` laufen lassen.
+der Diff die fehlenden Korrekturen; `--schreiben` zieht die Kern-Dateien in
+einem Schritt nach (nur abweichende Dateien werden geschrieben). Danach im
+Skill `python3 validate_vka.py` laufen lassen. `SKILL.md` und die
+Hilfsskripte des Skills sind nicht versioniert und werden nicht erfasst.

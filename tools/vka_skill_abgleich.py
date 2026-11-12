@@ -1,20 +1,27 @@
 """Abgleich des VKA-Kerns im Repo mit der Skill-Kopie vka-effizienz-en16798.
 
     python3 tools/vka_skill_abgleich.py [SKILL_SCRIPTS_DIR] [--streng]
+    python3 tools/vka_skill_abgleich.py [SKILL_SCRIPTS_DIR] --schreiben
 
 Der Kern src/hydraulik/air/vka/ ist aus dem Skill übernommen und physikalisch
-identisch mit ihm zu halten (Korrekturen L1–L12 der Solver-Prüfung 2026-10
-stehen in beiden). Unterschiede, die erwartet sind und hier ausgeglichen
-werden:
+identisch mit ihm zu halten (Korrekturen L1–L19 stehen in beiden: Solver-
+Prüfung 2026-10 und Fehlerbehebung 2026-11). Unterschiede, die erwartet sind
+und hier ausgeglichen werden:
 - Importe: im Paket relativ (`from .x import`), im Skill absolut, dazu in
   simulate.py `sys.path.insert(…)` für den Skriptaufruf;
 - simulate.py im Repo liefert zusätzlich die Stationszustände für die
   Editor-Tooltips (Block „Stationszustände …“, ohne Einfluss auf die
   validierten Größen); --streng vergleicht auch diesen Block.
 
-Rückgabe 0 = identisch, 1 = Abweichungen (Diff wird ausgegeben). Nach einer
-Kernänderung die Skill-Kopie von Hand nachziehen und dort
-`python3 validate_vka.py` laufen lassen (PDF-Referenz exakt).
+Rückgabe 0 = identisch, 1 = Abweichungen (Diff wird ausgegeben).
+
+--schreiben erzeugt die Kern-Dateien der Skill-Kopie aus dem Repo-Stand
+(dieselbe Umformung wie beim Vergleich; nur abweichende Dateien werden
+geschrieben). Damit zieht ein Rechner mit älterer Skill-Kopie in einem
+Schritt nach. Danach im Skill `python3 validate_vka.py` laufen lassen
+(PDF-Referenz exakt). Nicht erfasst werden SKILL.md und die Hilfsskripte des
+Skills (validate_vka.py, test_simulate_room.py, weather.py) — sie liegen nur
+im Skill-Verzeichnis und sind nicht versioniert.
 """
 from __future__ import annotations
 
@@ -42,6 +49,25 @@ def _als_skill(text: str, name: str, streng: bool) -> list[str]:
     return lines
 
 
+def schreiben(skill: Path) -> int:
+    """Kern-Dateien der Skill-Kopie aus dem Repo-Stand erzeugen."""
+    n = 0
+    for f in sorted(REPO_VKA.glob("*.py")):
+        if f.name == "__init__.py":
+            continue
+        text = f.read_text(encoding="utf-8")
+        neu = "\n".join(_als_skill(text, f.name, False)) + ("\n" if text.endswith("\n") else "")
+        ziel = skill / f.name
+        if ziel.exists() and ziel.read_text(encoding="utf-8") == neu:
+            print(f"aktuell:     {f.name}")
+            continue
+        ziel.write_text(neu, encoding="utf-8")
+        n += 1
+        print(f"geschrieben: {ziel}")
+    print(f"ERGEBNIS: {n} Datei(en) aktualisiert" if n else "ERGEBNIS: Skill-Kopie war aktuell")
+    return 0
+
+
 def main() -> int:
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     streng = "--streng" in sys.argv
@@ -49,6 +75,8 @@ def main() -> int:
     if not skill.is_dir():
         print(f"Skill-Verzeichnis nicht gefunden: {skill}")
         return 1
+    if "--schreiben" in sys.argv:
+        return schreiben(skill)
     abweichend = 0
     for f in sorted(REPO_VKA.glob("*.py")):
         if f.name == "__init__.py":

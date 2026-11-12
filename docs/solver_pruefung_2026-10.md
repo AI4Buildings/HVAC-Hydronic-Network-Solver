@@ -272,8 +272,10 @@ Das GEA-Datenblatt (Winterfall) ist ebenfalls unverändert.
 | L12 | MATLAB-Index 0 = aus als −1 (= volle Leistung) in KVS und Rotor; P_el ohne V̇_ab; Kreuzstrom-NTU-Rangfolge; Taupunkt bei 0 °C geklemmt | alle korrigiert (Taupunkt-Suche bis −60 °C) |
 | (b) | WRG-Auslegungsvolumenstrom fest 4500 m³/h (η 16–21 % über Referenz bei 1359 m³/h); übersättigte Zustände unsichtbar | Default = Zuluftvolumenstrom; Hinweis bei x > x_s |
 
-Nachtrag 2026-11-12: L13–L16 (Sprühbefeuchter-Lücke, Frostschutz-Massenstrom
-mit Umluft, KVS-Aussetzer, Heizer-Toleranz) sind in
+Nachtrag 2026-11-12: L13–L19 (Sprühbefeuchter-Lücke, Frostschutz-Massenstrom
+mit Umluft, KVS-Aussetzer, Heizer-Toleranz, Rotor-Feuchteübertragung nach dem
+Feuchtegefälle, Kaltwasser-Vorlauftemperatur des Kühlers, Zuluftventilator
+nach der Mischkammer) sind in
 docs/fehlerbehebung_2026-11.md beschrieben; die PDF-Referenz bleibt exakt.
 
 Neu gefunden beim Robustheits-Sweep:

@@ -27,7 +27,7 @@ technischen Gebäudeausrüstung.
 git clone https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver.git
 cd HVAC-Hydronic-Network-Solver
 pip install -e ".[dev]"
-pytest            # 1256 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
+pytest            # 1287 Tests (analytische Referenzen + Validierung gegen Musterlösungen)
 ```
 
 ## Tool starten
@@ -260,6 +260,17 @@ Ventilatorposition wird rechnerisch am Stranganfang bilanziert (validierte
 Modellkonvention); Rotor-Übertragungsgrade sind physikalisch auf ε ≤ 1
 begrenzt (Hinweis bei stark unbalancierten Volumenströmen).
 
+Modellkonventionen der Reihenfolge: Der **Vorheizer** ist das Register NACH
+der WRG (davor gezeichnet wird er abgelehnt; für den Frostschutz der WRG gibt
+es die Komponente Frostschutz). Bei Anlagen **mit Umluft** sitzt der
+Zuluftventilator rechnerisch nach der Mischkammer (Außenluft → Mischkammer →
+Ventilator → Zuluft): er fördert den vollen Zuluftstrom, seine Wärme geht
+vollständig in die Zuluft. Der **Kühler** hat die Kaltwasser-Vorlauftemperatur
+`t_kw_C` (Standard 6 °C) als tiefsten erreichbaren Taupunkt; verlangt die
+Sollfeuchte einen tieferen, entfeuchtet er bis zu dieser Grenze und meldet es.
+Die Rückfeuchtzahl des Rotors richtet sich nach dem Feuchtegefälle (Spender
+ist der Strom mit der höheren Wasserbeladung).
+
 Plausibilität: Je Zuluftstrang rechnet der Kern genau ein Register je Typ
 (doppelte Vorheizer/Kühler/Nachheizer/Befeuchter werden abgelehnt); nicht
 angeschlossene Komponenten werden mit Hinweis übergangen. Eine
@@ -490,6 +501,7 @@ hydraulik run <datei.yaml> --json    # maschinenlesbares Ergebnis
 | `docs/erweitern.md` | Anleitung: neue Komponenten hinzufügen (mit Codegerüst) |
 | `docs/roadmap.md` | Stand, bewusste v1-Grenzen, v2-Ideen, Wiedereinstieg |
 | `docs/solver_pruefung_2026-10.md` | Prüfbericht des Solvers (Befunde, Korrekturen, offene Punkte, Kampagnenwirkung) |
+| `docs/fehlerbehebung_2026-11.md` | Fehleranalyse des ganzen Projekts 2026-11: Befunde, Korrekturen, Nutzerentscheidungen (inkl. Luftseite L13–L19), offene Punkte |
 | `tools/README.md` | Prüfwerkzeuge außerhalb der Testsuite: Zufallsnetz-Kampagne, Eindeutigkeit/Stabilität, Browser-E2E |
 
 ### Auf einem anderen Rechner weiterarbeiten
@@ -509,7 +521,15 @@ editor server                                            # GUIs: http://127.0.0.
   GEA-Datenblatt) sind urheberrechtlich geschützt und werden nicht committet.
   Zum Rechnen und Testen werden sie nicht gebraucht.
 - **Skill-Kopie:** Die Skill-Kopie `vka-effizienz-en16798` liegt außerhalb
-  (`~/.claude/skills`). Der Lüftungskern im Repo (`src/hydraulik/air/vka/`)
-  ist eigenständig; bei Kernänderungen die Skill-Kopie identisch nachziehen
-  (siehe CLAUDE.md). Ob die Skill-Kopie eines Rechners auf dem Stand des
-  Repos ist, zeigt `python3 tools/vka_skill_abgleich.py`.
+  (`~/.claude/skills`) und ist nicht versioniert. Der Lüftungskern im Repo
+  (`src/hydraulik/air/vka/`) ist eigenständig und maßgebend. Ob die
+  Skill-Kopie eines Rechners auf dem Stand des Repos ist, zeigt
+  `python3 tools/vka_skill_abgleich.py`; `… --schreiben` erzeugt ihre
+  Kern-Dateien aus dem Repo neu (danach im Skill `python3 validate_vka.py`).
+  Die `SKILL.md` und die Hilfsskripte des Skills liegen nur dort — auf einem
+  Rechner mit älterem Skill fehlen in der `SKILL.md` die Beschreibungen der
+  Korrekturen L13–L19 und der neuen Schlüssel (`T_KW`, `KR_dew_limited`).
+- **Stand und offene Punkte:** oberster Block in `docs/roadmap.md`, Details
+  in `docs/fehlerbehebung_2026-11.md` (was entschieden ist, was offen ist).
+- **Browsertests (optional):** `pip install -e ".[dev,e2e]"`,
+  `python -m playwright install chromium`, dann die Skripte in `tools/e2e/`.

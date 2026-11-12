@@ -2,7 +2,8 @@
 
 Vollständige Durchsicht des Projekts auf Fehler (Rechenkern, Luftseite,
 Editoren/Server, Ein-/Ausgabe/CLI/Tools) und Behebung der reproduzierten
-Befunde. Stand danach: 1256 Tests grün, alle vier e2e-Skripte „alles ok“,
+Befunde, in zwei Runden (Fehlerbehebung, danach die entschiedenen Fachfragen
+der Luftseite). Stand danach: 1287 Tests grün, alle vier e2e-Skripte „alles ok“,
 Kampagne und Eindeutigkeitsprüfung unverändert zum Referenzstand
 (`tools/README.md`) — kein Zufallsnetz hat die Klasse gewechselt.
 
@@ -18,6 +19,11 @@ ungetesteten Pfaden darum herum.
 | Vier Kernfehler, vermutlich schon im MATLAB-Original | alle korrigieren, als dokumentierte Abweichungen L13–L16 (PDF-Referenz bleibt exakt, Skill-Kopie identisch) |
 | Raumregelung: Raumfeuchteband nicht erreichbar | bilanzkonsistenter erreichbarer Zustand + Hinweis (kein Fehler, nie leere Werte) |
 | Komponentennamen mit Punkt („HK 1.OG“) | erlaubt; Portreferenzen werden am letzten Punkt getrennt |
+| Plattenwärmetauscher ohne Bypass | passt so, bleibt |
+| Vorheizer vor der WRG gezeichnet | ablehnen — der Vorheizer ist das Register NACH der WRG; Frostschutz vor der WRG ist die Komponente `frostschutz` |
+| Rückfeuchtzahl des Rotors: Zuordnung der Ströme | fachlich richtig stellen: Spender ist der Strom mit der höheren Wasserbeladung (L17) |
+| Entfeuchtungsgrenze des Kühlers (fest 6 °C) | Kaltwasser-Vorlauftemperatur angebbar: `kuehler.t_kw_C` (L18) |
+| Zuluftventilator bei Umluft | sitzt nach der Mischkammer: Außenluft → Mischkammer → Ventilator → Zuluft (L19) |
 
 ## Rechenkern (tests/test_bugfix_kern_2026_11.py)
 
@@ -77,6 +83,12 @@ Skill-Kopie identisch, PDF-Referenz bit-identisch):
 | L14 | Frostschutz-Vorerhitzer mit vollem Massenstrom trotz Umluft stromab (22,3 statt 7,4 kW) | Massenstrom an der Einbaustelle |
 | L15 | KVS: Rasterkollision (z. B. 4190/4000 m³/h) und Überlauf schalteten die WRG still ab; unmögliche Auslegung rechnete mit NaN weiter (WRG 0 kW) | Zuluft-Maske, überlauffreie Gegenstromformel; unmögliche Auslegung → Fehler mit dem nötigen Sole-Volumenstrom |
 | L16 | Heizer ohne die 0,03-g/kg-Toleranz des Kühlers (Zuluft 62 % bei Bandmaximum 55 %) | gleiche Toleranz in Vor- und Nachheizer |
+| L17 | Rotor: feuchteabgebender Strom nach dem Vorzeichen von T_Außen − T_Abluft gewählt; bei gleicher Temperatur und feuchter Außenluft sprang die Rückfeuchtzahl 0,58 → 0,70 und die Last 32,9 → 0,6 kW (zwischen 22,00 und 22,02 °C) | Spender = Strom mit der höheren Wasserbeladung am Rotoreintritt, Kondensationspotenzial = x_Spender − x_s(T_Empfänger). Am Wechsel (x gleich) ist der Feuchteübertrag null, der Austritt bleibt stetig; gewöhnlicher Winter- und Sommerfall unverändert |
+| L18 | Kühler entfeuchtete gar nicht, wenn der nötige Taupunkt unter der festen Grenze von 6 °C lag (Soll 34,3 % → 70,6 %, ohne Meldung) | Kaltwasser-Vorlauftemperatur als Parameter `t_kw_C` (Standard 6 °C, Kern-Schlüssel `T_KW`); darunter Entfeuchtung bis zur Sättigung bei dieser Temperatur, mit Hinweis |
+| L19 | Zuluftventilator am Stranganfang mit vollem Volumenstrom: bei Umluft stromab kam nur der Außenluftanteil der Ventilatorwärme an (0,5 statt 1,5 kW bei 3000 von 4500 m³/h) | Anlagen mit Umluft: Ventilator nach der Mischkammer, Erwärmung auf dem vollen Massenstrom; Frostschutz und WRG davor sehen Außenluft. Ohne Umluft unverändert (validierter Pfad) |
+
+Der Vorheizer vor der WRG wird im Adapter abgelehnt (heizte dort auf den
+Zuluft-Sollwert, die WRG blieb aus: 46,7 statt 8,1 kW bei −12 °C).
 
 Weitere Korrekturen:
 
@@ -124,17 +136,27 @@ Weitere Korrekturen:
 
 ## Offene Punkte
 
-Fachfragen (bewusst nicht angefasst, Entscheidung beim Nutzer):
+Fachlich (Entscheidung beim Nutzer; jeweils mit Modellverhalten und
+Zahlenbeispiel vorlegen):
 
-- Plattenwärmetauscher ohne Bypass (heizt bei 21 °C außen auf 24 °C, der
-  Kühler nimmt 3 kW wieder heraus).
-- Vorheizer VOR der WRG heizt auf den Zuluft-Sollwert (46,7 statt 8,1 kW).
-- Feuchte-Rückzahl des Rotors springt bei T_Außen = T_Abluft (0,58 → 0,70).
-- Entfeuchtung an der 6-°C-Taupunktgrenze ist alles-oder-nichts.
-- Ventilatorwärme am Stranganfang; Ventilator mit Umluft stromab rechnet
-  P_el und Wärme mit dem vollen Volumenstrom.
+- L18, vom Nutzer noch nicht ausdrücklich bestätigt: Liegt der nötige
+  Taupunkt unter der Kaltwasser-Vorlauftemperatur, entfeuchtet der Kühler
+  jetzt BIS zu dieser Grenze (vorher gar nicht). Bestätigt ist nur, dass die
+  Vorlauftemperatur angebbar sein soll.
+- Nach einer so begrenzten Entfeuchtung heizt der Nachheizer nur bis T_min
+  (MATLAB-Regel für „zu feucht“), z. B. 20,0 °C / 68,4 % bei `t_kw_C: 14`;
+  Heizen bis T_max ergäbe eine niedrigere relative Feuchte.
+- Eine gezeichnete Umluft mit 0 m³/h zählt als „keine Umluft“ (Ventilator am
+  Stranganfang). Zwischen 0 und einem kleinen positiven Umluftstrom wechselt
+  das Modell daher die Ventilatorlage (rund 1 K am WRG-Eintritt bei SFP 2000).
+- Anlagen OHNE Umluft: die Ventilatorwärme wird weiter am Stranganfang
+  bilanziert (validierter MATLAB-Pfad), auch wenn der Ventilator am
+  Strangende gezeichnet ist; der Frostschutz sieht dann die Temperatur nach
+  dem Ventilator.
 - L16-Folge: im 0,03-g/kg-Fenster läuft der Rotor weiter auf Mindestdrehzahl
   (Register 6,4 kW, Nachbarpunkte rund 2,2 kW).
+- Ventilatorerwärmung wird wie in MATLAB mit cp = 1,0 kJ/(kg·K) gerechnet;
+  bei feuchter Luft liegt der Enthalpiegewinn 1–2 % über f_rec·P_el.
 - Statischer Druckrand an engem Eintritt mit weitem Austritt und kurzem Rohr
   hat im Modell keine Lösung (verlustfreier Diffusor); der Solver meldet nur
   allgemeine Nichtkonvergenz.

@@ -2,7 +2,7 @@
 
 ## Fehleranalyse und Fehlerbehebung (2026-11-12, in main)
 
-1256 Tests, alle grün; e2e „alles ok“; Kampagne und Eindeutigkeitsprüfung
+1287 Tests, alle grün; e2e „alles ok“; Kampagne und Eindeutigkeitsprüfung
 unverändert zum Referenzstand. Ausführlich: docs/fehlerbehebung_2026-11.md.
 
 - **Anlass:** Durchsicht des ganzen Projekts auf Fehler. Der Solverkern
@@ -22,7 +22,15 @@ unverändert zum Referenzstand. Ausführlich: docs/fehlerbehebung_2026-11.md.
 - **Editoren/Server:** Inspector-Auswahlwechsel, Kopieren von Leitungen,
   Import von Verbindungsgruppen, `settings`-Erhalt, Escaping, Server-Härtung
   (Größe, Host/Origin, striktes JSON).
-- **Offen:** fünf Fachfragen der Luftseite, Ventilator mit Umluft, zwei
+- **Runde 2, entschiedene Fachfragen der Luftseite:** Vorheizer vor der
+  WRG wird abgelehnt; L17 Rotor-Feuchteübertragung nach dem Feuchtegefälle
+  (kein Sprung mehr bei T_Außen = T_Abluft); L18 Kühler mit
+  Kaltwasser-Vorlauftemperatur `t_kw_C`; L19 Zuluftventilator bei Umluft
+  nach der Mischkammer. Plattenwärmetauscher ohne Bypass bleibt.
+- **Werkzeug:** `tools/vka_skill_abgleich.py --schreiben` erzeugt die
+  Kern-Dateien der Skill-Kopie aus dem Repo (für weitere Rechner).
+- **Offen:** Entfeuchten bis zur Kaltwassergrenze (L18) noch unbestätigt,
+  Nachheizer nach begrenzter Entfeuchtung, Umluft mit 0 m³/h, zwei
   Leitungen in Reihe im Editor — siehe docs/fehlerbehebung_2026-11.md.
 
 ## Solver-Prüfung (2026-10-06, zwei Runden, in main)
@@ -392,12 +400,13 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
 
 ## Wiedereinstieg
 
-1. `pip install -e ".[dev]" && pytest` (1256 Tests, müssen grün sein; node für die Paritätstests);
+1. `pip install -e ".[dev]" && pytest` (1287 Tests, müssen grün sein; node für die Paritätstests);
    `editor server` startet beide GUIs (http://127.0.0.1:8091/). Auf einem neuen
    Rechner: README, Abschnitt „Auf einem anderen Rechner weiterarbeiten“.
 2. CLAUDE.md (Befehle/Struktur/Konventionen) und den obersten Stand-Block
    dieser Datei lesen — dort steht, was zuletzt gebaut wurde; offene Fach-
-   entscheidungen stehen im Prüfbericht docs/solver_pruefung_2026-10.md.
+   entscheidungen stehen in docs/fehlerbehebung_2026-11.md (Luftseite,
+   Editoren) und im Prüfbericht docs/solver_pruefung_2026-10.md (Solver).
 3. Vor Solver- oder Modelländerungen die Prüfkampagne laufen lassen
    (tools/README.md) und mit dem dort notierten Referenzstand vergleichen.
 4. docs/architektur.md (Struktur) und docs/numerik.md (Solver-Herleitung);
@@ -406,7 +415,9 @@ v0.2.0/v0.3.0 – ergänzt (getrieben durch Validierungsbeispiele und GUI-Aufbau
    Editor-Verhalten in air_editor_template.html (PARAM_MODES, Vorlagen,
    isTapPort/Messleitungen, Stationen-Tooltips). Kernänderungen in
    air/vka/ IMMER auch in der Skill-Kopie ~/.claude/skills/vka-effizienz-en16798
-   nachziehen (liegt außerhalb des Repos) und dort validate_vka.py laufen lassen.
+   nachziehen (liegt außerhalb des Repos, nicht versioniert):
+   `python3 tools/vka_skill_abgleich.py --schreiben`, dann dort
+   validate_vka.py laufen lassen und SKILL.md ergänzen.
 6. Lokale, bewusst NICHT committete Referenzunterlagen (Copyright; liegen
    nur im Arbeitsverzeichnis): Übungs-PDFs, Idelchik-Buchscans
    (Trennung_/Vereinigung_Teil*.png), Dokumentations_Vollklimaanlage.pdf

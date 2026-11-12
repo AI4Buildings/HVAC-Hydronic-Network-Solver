@@ -24,7 +24,7 @@ GitHub (public): https://github.com/AI4Buildings/HVAC-Hydronic-Network-Solver
 
 ```bash
 pip install -e ".[dev]"                  # Installation (editable)
-pytest                                   # Testsuite (1256 Tests; Paritätstests brauchen node)
+pytest                                   # Testsuite (1287 Tests; Paritätstests brauchen node)
 pytest tests/test_hydraulics.py -k parallel   # einzelner Test
 hydraulik run examples/04_heatpump_separator.yaml [--json] [--csv out.csv]   # auch .json
 hydraulik export --json schaltung.yaml [--out schaltung.json]   # geprüft, kanonisches JSON
@@ -39,7 +39,8 @@ python3 examples/validation_fh_verteiler.py      # Validierungs-Kennlinienplots
 python3 examples/08_ventilautoritaet.py          # Wirkung der Ventilautorität (Plots)
 python3 examples/09_energetikum_lueftungsregister.py  # reale Anlage + BEMS-IDs (Aedifion)
 python3 tools/pruefkampagne/kampagne.py 0 3300 --quick   # Prüfkampagne (vor Solver-Änderungen)
-python3 tools/vka_skill_abgleich.py      # VKA-Kern ↔ Skill-Kopie identisch?
+python3 tools/vka_skill_abgleich.py      # VKA-Kern ↔ Skill-Kopie identisch? (--schreiben: Skill-Kern aus dem Repo erzeugen)
+for s in tools/e2e/*_e2e.py; do python3 $s; done   # Browsertests (Extra ".[e2e]"), enden mit "alles ok"
 ```
 
 ## Struktur
@@ -134,7 +135,7 @@ src/hydraulik/
     vka/             integrierter VKA-Rechenkern EN 16798-5-1 (aus Skill
                      vka-effizienz-en16798 übernommen; simulate/simulate_room,
                      energieoptimale Rotorregelung, 1:1 MATLAB-verifiziert;
-                     dokumentierte Abweichungen (Physik-Korrekturen L1–L16,
+                     dokumentierte Abweichungen (Physik-Korrekturen L1–L19,
                      Solver-Prüfung 2026-10: ε ≤ min(1, V̇_ab/V̇_zu),
                      Sprühbefeuchter, Kühler-Zweig 5, Index-0-Semantik, …;
                      im Code "Abweichung vom MATLAB-Original" markiert) —
@@ -171,7 +172,7 @@ docs/                architektur.md, numerik.md, erweitern.md, roadmap.md,
                      solver_pruefung_2026-10.md (Prüfbericht, offene Punkte)
 examples/            YAML-Schaltungen 01–06 + 09 (Energetikum, echte BEMS-IDs),
                      Lösungs-/Validierungsskripte 07/08 + FH-Verteiler
-tests/               1256 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
+tests/               1287 Tests: analytische Referenzen + Validierung gegen Musterlösungen;
                      test_yamlio.py / test_yaml12_kompat.py: Loader + YAML-1.1-
                      Altlasten; test_editor_paritaet.py: JS ↔ Python (node,
                      Korpus tests/data/, Zufallsskalare/-dokumente, Round-Trip);
@@ -181,7 +182,7 @@ tests/               1256 Tests: analytische Referenzen + Validierung gegen Must
                      unabhängiges Fixpunkt-Orakel, geschlossene Lösungen, Invarianzen;
                      test_solver_pruefung.py: Befunde der Solver-Prüfung (B1–B16);
                      test_air_vka_matlab.py: VKA-Kern gegen MATLAB/PDF-Referenz;
-                     test_air_vka_pruefung.py: Lüftungsbefunde L1–L16 (Invarianten);
+                     test_air_vka_pruefung.py: Lüftungsbefunde L1–L19 (Invarianten);
                      test_bugfix_{kern,io,luft,editor}_2026_11.py: Regressionen der
                      Fehlerbehebungsrunde (docs/fehlerbehebung_2026-11.md);
                      test_eindeutigkeit.py: Mehrdeutigkeit melden + Neustart
@@ -297,14 +298,27 @@ tools/               Prüfwerkzeuge außerhalb von pytest (tools/README.md):
   GEA-Datenblatt) sind urheberrechtlich geschützt: NIE committen (.gitignore);
   das Repo ist öffentlich.
 - VKA-Kern (air/vka/) und Skill-Kopie ~/.claude/skills/vka-effizienz-en16798
-  physikalisch identisch halten; Prüfung mit tools/vka_skill_abgleich.py.
+  physikalisch identisch halten; Prüfung mit tools/vka_skill_abgleich.py
+  (--schreiben erzeugt die Kern-Dateien des Skills aus dem Repo; SKILL.md
+  dort von Hand nachziehen — der Skill ist nicht versioniert).
+- Luftseite, Nutzerentscheidungen 2026-11-12 (docs/fehlerbehebung_2026-11.md):
+  Vorheizer = Register NACH der WRG (davor: Fehler, Frostschutz ist eigene
+  Komponente); Zuluftventilator bei Umluft NACH der Mischkammer (L19; ohne
+  Umluft validierter Pfad am Stranganfang); Rotor-Feuchteübertragung nach
+  dem Feuchtegefälle (L17); Kühler mit Kaltwasser-Vorlauftemperatur t_kw_C
+  (L18); Plattenwärmetauscher ohne Bypass ist gewollt; Raumregelung liefert
+  bei nicht erreichbarem Band den bilanzkonsistenten Zustand + Hinweis.
+- Fachfragen an den Nutzer immer ausformuliert stellen: was das Modell
+  rechnet, Zahlenbeispiel, konkrete Frage, Herkunft (Test/Anlage/Norm) —
+  keine Stichwort-Etiketten.
 
 ## Offene Punkte (v2-Kandidaten)
 
 Siehe docs/roadmap.md: Pumpenkennlinien, Netzplan-Visualisierung,
 Ventilautorität im Bericht, feuchtes Kühlregister, Parametersweep-Helfer,
 Regelkreis-Iteration. Offene Fachentscheidungen und der pathologische
-Kampagnenfall Seed 913: docs/solver_pruefung_2026-10.md. Offene Fachfragen
-der Luftseite (Plattenwärmetauscher ohne Bypass, Vorheizer vor der WRG,
-Rotor-Sprung, Ventilator mit Umluft) und Editor-Lücken (zwei Leitungen in
-Reihe): docs/fehlerbehebung_2026-11.md.
+Kampagnenfall Seed 913: docs/solver_pruefung_2026-10.md. Offene Punkte der
+Runde 2026-11 (L18: Entfeuchten bis zur Kaltwassergrenze noch unbestätigt,
+Nachheizer nach begrenzter Entfeuchtung, Umluft mit 0 m³/h, zwei Leitungen
+in Reihe im Editor): docs/fehlerbehebung_2026-11.md, Abschnitt „Offene
+Punkte“.
