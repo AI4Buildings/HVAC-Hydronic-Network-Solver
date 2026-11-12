@@ -179,8 +179,15 @@ def run_plant(cfg: PlantConfig, sp: Setpoints, ops: list[OperatingPoint]):
                     FS_Byp = (m_dot > 0 and T < cfg.T_FS_Grenz)
                     Q["FS"] = 0.0             # no heating by FS itself
                 else:                          # FS==1 electric pre-heater
-                    # MATLAB Q_dot_FS uses m_dot_AUL (full outdoor flow)
-                    T, x, Q["FS"] = frost_protection(T, x, m_dot, cfg.T_FS_Grenz)
+                    # Abweichung vom MATLAB-Original (Prüfung 2026-11, L14):
+                    # Q_dot_FS wurde immer mit dem vollen Zuluftstrom gerechnet
+                    # (MATLAB: m_dot_AUL). Sitzt der Frostschutz vor der
+                    # Umluftbeimischung, erwärmt er nur den Außenluftanteil
+                    # (wie WRG/VHR: flow) — sonst Leistung um
+                    # V̇_zu/(V̇_zu − V̇_Umluft) zu hoch (22,3 statt 7,4 kW bei
+                    # 3000 von 4500 m³/h Umluft). Ohne Umluft ist flow = m_dot
+                    # (unverändert).
+                    T, x, Q["FS"] = frost_protection(T, x, flow, cfg.T_FS_Grenz)
             elif comp == "WRG" and FS_Byp:
                 # frost bypass: supply skips the WRG (no recovery), eta/n_rot 0
                 T2, x2 = T, x

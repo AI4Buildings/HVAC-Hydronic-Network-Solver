@@ -16,6 +16,14 @@ from ..yamlio import load_document
 from .components import AIR_REGISTRY, AIR_SENSOR_TYPES
 
 
+def split_ref(ref: str) -> tuple[str, str]:
+    """Port-Referenz 'komponente.port' am LETZTEN Punkt trennen — Komponenten-
+    namen dürfen Punkte enthalten ("VHR 1.OG"), Portnamen nie (wie im
+    Hydraulik-Kern, network.py). Ohne Punkt: (ref, "")."""
+    cname, sep, port = ref.rpartition(".")
+    return (cname, port) if sep else (ref, "")
+
+
 class AirPlant:
     """Geladenes Luftschema: Komponenten + Portverbindungen.
 
@@ -61,6 +69,21 @@ def load_air(source) -> AirPlant:
             errors.append(f"Komponente '{name}': unbekannter Lufttyp '{tname}'.{sugg} "
                           f"Gültig: {', '.join(sorted(AIR_REGISTRY))}")
             continue
+        # Schlüssel, die nicht als Parameter übergeben werden können: 'name'/
+        # 'self' (Konstruktor-Argumente — der Name ist der Schlüssel des
+        # Eintrags) und Nicht-Zeichenketten (dict aus der Python-API) — als
+        # gesammelte Meldung statt TypeError (gleiches Muster wie network.py)
+        for key in list(spec):
+            if not isinstance(key, str):
+                errors.append(f"Komponente '{name}': Parametername {key!r} muss eine "
+                              f"Zeichenkette sein.")
+                del spec[key]
+            elif key in ("name", "self"):
+                errors.append(
+                    f"Komponente '{name}': Unbekannter Parameter '{key}' für Typ '{tname}'."
+                    + (" Der Komponentenname ist der Schlüssel des Eintrags "
+                       "(components: {<name>: {type: …}})." if key == "name" else ""))
+                del spec[key]
         try:
             comps[str(name)] = cls(str(name), **spec)
         except ComponentParamError as exc:
@@ -72,9 +95,10 @@ def load_air(source) -> AirPlant:
     sensor_used: dict[str, int] = {}
 
     def is_tap(ref: str) -> bool:
-        cname = ref.partition(".")[0]
+        cname = split_ref(ref)[0]
         c = comps.get(cname)
         return c is not None and c.type_name in AIR_SENSOR_TYPES
+    raw_names = {str(n) for n in raw}
     raw_c = doc.get("connections")
     if not isinstance(raw_c, list) or not raw_c:
         errors.append("'connections' fehlt oder ist leer.")
@@ -86,12 +110,15 @@ def load_air(source) -> AirPlant:
             continue
         pair = tuple(str(p) for p in conn)
         for ref in pair:
-            cname, _, port = ref.partition(".")
+            cname, port = split_ref(ref)       # Namen dürfen Punkte enthalten
             if cname in comps and port not in comps[cname].port_names():
                 errors.append(f"Verbindung Nr. {k + 1}: '{ref}' — Port unbekannt "
                               f"(gültig: {', '.join(comps[cname].port_names())}).")
-            elif cname not in comps and cname not in raw:
-                errors.append(f"Verbindung Nr. {k + 1}: unbekannte Komponente '{cname}'.")
+            elif cname not in comps and cname not in raw_names:
+                hint = difflib.get_close_matches(cname, sorted(raw_names), n=1)
+                sugg = f" Meinten Sie '{hint[0]}'?" if hint else ""
+                errors.append(f"Verbindung Nr. {k + 1}: unbekannte Komponente "
+                              f"'{cname}'.{sugg}")
         if is_tap(pair[0]) or is_tap(pair[1]):
             # Messleitung: zapft einen (auch bereits verbundenen) Kanal-
             # Anschluss an; nur der SENSORPORT selbst ist auf 1× begrenzt

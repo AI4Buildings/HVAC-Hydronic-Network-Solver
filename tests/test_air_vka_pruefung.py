@@ -1,5 +1,6 @@
-"""Lüftungskern: Befunde L1–L12 der Solver-Prüfung 2026-10 (Abweichungen vom
-MATLAB-Original, je mit physikalischer Begründung).
+"""Lüftungskern: Befunde L1–L12 der Solver-Prüfung 2026-10 und L13–L16 der
+Prüfung 2026-11 (Abweichungen vom MATLAB-Original, je mit physikalischer
+Begründung).
 
 Geprüft werden Invarianten (Energie-/Feuchtebilanz je Komponente, 2. Haupt-
 satz, Sollband, Mischungsgrenzen) statt Regressionszahlen; die validierten
@@ -7,15 +8,17 @@ Betriebspunkte deckt tests/test_air_vka_matlab.py ab.
 """
 import itertools
 
+import numpy as np
 import pytest
 
 import hydraulik as h
 from hydraulik.air import solve_air
 from hydraulik.air.vka import moist_air as ma
 from hydraulik.air.vka import simulate
-from hydraulik.air.vka.kvs import kvs_recovery
+from hydraulik.air.vka.kvs import _counterflow_rwz, kvs_recovery
 from hydraulik.air.vka.simulate import build_config
-from hydraulik.air.vka.vka_chain import (Setpoints, adiabatic_cooler, cooler, plate_recovery,
+from hydraulik.air.vka.vka_chain import (DX_ENTF_TOL, Setpoints, adiabatic_cooler, cooler,
+                                        plate_recovery, preheater, reheater,
                                         spray_humidifier, steam_humidifier)
 from hydraulik.air.vka.vka_plant import OperatingPoint, plant_anlage1, plant_plate, run_plant
 
@@ -294,3 +297,143 @@ def test_umluftmischung_nicht_uebersaettigt_und_lasten_positiv():
     T, x = ch["T"]["UML_Byp"], ch["x_gkg"]["UML_Byp"] / 1000.0
     assert x <= float(ma.xs(T, 1e5)) + 1e-12
     assert float(o["Q_cool_KR_kW"][0]) >= 0.0 and float(o["Q_heat_total_kW"][0]) >= 0.0
+
+
+# --- L13: Sprühbefeuchter-Lücke über T_max ---------------------------------------
+
+def test_spruehbefeuchter_keine_luecke_ueber_tmax():
+    """T_ein > T_max, x im linken Feuchteband, h ≤ h(T_max, φ_min): adiabate
+    Befeuchtung bis zur φ_min-Linie führt ins Band (vorher griff kein Zweig:
+    23,67 °C/32 % blieben unbehandelt, die Nachbarn mit 5,80 g/kg bzw. 21,9 °C
+    wurden befeuchtet)."""
+    sp = Setpoints(20, 22, 0.40, 0.55)
+    hw = 4.18 * 15
+    T_in, x_in = 23.67, 5.94e-3
+    assert sp.x_min_Tmin < x_in < sp.x_min_Tmax and _h(T_in, x_in) < sp.h_min_Tmax
+    T, x, mw, Q = spray_humidifier(T_in, x_in, 1.0, sp, 0.0, 0.9, hw)
+    assert mw > 0.0
+    assert sp.T_min <= T <= sp.T_max + 0.05
+    assert float(ma.phi(T, x, 1e5)) >= sp.phi_min - 5e-3
+    assert _h(T, x) - _h(T_in, x_in) == pytest.approx(Q, abs=1e-6)       # adiabat
+    assert mw == pytest.approx(x - x_in, rel=1e-9)
+
+
+def test_spruehbefeuchter_streifen_ueber_h_min_tmax():
+    """Zweig 2 im 0,01-kJ/kg-Streifen über h(T_max, φ_min): bis zur φ_min-Linie
+    befeuchten (vorher nur bis x_min(T_min): Zuluft 2 K über T_max)."""
+    sp = Setpoints(20, 22, 0.40, 0.55)
+    x_in = 5.58e-3
+    T_in = float(ma.T_from_hx(sp.h_min_Tmax + 0.005, x_in))
+    T, x, mw, Q = spray_humidifier(T_in, x_in, 1.0, sp, 0.0, 0.9, 4.18 * 15)
+    assert T <= sp.T_max + 0.15          # Wasserenthalpie: wenige Hundertstel K
+    assert float(ma.phi(T, x, 1e5)) >= sp.phi_min - 5e-3
+
+
+@pytest.mark.parametrize("wrg", ["PLATE", "KVS", "ROT_HYG", "ROT_SORP"])
+def test_heisse_trockene_luft_mit_spruehbefeuchter_im_band(wrg):
+    """Vollklima mit Sprühbefeuchter in Standardreihenfolge: heiße, trockene
+    Außenluft erreicht die Zuluft nicht unbehandelt (vorher z.B. Platte,
+    36,5 °C/12,5 %: Zuluft 28,3 °C/20 % bei Band 18–24 °C/35–60 %, Lasten 0)."""
+    spec = {"wrg": wrg, "components": ["VHR", "KR", "NHR"], "humidifier": "spray",
+            "SFP": 2500, "V_nom_m3h": 4500, "V_M_KVS_N": 1.2}
+    TT, RR = np.meshgrid(np.arange(20.0, 38.1, 1.5), np.arange(10.0, 40.1, 2.5))
+    o = simulate(spec, TT.ravel(), RR.ravel(), 22, 40, 18, 24, 35, 60, V_sup_m3h=4500)
+    assert float(np.max(o["T_sup_C"])) <= 24.0 + 0.2
+    assert float(np.min(o["phi_sup_pct"])) >= 35.0 - 1.5
+    assert float(np.max(o["phi_sup_pct"])) <= 60.0 + 1.5
+
+
+# --- L14: Frostschutz-Vorerhitzer vor der Umluftbeimischung -----------------------
+
+def test_frostschutz_leistung_mit_umluft_stromab():
+    """Q_FS = Außenluftstrom · Δh — der Frostschutz vor der Umluftbeimischung
+    erwärmt nur den Außenluftanteil (vorher voller Zuluftstrom: 22,3 statt
+    7,4 kW bei 3000 von 4500 m³/h Umluft)."""
+    spec = dict(wrg="PLATE", components=["NHR"], frost="preheater", T_FS=0.0, SFP=0,
+                recirculation_m3h=3000, order=["Vent_ZUL", "FS", "WRG", "UML_Byp", "NHR"])
+    r = run_plant(build_config(spec), Setpoints(20, 22, 0.40, 0.55),
+                  [OperatingPoint(-15.0, 80, 22, 30, 4500)])[0]
+    m_aussen = r["m_dot"] * (4500 - 3000) / 4500
+    dh = (_h(r["chain_T"]["FS"], r["chain_x"]["FS"])
+          - _h(r["chain_T"]["Vent_ZUL"], r["chain_x"]["Vent_ZUL"]))
+    assert r["chain_T"]["FS"] == pytest.approx(0.0)
+    assert r["Q_FS"] == pytest.approx(m_aussen * dh, rel=1e-9)
+    # ohne Umluft unverändert: voller Zuluftstrom
+    spec0 = dict(spec, recirculation_m3h=0, order=["Vent_ZUL", "FS", "WRG", "NHR"])
+    r0 = run_plant(build_config(spec0), Setpoints(20, 22, 0.40, 0.55),
+                   [OperatingPoint(-15.0, 80, 22, 30, 4500)])[0]
+    assert r0["Q_FS"] == pytest.approx(r0["m_dot"] * dh, rel=1e-9)
+
+
+# --- L15: KVS — Maske der Zuluftseite, kein NaN im Mediumstrom-Raster ------------
+
+def _kvs(v_sup, v_exh, v_m=2.5):
+    return kvs_recovery(-5.0, 2e-3, 22.0, 6.6e-3, v_sup, v_exh, Setpoints(20, 22, 0.4, 0.55),
+                        v_m, 1000, 4.19, 0.6, 0.6, v_sup, v_sup, 0, 0, 0, 1, 62.7)
+
+
+@pytest.mark.parametrize("v", [1257, 2095, 2514, 4190, 5028, 7123, 8380])
+def test_kvs_rasterkollision_schaltet_nicht_ab(v):
+    """C_Luft,ZUL == C_Medium an einem Rasterpunkt bei V̇_zu ≠ V̇_ab: MATLAB wählt
+    die Zuluft-Formel über die ABLUFT-Maske → 0/0 = NaN → ganze KVS aus
+    (4190/4000 m³/h: WRG 0 statt 17 kW). Jetzt stetig zu den Nachbarn."""
+    c_m = np.arange(1, 1001) * (2.5 / 1000.0) / 3600.0 * 1000 * 4.19
+    assert np.any(c_m == v / 3600.0 * 1.2)                   # exakte Kollision
+    T, _, _, rwz, v_m = _kvs(v, 0.9 * v)
+    lo, hi = _kvs(v - 1, 0.9 * (v - 1))[0], _kvs(v + 1, 0.9 * (v + 1))[0]
+    assert np.isfinite(rwz) and v_m > 0.0
+    assert min(lo, hi) - 0.02 <= T <= max(lo, hi) + 0.02
+    assert T > -5.0 + 5.0                                     # WRG arbeitet
+
+
+def test_kvs_gegenstromformel_ohne_ueberlauf():
+    """exp(NTU·(C*−1)) > 1e308 gab inf/inf = NaN; die überlauffreie Form liefert
+    den Grenzwert 1/C* (und dieselben Werte, wo nichts überläuft)."""
+    with np.errstate(all="raise"):
+        big = _counterflow_rwz(np.array([5.0, 2.0]), np.array([500.0, 800.0]))
+    assert np.all(np.isfinite(big))
+    assert big == pytest.approx([1 / 500.0, 1 / 800.0], rel=1e-9)
+    ntu, c = np.array([0.5, 1.5, 3.0]), np.array([0.4, 1.3, 2.0])
+    ref = (1 - np.exp(-ntu * (1 - c))) / (1 - c * np.exp(-ntu * (1 - c)))
+    assert np.array_equal(_counterflow_rwz(ntu, c), ref)       # bitgleich
+
+
+def test_kvs_unmoegliche_auslegung_wird_gemeldet():
+    """ε·C_Luft ≥ C_Medium: früher log(negativ) = NaN → WRG stillschweigend 0."""
+    with pytest.raises(ValueError, match="KVS design point infeasible"):
+        kvs_recovery(-5.0, 2e-3, 22.0, 6.6e-3, 12000, 12000, Setpoints(20, 22, 0.4, 0.55),
+                     2.5, 1000, 4.19, 0.76, 0.76, 12000, 12000, 0, 0, 0, 1, 62.7)
+
+
+# --- L16: Toleranzfenster des Kühlers in den Heizregistern -----------------------
+
+def test_heizregister_im_toleranzfenster_des_kuehlers():
+    """x_max < x ≤ x_max + Toleranz: der Kühler entfeuchtet nicht (Toleranz),
+    die Heizregister heizten aber nur bis T_min (Zuluft 20 °C/62 % bei Band
+    20–22 °C/40–55 %). Jetzt bis T_max; φ liegt höchstens um die Toleranz
+    über φ_max."""
+    sp = Setpoints(20, 22, 0.40, 0.55)
+    x = sp.x_max_Tmax + 0.5 * DX_ENTF_TOL
+    assert cooler(17.0, x, 1.0, sp, 0.0)[2] == 0.0             # Kühler: Toleranz
+    T, xo, Q = reheater(17.0, x, 1.0, sp, 0.0)
+    assert T == pytest.approx(sp.T_max) and xo == x
+    assert Q == pytest.approx(_h(T, x) - _h(17.0, x), abs=1e-9)
+    assert float(ma.phi(T, x, 1e5)) <= sp.phi_max + 3e-3
+    T, xo, Q = preheater(17.0, x, 1.0, sp, 0.0, 0.9, 62.7, Bef_after=False,
+                         NHR_after=True, KR_after=True)
+    assert T == pytest.approx(sp.T_max)
+    # knapp darunter unverändert (MATLAB-Pfad): φ_max-Linie
+    T_in_band = reheater(17.0, sp.x_max_Tmax - 1e-6, 1.0, sp, 0.0)[0]
+    assert T_in_band == pytest.approx(sp.T_max, abs=0.01)
+
+
+@pytest.mark.parametrize("wrg", ["ROT_NH", "PLATE", "KVS"])
+def test_zuluftfeuchte_im_band_am_rand_der_entfeuchtung(wrg):
+    """Außenluftfeuchte im Toleranzfenster knapp über x_max (16,5 °C/77,5 %):
+    Zuluft im Feuchteband (vorher 20,0 °C/62,2 %)."""
+    spec = {"wrg": wrg, "components": ["VHR", "KR", "NHR"], "humidifier": "steam",
+            "SFP": 2500, "V_nom_m3h": 4500, "V_M_KVS_N": 1.2}
+    rh = np.arange(76.0, 79.01, 0.05)
+    o = simulate(spec, 16.5, rh, 22, 40, 20, 22, 40, 55, V_sup_m3h=4500)
+    assert float(np.max(o["phi_sup_pct"])) <= 55.0 + 0.5
+    assert float(np.min(o["T_sup_C"])) >= 20.0 - 1e-6

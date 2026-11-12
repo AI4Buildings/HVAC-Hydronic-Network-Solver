@@ -111,6 +111,17 @@ class Zuluft(AirComponent):
         for f in need[self.regelung]:
             if getattr(self, f) is None:
                 errs.append(f"Regelung '{self.regelung}': Parameter '{f}' fehlt.")
+        # Bandgrenzen der gewählten Regelung in der richtigen Reihenfolge —
+        # hier gesammelt und deutsch statt als englische Kernmeldung
+        baender = {"band": (("t_min", "t_max", "Zuluft-Temperaturband", "°C"),
+                            ("rh_min", "rh_max", "Zuluft-Feuchteband", "%")),
+                   "raum": (("t_min", "t_max", "Zuluft-Temperaturband", "°C"),
+                            ("raum_rh_min", "raum_rh_max", "Raumfeuchteband", "%"))}
+        for lo, hi, text, unit in baender.get(self.regelung, ()):
+            a, b = getattr(self, lo), getattr(self, hi)
+            if a is not None and b is not None and a > b:
+                errs.append(f"Regelung '{self.regelung}': {text} verkehrt herum — "
+                            f"'{lo}' = {a:g} {unit} liegt über '{hi}' = {b:g} {unit}.")
         return errs or None
 
     def port_names(self):

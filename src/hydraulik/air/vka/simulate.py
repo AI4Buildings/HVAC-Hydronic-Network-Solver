@@ -154,7 +154,10 @@ def simulate(plant, T_AUL, hum_AUL, T_ABL, hum_ABL,
 
     INPUTS — each may be a scalar (constant) or a 1-D array (time series). Arrays
     are broadcast to the longest length N (so you can mix one constant setpoint
-    with hourly weather, etc.).
+    with hourly weather, etc.). Every series must have length 1 or N; empty
+    series and differing lengths raise ValueError. A timestep with NaN in ANY
+    input (data gap) is not simulated: its supply state AND loads are NaN, and
+    it counts neither as operating hour nor in the totals.
 
       Outdoor air  AUL : T_AUL [°C], hum_AUL
       Room/exhaust ABL : T_ABL [°C], hum_ABL
@@ -173,6 +176,8 @@ def simulate(plant, T_AUL, hum_AUL, T_ABL, hum_ABL,
                               returned as NaN (no air delivered). Negative flow is
                               rejected.
       dt_h : hours per timestep (for the energy totals; default 1 h).
+      p_atm : air pressure [Pa] (scalar) — used consistently for the
+              psychrometrics, the air density (mass flow) and the reported φ.
 
     plant : dict — which components are built (see SKILL.md), e.g.
       {"wrg":"ROT_SORP","components":["VHR","KR","NHR"],
@@ -184,7 +189,8 @@ def simulate(plant, T_AUL, hum_AUL, T_ABL, hum_ABL,
         Q_cool_KR_kW, Q_recovery_WRG_kW, Q_humid_Bef_kW, water_kg_h,
         eta_hr, eta_xr, n_rot, RWZ_KVS
     plus 'totals' (period sums): heating_kWh, cooling_kWh, recovery_kWh,
-        humid_kWh, water_kg, hours (whole period), operating_hours (flow>0).
+        humid_kWh, water_kg, hours (whole period), operating_hours (flow>0
+        and no NaN input).
 
     Raises ValueError on an invalid setpoint band (e.g. φ_min>φ_max, φ out of
     range, T_min>T_max) instead of silently returning wrong numbers.
@@ -194,11 +200,18 @@ def simulate(plant, T_AUL, hum_AUL, T_ABL, hum_ABL,
     if supply_band not in ("phi", "x"):
         raise ValueError(f"supply_band must be 'phi' or 'x', got {supply_band!r}")
     cfg = build_config(plant)
+    # p_atm gilt für die ganze Rechnung: bisher blieb cfg.p_atm = 1e5, also
+    # Luftdichte, gemeldetes φ der Zuluft und die Sättigungsprüfung der
+    # Umluftmischung beim Normdruck, während Sollwerte und Eingabefeuchten
+    # mit p_atm umgerechnet wurden (bei 8e4 Pa: Soll 50 % → gemeldet 62,5 %).
+    cfg.p_atm = float(p_atm)
     Ve_in = V_sup_m3h if V_exh_m3h is None else V_exh_m3h
     # volume flows broadcast like every other input (scalar OR per-timestep array)
-    cols = [T_AUL, hum_AUL, T_ABL, hum_ABL, T_sup_min, T_sup_max,
-            hum_sup_min, hum_sup_max, V_sup_m3h, Ve_in]
-    n = max(np.atleast_1d(np.asarray(c, float)).size for c in cols)
+    cols = dict(T_AUL=T_AUL, hum_AUL=hum_AUL, T_ABL=T_ABL, hum_ABL=hum_ABL,
+                T_sup_min=T_sup_min, T_sup_max=T_sup_max,
+                hum_sup_min=hum_sup_min, hum_sup_max=hum_sup_max,
+                V_sup_m3h=V_sup_m3h, V_exh_m3h=Ve_in)
+    n = _series_length(cols)
 
     def arr(v):
         a = np.atleast_1d(np.asarray(v, float))
@@ -264,17 +277,26 @@ def simulate(plant, T_AUL, hum_AUL, T_ABL, hum_ABL,
     # V_dot == 0 → plant OFF for that timestep: no airflow, every load is 0 and the
     # supply state is undefined (NaN — no air is delivered). Only the active hours
     # are actually simulated; off hours are skipped (no division by zero flow).
-    on = (Vs > 0) & (Ve > 0)
+    # NaN in irgendeiner Eingabe (Datenlücke) → Zeitschritt wird nicht
+    # gerechnet: Zustand UND Lasten NaN, keine Betriebsstunde. Bisher lief die
+    # Lücke durch den Kern (alle Vergleiche False) und zählte als Betriebs-
+    # stunde mit Last 0.
+    valid = np.ones(n, bool)
+    for a in (Ta, ha, Tb, hb, Tlo, Thi, hlo, hhi, Vs, Ve):
+        valid &= np.isfinite(a)
+    on = valid & (Vs > 0) & (Ve > 0)
     OFF = dict(T_sup=np.nan, x_sup_gkg=np.nan, phi_sup_pct=np.nan,
                m_water_kg_h=0.0, eta_hr=np.nan, eta_xr=np.nan, n_rot=0.0,
                RWZ_KVS_ges=np.nan)  # Q_* keys absent → col() reads them as 0.0
+    GAP = dict(OFF, m_water_kg_h=np.nan, n_rot=np.nan,
+               **{f"Q_{k}": np.nan for k in ("VHR", "NHR", "FS", "KR", "WRG", "Bef")})
 
     def op_i(i):
         return OperatingPoint(float(Ta[i]), 0.0, float(Tb[i]), 0.0,
                               float(Vs[i]), float(Ve[i]),
                               x_AUL=float(x_aul[i]), x_ABL=float(x_abl[i]))
     on_idx = [i for i in range(n) if on[i]]
-    res = [dict(OFF) for _ in range(n)]
+    res = [dict(OFF) if valid[i] else dict(GAP) for i in range(n)]
     if const_band:
         if on_idx:
             sp = Setpoints(float(Tlo[0]), float(Thi[0]), float(phi_lo[0]),
@@ -311,6 +333,7 @@ def simulate(plant, T_AUL, hum_AUL, T_ABL, hum_ABL,
     out["chain"] = [{"T": r.get("chain_T"), "x_gkg": r.get("chain_x_gkg")}
                     for r in res]
     out["T_eta_wheel_C"] = col(lambda r: r.get("T_eta_wheel", np.nan))
+    out["m_dot_kg_s"] = col(lambda r: r.get("m_dot", np.nan))
     out["x_eta_wheel_gkg"] = col(lambda r: r.get("x_eta_wheel", np.nan) * 1000.0)
     out["totals"] = dict(
         heating_kWh=float(np.nansum(out["Q_heat_total_kW"]) * dt_h),
@@ -323,6 +346,28 @@ def simulate(plant, T_AUL, hum_AUL, T_ABL, hum_ABL,
     return out
 
 
+def _series_length(cols: dict) -> int:
+    """Gemeinsame Länge N der Eingaben (Skalar oder 1-D-Reihe). Jede Reihe
+    muss Länge 1 oder N haben — sonst klare Meldung statt IndexError bzw.
+    numpy-Broadcast-Fehler aus der Tiefe."""
+    sizes = {}
+    for name, v in cols.items():
+        a = np.atleast_1d(np.asarray(v, float))
+        if a.ndim != 1:
+            raise ValueError(f"{name}: scalar or 1-D series expected, got an "
+                             f"array of shape {a.shape}")
+        if a.size == 0:
+            raise ValueError(f"{name}: empty series - every input needs at "
+                             f"least one value")
+        sizes[name] = a.size
+    n = max(sizes.values())
+    bad = [f"{k} ({v})" for k, v in sizes.items() if v not in (1, n)]
+    if bad:
+        raise ValueError(f"series lengths differ: every input must be a scalar "
+                         f"or have the common length {n}; got {', '.join(bad)}")
+    return n
+
+
 # Backwards-compatible alias (internal callers/tests); the SKILL documents only
 # `simulate`.
 simulate_vectors = simulate
@@ -331,7 +376,18 @@ simulate_vectors = simulate
 def simulate_weather(spec, setpoints, lat, lon, start, end, room,
                      V_sup_m3h, V_exh_m3h=None, source="open-meteo",
                      tz="Europe/Vienna"):
-    from weather import fetch
+    # Das Wetter-Modul (HTTP-Abruf Open-Meteo/GeoSphere) liegt nur dem Skill
+    # vka-effizienz-en16798 bei; im Paket hydraulik fehlt es bewusst (kein
+    # Netzzugriff aus dem Rechenkern) — dort klare Meldung statt
+    # ModuleNotFoundError: No module named 'weather'.
+    try:
+        from .weather import fetch
+    except ImportError as exc:
+        raise ImportError(
+            "simulate_weather needs the 'weather' module, which ships only "
+            "with the skill vka-effizienz-en16798 (scripts/weather.py). Fetch "
+            "the weather yourself and call simulate(...) with the series."
+        ) from exc
     rec = fetch(lat, lon, start, end, source, tz)
     out = simulate_series(spec, setpoints, rec, room, V_sup_m3h, V_exh_m3h)
     out["weather"] = dict(source=source, lat=lat, lon=lon, start=start, end=end,

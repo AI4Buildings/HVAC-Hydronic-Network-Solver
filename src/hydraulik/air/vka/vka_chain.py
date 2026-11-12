@@ -28,6 +28,11 @@ H_EVAP = 2500.0  # h_H2O for spray/steam water enthalpy term (kJ/kg) — see not
 # for the spray humidifier it uses the evaporation enthalpy reference. The exact
 # value is resolved per-call from the humidifier water temperature.
 
+#: Feuchtetoleranz des Kühlers [kg/kg]: bis x_max + DX_ENTF_TOL wird nicht
+#: entfeuchtet. Die Heizregister rechnen dieses Toleranzfenster zum
+#: Feuchteband (L16, s. preheater/reheater).
+DX_ENTF_TOL = 0.03e-3
+
 
 def _x_at_phi(T, phi, p):
     return ma.x(T, phi, p)
@@ -179,10 +184,19 @@ def preheater(T_in, x_in, m_dot, sp: Setpoints, dT_corr, eta_bef, h_H2O,
         Q = m_dot * (ma.h(T_out, x_out) - h_in)
         return T_out, x_out, Q
 
-    # humidity in band, temp below max -> heat to phi_max line or T_min edge
-    if T_in < (sp.T_max + dT_corr) and (sp.x_min_Tmin <= x_in <= sp.x_max_Tmax):
+    # humidity in band, temp below max -> heat to phi_max line or T_min edge.
+    # Abweichung vom MATLAB-Original (Prüfung 2026-11, L16): MATLAB prüft
+    # x_in <= x_max_Tmax ohne die Kühler-Toleranz DX_ENTF_TOL. Im Fenster
+    # x_max < x <= x_max + Toleranz entfeuchtet der Kühler nicht, und die
+    # Heizregister fielen in den Zweig "nur bis T_min" — Zuluft 20 °C/62 %
+    # bei Band 20–22 °C/40–55 %. Das Fenster zählt jetzt zum Feuchteband
+    # (Ziel T_max, φ liegt dann höchstens um die Toleranz über φ_max).
+    if T_in < (sp.T_max + dT_corr) and (sp.x_min_Tmin <= x_in
+                                        <= sp.x_max_Tmax + DX_ENTF_TOL):
         x_out = x_in
-        if x_in >= sp.x_max_Tmin:
+        if x_in > sp.x_max_Tmax:
+            T_out = max(sp.T_max + dT_corr, T_in)
+        elif x_in >= sp.x_max_Tmin:
             T_phi = _T_for_x_at_phi(x_in, sp.phi_max, p)
             T_out = max(T_phi + dT_corr, T_in)
         else:
@@ -205,7 +219,7 @@ def preheater(T_in, x_in, m_dot, sp: Setpoints, dT_corr, eta_bef, h_H2O,
 
 def cooler(T_in, x_in, m_dot, sp: Setpoints, dT_corr, KR_Entf=1,
            SprBef_n_KR=0, DBef_n_KR=0, h_H2O=0.0,
-           dx_Entf_tol=0.03e-3, T_Entf_bnd=6.0):
+           dx_Entf_tol=DX_ENTF_TOL, T_Entf_bnd=6.0):
     """KR cooling register. Faithful 1:1 port of the KR inline block
     (VKA main script lines ~2332-2447). Branch order matches MATLAB exactly
     (elseif cascade). SprBef_n_KR / DBef_n_KR flag whether a spray / steam
@@ -320,7 +334,11 @@ def spray_humidifier(T_in, x_in, m_dot, sp: Setpoints, dT_corr, eta_bef,
 
     # branch 2: too dry (left band) and enthalpy below the left-band ceiling
     if x_in < sp.x_min_Tmin and h_in <= sp.h_min_Tmax + 0.01:
-        if h_in > sp.h_min_Tmin and h_in <= sp.h_min_Tmax:
+        # Abweichung vom MATLAB-Original (Prüfung 2026-11, L13): MATLAB prüft
+        # hier h_in <= h_min_Tmax OHNE die 0,01 kJ/kg der äußeren Bedingung —
+        # im Streifen dazwischen wurde nur bis x_min_Tmin befeuchtet und die
+        # Zuluft blieb 2 K über T_max (23,98 °C/31 % bei Band 20–22 °C).
+        if h_in > sp.h_min_Tmin and h_in <= sp.h_min_Tmax + 0.01:
             dx = ma.x(ma.T_h_phi(h_in, sp.phi_min, p), sp.phi_min, p) - x_in
         else:
             dx = sp.x_min_Tmin - x_in
@@ -341,9 +359,17 @@ def spray_humidifier(T_in, x_in, m_dot, sp: Setpoints, dT_corr, eta_bef,
         return _finish(dx, x_out, T_out)
 
     # branch 3: in the left x-band but phi below phi_min, temp within band
-    # -> humidify up to the phi_min line (exploit evaporative cooling)
-    if (Tlim_min < T_in < Tlim_max and sp.x_min_Tmin <= x_in <= sp.x_min_Tmax
-            and ma.phi(T_in, x_in, p) < sp.phi_min):
+    # -> humidify up to the phi_min line (exploit evaporative cooling).
+    # Abweichung vom MATLAB-Original (Prüfung 2026-11, L13): MATLAB verlangt
+    # T_in < T_max. Für T_in >= T_max, x im linken Band und h_in <= h(T_max,
+    # φ_min) griff kein Zweig (Zweig 2: x < x_min; Zweig 4: h > h(T_max,
+    # φ_min)), und der vorgeschaltete Kühler überlässt den Fall dem Befeuchter
+    # (Kühler-Zweig 3) — heiße, trockene Luft erreichte die Zuluft unbehandelt
+    # (28,3 °C/20 % bei Band 18–24 °C/35–60 %). Adiabate Befeuchtung bis zur
+    # φ_min-Linie führt genau in diesem Enthalpiebereich ins Band.
+    if (T_in > Tlim_min and sp.x_min_Tmin <= x_in <= sp.x_min_Tmax
+            and ma.phi(T_in, x_in, p) < sp.phi_min
+            and (T_in < Tlim_max or h_in <= sp.h_min_Tmax)):
         h_ZUL_Bef = h_in
         # MATLAB uses dx_Bef (still 0 here) inside T_h_phi -> +h_H2O*0
         T_nBef = ma.T_h_phi(h_ZUL_Bef, sp.phi_min, p)
@@ -501,10 +527,16 @@ def reheater(T_in, x_in, m_dot, sp: Setpoints, dT_corr):
     Tlim_max = sp.T_max + dT_corr
     Tlim_min = sp.T_min + dT_corr
 
-    # within humidity band, temp below max
-    if T_in < Tlim_max and (sp.x_min_Tmin <= x_in <= sp.x_max_Tmax):
+    # within humidity band, temp below max.
+    # Abweichung vom MATLAB-Original (Prüfung 2026-11, L16): das Toleranz-
+    # fenster des Kühlers (x bis x_max + DX_ENTF_TOL) zählt zum Feuchteband —
+    # s. preheater.
+    if T_in < Tlim_max and (sp.x_min_Tmin <= x_in
+                            <= sp.x_max_Tmax + DX_ENTF_TOL):
         x_out = x_in
-        if x_in >= sp.x_max_Tmin:
+        if x_in > sp.x_max_Tmax:
+            T_out = max(Tlim_max, T_in)
+        elif x_in >= sp.x_max_Tmin:
             T_phi = _T_for_x_at_phi(x_in, sp.phi_max, p)
             T_out = max(T_phi + dT_corr, T_in)
         else:

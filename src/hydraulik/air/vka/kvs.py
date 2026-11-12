@@ -24,14 +24,50 @@ def _T_for_x_at_phi(x_val, phi, p):
 
 
 def _counterflow_rwz(NTU, Cstar):
-    return ((1 - np.exp(-NTU * (1 - Cstar)))
-            / (1 - Cstar * np.exp(-NTU * (1 - Cstar))))
+    """Gegenstrom-Rückwärmzahl (1 − E)/(1 − C*·E), E = exp(−NTU·(1 − C*)).
+
+    Abweichung vom MATLAB-Original (Prüfung 2026-11, L15): für C* > 1 und
+    großes NTU läuft E über (exp > 1e308) und die MATLAB-Form liefert
+    inf/inf = NaN; EIN NaN im Mediumstrom-Raster legte die ganze Regelung
+    still (alle Vergleiche False → KVS "aus", WRG 0 kW). Nicht endliche
+    Stellen werden daher mit der gleichwertigen, überlauffreien Form
+    (e − 1)/(e − C*), e = 1/E, nachgerechnet; alle übrigen Werte bleiben
+    bitgleich."""
+    NTU = np.asarray(NTU, float)
+    Cstar = np.asarray(Cstar, float)
+    with np.errstate(over="ignore", under="ignore", invalid="ignore", divide="ignore"):
+        E = np.exp(-NTU * (1 - Cstar))
+        rwz = (1 - E) / (1 - Cstar * E)
+        bad = ~np.isfinite(rwz) & (Cstar > 1)
+        if np.any(bad):
+            e = np.exp(-NTU * (Cstar - 1))
+            rwz = np.where(bad, (e - 1) / (e - Cstar), rwz)
+    return rwz
+
+
+def min_medium_flow(RWZ_N, V_air_N, rho_M=1000.0, cp_M=4.19):
+    """Kleinster Auslegungs-Mediumstrom [m³/h], ab dem die Auslegungs-
+    Rückwärmzahl RWZ_N beim Luftstrom V_air_N [m³/h] physikalisch möglich ist:
+    ε·C_Luft < C_Medium (das Medium kann nicht mehr Wärme aufnehmen, als sein
+    Kapazitätsstrom hergibt)."""
+    return RWZ_N * (V_air_N * 1.2 * 1.0) / (rho_M * cp_M)
 
 
 def _nominal_UA(RWZ_N, V_air_N, V_M_N, rho_M, cp_M):
     """Design UA [kW/K] of one counterflow exchanger (air vs medium)."""
     C_air = V_air_N / 3600.0 * 1.2 * 1.0
     C_M = V_M_N / 3600.0 * rho_M * cp_M
+    # Abweichung vom MATLAB-Original (Prüfung 2026-11, L15): bei unmöglicher
+    # Auslegung (ε·C_Luft ≥ C_Medium) rechnete MATLAB mit log(negativ) = NaN
+    # weiter — die WRG fiel stillschweigend auf 0 kW (KVS-Vorlage ab
+    # ~11 500 m³/h bei 2,5 m³/h Sole). Jetzt klarer Fehler statt NaN.
+    if not (0.0 < RWZ_N < 1.0) or not (RWZ_N * C_air < C_M):
+        raise ValueError(
+            f"KVS design point infeasible: effectiveness RWZ_N={RWZ_N:g} at "
+            f"air flow {V_air_N:g} m3/h needs a medium flow above "
+            f"{min_medium_flow(RWZ_N, V_air_N, rho_M, cp_M):.3f} m3/h "
+            f"(given V_M_KVS_N={V_M_N:g} m3/h; RWZ_N*C_air must be < C_medium, "
+            f"0 < RWZ_N < 1)")
     if C_air == C_M:
         NTU_N = RWZ_N / (1 - RWZ_N)
     else:
@@ -184,8 +220,14 @@ def kvs_recovery(T_oda, x_oda, T_eta, x_eta, V_sup, V_exh, sp,
     mask_ZUL = C_dot_L_ZUL != C_dot_M
     Cstar_ZUL = np.where(mask_ZUL, C_dot_L_ZUL / C_dot_M, 1.0)
     NTU_ZUL = UA_ZUL_nn / C_dot_L_ZUL
-    # MATLAB overwrites the ZUL RWZ where C_dot_L_ABL != C_dot_M (line 1274):
-    RWZ_L_ZUL = np.where(mask_ABL, _counterflow_rwz(NTU_ZUL, Cstar_ZUL),
+    # Abweichung vom MATLAB-Original (Prüfung 2026-11, L15): MATLAB wählt die
+    # Formel der ZULUFT-Seite über die Maske der ABLUFT-Seite (Zeile 1274:
+    # C_dot_L_ABL != C_dot_M). Bei V̇_zu ≠ V̇_ab und C_Luft,ZUL == C_Medium an
+    # einem Rasterpunkt (z.B. 4190 m³/h bei 2,5 m³/h Sole) rechnete die
+    # Gegenstromformel mit C* = 1 → 0/0 = NaN, und ein NaN schaltete die
+    # ganze KVS ab (WRG 0 statt 17 kW). Jetzt die Maske der eigenen Seite;
+    # bei gleichen Volumenströmen identisch.
+    RWZ_L_ZUL = np.where(mask_ZUL, _counterflow_rwz(NTU_ZUL, Cstar_ZUL),
                          NTU_ZUL / (NTU_ZUL + 1))
 
     RWZ_W_ABL = RWZ_L_ABL * (C_dot_L_ABL / C_dot_M)
@@ -200,6 +242,15 @@ def kvs_recovery(T_oda, x_oda, T_eta, x_eta, V_sup, V_exh, sp,
 
     T_ABL_nn = T_eta - RWZ_L_ABL * (T_eta - T_in_M_ABL)
     T_ZUL_nn = T_oda + RWZ_L_ZUL * (T_in_M_ZUL - T_oda)
+    # NaN-Wächter: ein nicht endlicher Rasterwert ließe die Auswahl unten
+    # stillschweigend "aus" liefern (WRG 0 kW) — bei endlichen Eingaben ist
+    # das ein Rechenfehler und wird gemeldet statt verschluckt.
+    if (np.isfinite(T_oda) and np.isfinite(T_eta)
+            and not (np.all(np.isfinite(T_ZUL_nn)) and np.all(np.isfinite(T_ABL_nn)))):
+        raise ValueError(
+            "KVS: non-finite outlet temperature in the medium-flow sweep "
+            f"(V_sup={V_sup:g}, V_exh={V_exh:g} m3/h, V_M_KVS_N={V_M_N:g} m3/h) "
+            "- check the KVS design data")
 
     idx = _select_index(T_oda, x_oda, T_ZUL_nn, sp, Bef_n_WRG, Bef_ZUL,
                         KR_n_WRG, KR_Entf, h_H2O, dTk)
